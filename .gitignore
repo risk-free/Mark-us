@@ -1,0 +1,27 @@
+# dependencies
+node_modules/
+
+# builds
+dist/
+.next/
+*.tsbuildinfo
+
+# env & secrets
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# tooling
+.turbo/
+coverage/
+
+# os/editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json

@@ -1,0 +1,24 @@
+# syntax=docker/dockerfile:1
+FROM node:20-alpine AS base
+RUN corepack enable
+
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml turbo.json tsconfig.base.json ./
+COPY apps/api/package.json apps/api/
+COPY packages/core/package.json packages/core/
+RUN pnpm install --filter @markus/api... || pnpm install --filter @markus/api...
+
+COPY tsconfig.base.json ./
+COPY apps/api apps/api
+COPY packages/core packages/core
+
+RUN pnpm --filter @markus/api build
+
+FROM node:20-alpine
+RUN corepack enable
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=base /app /app
+EXPOSE 3001
+CMD ["node", "apps/api/dist/index.js"]
