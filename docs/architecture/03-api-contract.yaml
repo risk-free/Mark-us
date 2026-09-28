@@ -1,0 +1,3880 @@
+﻿openapi: 3.1.0
+
+info:
+  title: Mark-US API
+  version: "1.0.0"
+  summary: REST contract for the US trademark application platform (P0-P8).
+  description: |
+    # Mark-US API v1
+
+    Normative contract for `apps/api` (Hono). Companion documents:
+    `docs/architecture/01-system-design.md` (cross-cutting rules),
+    `docs/architecture/02-data-model.md` (schema),
+    `docs/architecture/04-implementation-mandates.md` (mandates).
+
+    ## Cross-cutting rules (binding)
+
+    1. **Base path** `/api/v1` for all business operations. Breaking changes require `/api/v2`;
+       additive fields never bump the version. The three operational endpoints (`/health`,
+       `/health/ready`, `/metrics`) are the deliberate exception: they are unversioned at the server
+       root so that load balancers, Docker health checks and CI probes do not have to track API
+       versions, and each declares its own `servers` entry.
+    2. **Errors** are always `application/problem+json` (RFC 9457) with a stable `code` and a `traceId`
+       that support can quote. Handlers must not return ad-hoc error shapes.
+    3. **AuthN**: staff = `mkus_staff` session cookie; client = `mkus_portal` session cookie obtained by
+       redeeming a single-use magic link. All mutations additionally require header `x-csrf-token`
+       bound to the session. Webhooks are exempt from CSRF and require provider signatures instead.
+    4. **AuthZ** is enforced at three layers (01-system-design section 5.3). Each operation declares
+       the minimum permission in `x-permission` and the row scope in `x-scope`.
+    5. **Money** is a decimal **string** plus ISO-4217 currency, never a JSON number. `DisplayMoney`
+       carries the CNY presentation rate resolved server-side (D-05) and is informational only.
+    6. **Instants** are RFC 3339 UTC. Calendar dates are `YYYY-MM-DD` strings.
+    7. **Pagination** is cursor-based: `?cursor=&limit=` (default 25, max 100) returning
+       `{ items, nextCursor }`. `offset` is forbidden.
+    8. **Idempotency**: operations marked `x-idempotent` require header `Idempotency-Key`; a replay
+       within 24 h returns the original response with header `Idempotent-Replay: true`.
+    9. **Concurrency**: mutable aggregates expose `version`; conflicting writes send `If-Match`,
+       otherwise the API returns `409` with the current representation under `extensions.current`.
+    10. **Locale**: `?locale=zh-CN|en-US|zh-HK` (default `zh-CN`).
+    11. **Disclosure**: probability-bearing responses always carry `modelVersion` and `disclaimerVersion`.
+    12. **PII**: request and response bodies are never logged. Redaction rules: 01-system-design section 11.
+
+    ## Contract maturity
+
+    Every operation carries `x-contract-status`:
+
+    | Value | Meaning |
+    | --- | --- |
+    | `final` | Frozen. Handlers and tests are validated against this file. |
+    | `provisional` | Shape agreed; a field may still be renamed before the owning phase starts. |
+    | `PENDING-Pn` | Deferred: the owning phase must publish a contract revision before implementation. |
+
+    ## Coverage by phase
+
+    | Phase | Surface | Status |
+    | --- | --- | --- |
+    | P0 | `/health`, `/health/ready`, `/metrics` | final |
+    | P1 | auth, staff admin, vault, contacts, leads, conversations, notifications | final / provisional |
+    | P2 | trademarks, assessments, documents, uploads, proofreading | final |
+    | P3 | WeCom intake, archive sync, tickets, pipeline, funnel metrics | final / provisional |
+    | P4 | orders, payments, invoices, refunds, reconciliation | final / `PENDING-P4` (provider payloads) |
+    | P5 | corpus search, TSDR sync, ingest runs, OA ingest, filing ceremony | provisional / `PENDING-P5` (ranking) |
+    | P6 | probability model payloads, calibration report, copy generation | `PENDING-P6` (frozen after gate M5a) |
+    | P7 | ERP, dashboards, audit log, job administration | provisional / `PENDING-P7` |
+    | P8 | data export and erasure (PIPL), analytics beacon | `PENDING-P8` |
+
+servers:
+  - url: https://api.markus.hk/api/v1
+    description: Production (Hong Kong) — business operations
+  - url: https://staging.api.markus.hk/api/v1
+    description: Staging — business operations
+  - url: http://localhost:3001/api/v1
+    description: Local development — business operations
+
+security:
+  - staffSession: []
+    csrfToken: []
+
+tags:
+  - name: health
+    description: Liveness, readiness and metrics
+  - name: auth
+    description: Staff sessions, MFA, client magic links
+  - name: staff
+    description: Staff provisioning and the USPTO credential vault
+  - name: crm
+    description: Contacts, leads, conversations, tickets
+  - name: trademarks
+    description: Marks, assessments, corpus search
+  - name: filings
+    description: Applications, office actions, filing ceremony, ingest
+  - name: documents
+    description: Versioned documents, OCR and proofreading
+  - name: commerce
+    description: Orders, payments, invoices, refunds
+  - name: notifications
+    description: Notification inbox and preferences
+  - name: erp
+    description: Pipeline, funnel metrics, marketing budget
+  - name: audit
+    description: Audit trail and job administration
+  - name: integrations
+    description: WeCom callback verification
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags: [health]
+      summary: Liveness probe
+      description: |
+        Unversioned by design, so that load balancers, the Docker health check and the CI smoke
+        test do not track API versions. The shipped P0 payload is contractual: the CI gate asserts
+        `ok === true`, so the field name may not change without changing the gate in the same commit.
+      security: []
+      servers:
+        - url: https://api.markus.hk
+        - url: https://staging.api.markus.hk
+        - url: http://localhost:3001
+      x-contract-status: final
+      x-phase: P0
+      responses:
+        "200":
+          description: Process is alive
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthResponse" }
+
+  /health/ready:
+    get:
+      operationId: getReadiness
+      tags: [health]
+      summary: Readiness probe (Postgres, Redis, object storage)
+      security: []
+      servers:
+        - url: https://api.markus.hk
+        - url: https://staging.api.markus.hk
+        - url: http://localhost:3001
+      x-contract-status: final
+      x-phase: P0
+      responses:
+        "200":
+          description: All dependencies ready
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReadinessResponse" }
+        "503":
+          description: A dependency is unavailable
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /metrics:
+    get:
+      operationId: getMetrics
+      tags: [health]
+      summary: Prometheus exposition (internal network only)
+      security: []
+      servers:
+        - url: https://api.markus.hk
+        - url: https://staging.api.markus.hk
+        - url: http://localhost:3001
+      x-contract-status: final
+      x-phase: P0
+      responses:
+        "200":
+          description: Metrics in Prometheus text format
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /auth/staff/login:
+    post:
+      operationId: loginStaff
+      tags: [auth]
+      summary: Staff login; returns an MFA challenge when TOTP is enabled
+      security: []
+      x-contract-status: final
+      x-phase: P1
+      x-ratelimit: "10 / 15min per IP+email; 5 failures lock the account for 15 min"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Session established
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "202":
+          description: Password accepted, MFA challenge issued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MfaChallengeResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "423":
+          description: Account locked after repeated failures
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/staff/mfa/verify:
+    post:
+      operationId: verifyStaffMfa
+      tags: [auth]
+      summary: Complete MFA and establish the session
+      security: []
+      x-contract-status: final
+      x-phase: P1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MfaVerifyRequest" }
+      responses:
+        "200":
+          description: Session established
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: Challenge expired or already consumed
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /auth/staff/logout:
+    post:
+      operationId: logoutStaff
+      tags: [auth]
+      summary: Destroy the current staff session
+      x-contract-status: final
+      x-phase: P1
+      x-permission: self
+      x-scope: own-session
+      responses:
+        "204": { description: Session destroyed (idempotent) }
+
+  /auth/magic-link:
+    post:
+      operationId: requestMagicLink
+      tags: [auth]
+      summary: Client passwordless sign-in request (public)
+      description: |
+        Always answers `202` with a neutral body; never reveals whether the contact exists
+        (anti-enumeration, Mandate 8).
+      security: []
+      x-contract-status: final
+      x-phase: P1
+      x-ratelimit: "5 / 1h per contact; 20 / 1h per IP"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MagicLinkRequest" }
+      responses:
+        "202":
+          description: Link dispatched, or silently ignored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MagicLinkAccepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/magic-link/verify:
+    post:
+      operationId: redeemMagicLink
+      tags: [auth]
+      summary: Redeem a single-use magic-link token; sets the portal session cookie
+      security: []
+      x-contract-status: final
+      x-phase: P1
+      x-ratelimit: "10 / 15min per token; 5 wrong attempts destroy the token"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MagicLinkVerifyRequest" }
+      responses:
+        "200":
+          description: Portal session established
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PortalSessionResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Token invalid, expired or already used
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/me:
+    get:
+      operationId: getCurrentActor
+      tags: [auth]
+      summary: Identity, role, locale and effective capabilities
+      x-contract-status: final
+      x-phase: P1
+      x-permission: self
+      x-scope: own-session
+      responses:
+        "200":
+          description: Current actor
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActorContext" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /staff:
+    get:
+      operationId: listStaff
+      tags: [staff]
+      summary: List staff accounts
+      x-contract-status: provisional
+      x-phase: P1
+      x-permission: staff.manage
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: role
+          in: query
+          schema: { $ref: "#/components/schemas/Role" }
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/StaffStatus" }
+      responses:
+        "200":
+          description: Staff page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/StaffUser" }
+                  nextCursor: { type: ["string", "null"] }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: provisionStaff
+      tags: [staff]
+      summary: Provision a staff account (no self-registration, D-06)
+      x-contract-status: final
+      x-phase: P1
+      x-permission: staff.manage
+      x-audit: STAFF_PROVISIONED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StaffCreateRequest" }
+      responses:
+        "201":
+          description: Created; a one-time activation link is delivered out-of-band
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffUser" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: Email already provisioned
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /staff/{staffId}:
+    parameters:
+      - $ref: "#/components/parameters/StaffId"
+    get:
+      operationId: getStaff
+      tags: [staff]
+      summary: Staff detail
+      x-contract-status: provisional
+      x-phase: P1
+      x-permission: staff.manage
+      responses:
+        "200":
+          description: Staff detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffUser" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateStaff
+      tags: [staff]
+      summary: Update role, status, locale or profile
+      description: Role or status changes terminate active sessions in the same transaction.
+      x-contract-status: final
+      x-phase: P1
+      x-permission: staff.manage
+      x-audit: STAFF_UPDATED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StaffPatchRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffUser" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /staff/{staffId}/disable:
+    parameters:
+      - $ref: "#/components/parameters/StaffId"
+    post:
+      operationId: disableStaff
+      tags: [staff]
+      summary: Disable an account, revoking sessions and vault access
+      x-contract-status: final
+      x-phase: P1
+      x-permission: staff.manage
+      x-audit: STAFF_DISABLED
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DisableStaffRequest" }
+      responses:
+        "200":
+          description: Disabled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffUser" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Refused because open applications have imminent deadlines
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /staff/{staffId}/vault:
+    parameters:
+      - $ref: "#/components/parameters/StaffId"
+    put:
+      operationId: writeVaultSecret
+      tags: [staff]
+      summary: Store (rotate) the attorney USPTO credentials
+      description: |
+        Envelope-encrypts with a per-attorney DEK wrapped by the KMS KEK. The MFA seed is never
+        accepted: it is not in the schema and any request containing it fails with
+        `400 UNKNOWN_FIELD` (D-01).
+      x-contract-status: final
+      x-phase: P1
+      x-permission: vault.uspto.write
+      x-audit: VAULT_SECRET_WRITTEN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VaultWriteRequest" }
+      responses:
+        "200":
+          description: Stored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VaultStatus" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "428":
+          description: MFA step-up required before vault writes
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+    delete:
+      operationId: deleteVaultSecret
+      tags: [staff]
+      summary: Remove stored USPTO credentials
+      x-contract-status: final
+      x-phase: P1
+      x-permission: vault.uspto.write
+      x-audit: VAULT_SECRET_DELETED
+      responses:
+        "204": { description: Secret removed }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /staff/{staffId}/vault/reveal:
+    parameters:
+      - $ref: "#/components/parameters/StaffId"
+    post:
+      operationId: revealVaultSecret
+      tags: [staff]
+      summary: Decrypt and return a USPTO credential (audited, step-up gated)
+      description: |
+        Requires step-up authentication within the last 5 minutes. Writes
+        `AuditLog(action=VAULT_SECRET_REVEALED)` in the same transaction, including denied attempts.
+        Response is `Cache-Control: no-store`. Rate limit 10 per hour per actor.
+      x-contract-status: final
+      x-phase: P1
+      x-permission: vault.uspto.read
+      x-audit: VAULT_SECRET_REVEALED
+      x-ratelimit: "10 / 1h per actor"
+      responses:
+        "200":
+          description: Decrypted credential
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VaultRevealResponse" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "428":
+          description: MFA step-up required
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /contacts:
+    get:
+      operationId: listContacts
+      tags: [crm]
+      summary: List contacts visible to the actor
+      description: |
+        `x-scope`: a `SALESPERSON` receives only rows where
+        `assignedSalespersonId = actor.id`, enforced in SQL rather than by post-filtering.
+        `EXPERT` and `MASTER_ADMIN` may pass `scope=all` (expert is read-only).
+      x-contract-status: final
+      x-phase: P1
+      x-permission: contact.read
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Locale"
+        - name: stage
+          in: query
+          schema: { $ref: "#/components/schemas/LeadStage" }
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/ContactStatus" }
+        - name: q
+          in: query
+          description: Match on name or wechatAlias (trigram-indexed)
+          schema: { type: string, maxLength: 100 }
+        - name: scope
+          in: query
+          schema: { type: string, enum: [mine, all] }
+      responses:
+        "200":
+          description: Contact page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Contact" }
+                  nextCursor: { type: ["string", "null"] }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createContact
+      tags: [crm]
+      summary: Create a contact from a sales-originated lead
+      x-contract-status: final
+      x-phase: P1
+      x-permission: contact.create
+      x-audit: CONTACT_CREATED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ContactCreateRequest" }
+      responses:
+        "201":
+          description: Created and assigned per the round-robin policy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Contact" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: Duplicate email, phone or wechatAlias
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /contacts/{contactId}:
+    parameters:
+      - $ref: "#/components/parameters/ContactId"
+    get:
+      operationId: getContact
+      tags: [crm]
+      summary: Contact detail with owner, consent and stage
+      x-contract-status: final
+      x-phase: P1
+      x-permission: contact.read
+      x-scope: owner-or-all
+      responses:
+        "200":
+          description: Contact
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Contact" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: Absent, or not visible to this actor (existence is not leaked)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+    patch:
+      operationId: updateContact
+      tags: [crm]
+      summary: Update contact profile, tags or stage
+      x-contract-status: final
+      x-phase: P1
+      x-permission: contact.write
+      x-scope: owner-or-all
+      x-audit: CONTACT_UPDATED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ContactPatchRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Contact" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Optimistic-concurrency failure (If-Match mismatch)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+    delete:
+      operationId: archiveContact
+      tags: [crm]
+      summary: Soft-delete a contact (starts the PIPL erasure workflow)
+      description: Orders, invoices and filings are retained; the erasure job scrubs PII columns.
+      x-contract-status: provisional
+      x-phase: P8
+      x-permission: contact.delete
+      x-audit: CONTACT_ARCHIVED
+      responses:
+        "204": { description: Archived }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: Retained records require a Master Admin override with a recorded reason
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /contacts/{contactId}/assign:
+    parameters:
+      - $ref: "#/components/parameters/ContactId"
+    post:
+      operationId: assignContactOwner
+      tags: [crm]
+      summary: Override the round-robin owner (Master Admin)
+      x-contract-status: final
+      x-phase: P1
+      x-permission: lead.assign
+      x-audit: CONTACT_REASSIGNED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssignRequest" }
+      responses:
+        "200":
+          description: Reassigned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Contact" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /contacts/{contactId}/timeline:
+    parameters:
+      - $ref: "#/components/parameters/ContactId"
+      - $ref: "#/components/parameters/Cursor"
+      - $ref: "#/components/parameters/Limit"
+    get:
+      operationId: getContactTimeline
+      tags: [crm]
+      summary: Unified client-visible history (stage moves, orders, filings, messages)
+      x-contract-status: provisional
+      x-phase: P3
+      x-permission: contact.read
+      x-scope: owner-or-all
+      responses:
+        "200":
+          description: Timeline page, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/TimelineEvent" }
+                  nextCursor: { type: ["string", "null"] }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /contacts/{contactId}/tickets:
+    parameters:
+      - $ref: "#/components/parameters/ContactId"
+    get:
+      operationId: listContactTickets
+      tags: [crm]
+      summary: List service tickets for a contact
+      x-contract-status: final
+      x-phase: P3
+      x-permission: ticket.read
+      x-scope: owner-or-all
+      responses:
+        "200":
+          description: Ticket list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/CSTicket" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      operationId: createContactTicket
+      tags: [crm]
+      summary: Raise a service ticket (client-initiated)
+      x-contract-status: final
+      x-phase: P3
+      x-permission: ticket.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TicketCreateRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CSTicket" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /leads:
+    get:
+      operationId: listLeads
+      tags: [crm]
+      summary: List leads (assignment queue)
+      x-contract-status: final
+      x-phase: P1
+      x-permission: lead.read
+      x-scope: mine-unless-scope-all
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/LeadStatus" }
+        - name: source
+          in: query
+          schema: { $ref: "#/components/schemas/LeadSource" }
+        - name: scope
+          in: query
+          schema: { type: string, enum: [mine, all] }
+      responses:
+        "200":
+          description: Lead page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Lead" }
+                  nextCursor: { type: ["string", "null"] }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createLead
+      tags: [crm]
+      summary: Create a lead and assign it atomically
+      description: Assignment occurs in the same transaction as creation so the 5-minute NFR is measurable.
+      x-contract-status: final
+      x-phase: P1
+      x-permission: lead.create
+      x-audit: LEAD_CAPTURED
+      x-idempotent: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeadCreateRequest" }
+      responses:
+        "201":
+          description: Created and assigned
+          headers:
+            Idempotent-Replay: { $ref: "#/components/headers/IdempotentReplay" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lead" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /leads/{leadId}/assign:
+    parameters:
+      - $ref: "#/components/parameters/LeadId"
+    post:
+      operationId: assignLead
+      tags: [crm]
+      summary: Reassign a lead (Master Admin override)
+      x-contract-status: final
+      x-phase: P1
+      x-permission: lead.assign
+      x-audit: LEAD_REASSIGNED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssignRequest" }
+      responses:
+        "200":
+          description: Reassigned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lead" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /leads/{leadId}/stage:
+    parameters:
+      - $ref: "#/components/parameters/LeadId"
+    patch:
+      operationId: moveLeadStage
+      tags: [crm]
+      summary: Move a lead through the pipeline
+      x-contract-status: final
+      x-phase: P3
+      x-permission: contact.write
+      x-scope: owner-or-all
+      x-audit: LEAD_STAGE_MOVED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StagePatchRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Contact" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: Illegal transition for the current stage
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /conversations:
+    get:
+      operationId: listConversations
+      tags: [crm]
+      summary: List conversations (WeCom-first, D-06)
+      x-contract-status: provisional
+      x-phase: P3
+      x-permission: conversation.read
+      x-scope: mine-unless-scope-all
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/ConversationStatus" }
+        - name: channel
+          in: query
+          schema: { $ref: "#/components/schemas/Channel" }
+        - name: resolved
+          in: query
+          description: Backs the bot-deflection metric (D-07)
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: Conversation page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Conversation" }
+                  nextCursor: { type: ["string", "null"] }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /conversations/{conversationId}:
+    parameters:
+      - $ref: "#/components/parameters/ConversationId"
+      - $ref: "#/components/parameters/Cursor"
+      - $ref: "#/components/parameters/Limit"
+    get:
+      operationId: getConversation
+      tags: [crm]
+      summary: Conversation detail with message page
+      x-contract-status: provisional
+      x-phase: P3
+      x-permission: conversation.read
+      x-scope: owner-or-all
+      responses:
+        "200":
+          description: Conversation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Conversation" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /conversations/{conversationId}/messages:
+    parameters:
+      - $ref: "#/components/parameters/ConversationId"
+      - $ref: "#/components/parameters/Cursor"
+      - $ref: "#/components/parameters/Limit"
+    get:
+      operationId: listMessages
+      tags: [crm]
+      summary: Paginated message history
+      x-contract-status: provisional
+      x-phase: P3
+      x-permission: conversation.read
+      x-scope: owner-or-all
+      responses:
+        "200":
+          description: Message page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Message" }
+                  nextCursor: { type: ["string", "null"] }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      operationId: sendMessage
+      tags: [crm]
+      summary: Send an outbound message on the conversation channel
+      x-contract-status: provisional
+      x-phase: P3
+      x-permission: conversation.write
+      x-scope: owner-or-all
+      x-audit: MESSAGE_SENT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MessageCreateRequest" }
+      responses:
+        "202":
+          description: Accepted for asynchronous delivery
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /conversations/{conversationId}/resolve:
+    parameters:
+      - $ref: "#/components/parameters/ConversationId"
+    post:
+      operationId: resolveConversation
+      tags: [crm]
+      summary: Mark a conversation resolved
+      description: |
+        `resolution=DEFLECTED` (closed with no human reply) versus `HUMAN` is the D-07 deflection
+        metric. `DEFLECTED` requires `handledByStaff=false` and writes an audit row.
+      x-contract-status: final
+      x-phase: P3
+      x-permission: conversation.write
+      x-scope: owner-or-all
+      x-audit: CONVERSATION_RESOLVED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResolveConversationRequest" }
+      responses:
+        "200":
+          description: Resolved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Conversation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /trademarks:
+    get:
+      operationId: listTrademarks
+      tags: [trademarks]
+      summary: List marks
+      x-contract-status: final
+      x-phase: P2
+      x-permission: trademark.read
+      x-scope: owner-unless-scope-all
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Locale"
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/TrademarkStatus" }
+        - name: contactId
+          in: query
+          schema: { type: string }
+        - name: scope
+          in: query
+          schema: { type: string, enum: [mine, all] }
+      responses:
+        "200":
+          description: Trademark page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Trademark" }
+                  nextCursor: { type: ["string", "null"] }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createTrademark
+      tags: [trademarks]
+      summary: Create a mark and queue the first assessment
+      description: |
+        `consentForCorpusProcessing=true` records `ConsentRecord(PIPL_PRIVACY, policyVersion)` and is
+        a precondition for sending mark text to the LLM gateway (02-data-model section 1.1).
+      x-contract-status: final
+      x-phase: P2
+      x-permission: trademark.write
+      x-scope: owner-or-all
+      x-idempotent: true
+      x-audit: TRADEMARK_CREATED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TrademarkCreateRequest" }
+      responses:
+        "201":
+          description: Created; assessment queued
+          headers:
+            Idempotent-Replay: { $ref: "#/components/headers/IdempotentReplay" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trademark" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: Duplicate mark for the same contact (case-insensitive title plus class)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /trademarks/{trademarkId}:
+    parameters:
+      - $ref: "#/components/parameters/TrademarkId"
+    get:
+      operationId: getTrademark
+      tags: [trademarks]
+      summary: Mark detail with the latest assessment reference
+      x-contract-status: final
+      x-phase: P2
+      x-permission: trademark.read
+      x-scope: owner-or-all
+      responses:
+        "200":
+          description: Mark
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trademark" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateTrademark
+      tags: [trademarks]
+      summary: Update mark details before filing
+      description: Forbidden once the mark leaves `ASSESSING` or `DRAFT`; filed data is immutable.
+      x-contract-status: final
+      x-phase: P2
+      x-permission: trademark.write
+      x-scope: owner-or-all
+      x-audit: TRADEMARK_UPDATED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TrademarkPatchRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trademark" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: Illegal state for modification, or If-Match mismatch
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /trademarks/{trademarkId}/assessments:
+    parameters:
+      - $ref: "#/components/parameters/TrademarkId"
+      - $ref: "#/components/parameters/Cursor"
+      - $ref: "#/components/parameters/Limit"
+    get:
+      operationId: listAssessments
+      tags: [trademarks]
+      summary: Assessment history (append-only)
+      x-contract-status: PENDING-P6
+      x-phase: P6
+      x-permission: trademark.read
+      x-scope: owner-or-all
+      responses:
+        "200":
+          description: Assessment page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Assessment" }
+                  nextCursor: { type: ["string", "null"] }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      operationId: requestAssessment
+      tags: [trademarks]
+      summary: Queue a fresh assessment
+      description: |
+        Limited to 3 queued-or-running assessments per mark per hour. Each run appends a new
+        `TrademarkAssessment`; prior rows are never modified.
+      x-contract-status: PENDING-P6
+      x-phase: P6
+      x-permission: trademark.assess
+      x-scope: owner-or-all
+      x-idempotent: true
+      x-ratelimit: "3 / 1h per mark"
+      x-audit: ASSESSMENT_REQUESTED
+      responses:
+        "202":
+          description: Queued
+          headers:
+            Idempotent-Replay: { $ref: "#/components/headers/IdempotentReplay" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssessmentJobAccepted" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /tm/search:
+    get:
+      operationId: searchTrademarks
+      tags: [trademarks]
+      summary: Search the local USPTO corpus for similar marks (P5)
+      description: |
+        Candidates are narrowed by Nice class, then ranked by trigram similarity (BGE embeddings when
+        A3 is enabled; the method is reported). Results are a similarity signal, never a legal opinion
+        and never a registration probability.
+      x-contract-status: PENDING-P5
+      x-phase: P5
+      x-permission: tm.search
+      x-ratelimit: "60 / 1min per actor"
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Mark text to compare
+          schema: { type: string, minLength: 1, maxLength: 255 }
+        - name: niceClass
+          in: query
+          schema: { type: string, pattern: "^[0-9]{3}$" }
+        - name: statusCode
+          in: query
+          description: 600 pending, 700 registered
+          schema: { type: string, enum: ["600", "700"] }
+        - name: minScore
+          in: query
+          schema: { type: number, minimum: 0, maximum: 1 }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Ranked candidates
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, method, corpusIngestedAt]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/CorpusMatch" }
+                  method: { type: string, enum: [trigram, bge, hybrid] }
+                  corpusIngestedAt: { type: string, format: date-time }
+                  stale:
+                    type: boolean
+                    description: True when the corpus is older than 26 hours
+                  nextCursor: { type: ["string", "null"] }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: Corpus search exceeded the 2 s statement timeout
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /applications:
+    get:
+      operationId: listApplications
+      tags: [filings]
+      summary: List applications (attorney queue)
+      x-contract-status: provisional
+      x-phase: P5
+      x-permission: case.read
+      x-scope: assigned-unless-scope-all
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/ApplicationStatus" }
+        - name: dueWithinDays
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 365 }
+        - name: scope
+          in: query
+          schema: { type: string, enum: [mine, all] }
+      responses:
+        "200":
+          description: Application page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Application" }
+                  nextCursor: { type: ["string", "null"] }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createApplication
+      tags: [filings]
+      summary: Open a filing package for a paid mark
+      description: |
+        Preconditions, all enforced with `409` on failure: order `PAID`; specimen document version
+        `APPROVED`; power of attorney version `APPROVED`; actor holds `case.file` (an attorney act,
+        37 CFR 2.193). `filingMethod` is always `ATTENDED` (D-01).
+      x-contract-status: final
+      x-phase: P5
+      x-permission: case.file
+      x-idempotent: true
+      x-audit: FILING_OPENED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApplicationCreateRequest" }
+      responses:
+        "201":
+          description: Filing package opened
+          headers:
+            Idempotent-Replay: { $ref: "#/components/headers/IdempotentReplay" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Application" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: Precondition unmet (unpaid order, missing or unapproved document, wrong role)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /applications/{applicationId}:
+    parameters:
+      - $ref: "#/components/parameters/ApplicationId"
+    get:
+      operationId: getApplication
+      tags: [filings]
+      summary: Application detail with office actions and deadline
+      x-contract-status: provisional
+      x-phase: P5
+      x-permission: case.read
+      x-scope: assigned-unless-scope-all
+      responses:
+        "200":
+          description: Application
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Application" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /applications/{applicationId}/filing-session:
+    parameters:
+      - $ref: "#/components/parameters/ApplicationId"
+    post:
+      operationId: startFilingSession
+      tags: [filings]
+      summary: Begin the attended filing ceremony (attorney only, step-up auth)
+      description: |
+        Returns a checklist plus the pre-filed data packet. The system never automates the TEAS
+        submission: the attorney executes it and then records the receipt. At most one active session
+        per application (`409` otherwise).
+      x-contract-status: final
+      x-phase: P5
+      x-permission: case.file
+      x-audit: FILING_SESSION_STARTED
+      responses:
+        "201":
+          description: Session opened
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FilingSession" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: A session is already open, or a precondition is unmet
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "428":
+          description: MFA step-up required
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /applications/{applicationId}/filing-session/complete:
+    parameters:
+      - $ref: "#/components/parameters/ApplicationId"
+    post:
+      operationId: completeFilingSession
+      tags: [filings]
+      summary: Record the USPTO filing receipt (serial number, filing date, receipt artefact)
+      x-contract-status: final
+      x-phase: P5
+      x-permission: case.file
+      x-idempotent: true
+      x-audit: FILING_RECEIPT_RECORDED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FilingCompleteRequest" }
+      responses:
+        "200":
+          description: Receipt recorded; the application becomes FILED
+          headers:
+            Idempotent-Replay: { $ref: "#/components/headers/IdempotentReplay" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Application" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Serial number already used, or session mismatch
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /applications/{applicationId}/sync:
+    parameters:
+      - $ref: "#/components/parameters/ApplicationId"
+    post:
+      operationId: syncApplicationStatus
+      tags: [filings]
+      summary: Request an out-of-band TSDR status refresh (cached 24 h)
+      x-contract-status: provisional
+      x-phase: P5
+      x-permission: case.read
+      x-ratelimit: "20 / 1h per actor; 1 req/s per firm key towards TSDR"
+      responses:
+        "202":
+          description: Queued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobAccepted" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /applications/{applicationId}/office-actions:
+    parameters:
+      - $ref: "#/components/parameters/ApplicationId"
+    get:
+      operationId: listOfficeActions
+      tags: [filings]
+      summary: List office actions with deadlines and response state
+      x-contract-status: provisional
+      x-phase: P5
+      x-permission: case.read
+      x-scope: assigned-unless-scope-all
+      responses:
+        "200":
+          description: Office-action list, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/OfficeAction" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /applications/{applicationId}/office-actions/{officeActionId}/responses:
+    parameters:
+      - $ref: "#/components/parameters/ApplicationId"
+      - $ref: "#/components/parameters/OfficeActionId"
+    post:
+      operationId: submitOfficeActionResponse
+      tags: [filings]
+      summary: Record an office-action response
+      description: |
+        Records the attorney's approved response artefact and the filing date. The LLM draft may be
+        attached for the record but can never be submitted automatically.
+      x-contract-status: final
+      x-phase: P5
+      x-permission: case.respond
+      x-idempotent: true
+      x-audit: OA_RESPONSE_RECORDED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OfficeActionResponseRequest" }
+      responses:
+        "200":
+          description: Recorded
+          headers:
+            Idempotent-Replay: { $ref: "#/components/headers/IdempotentReplay" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OfficeAction" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Deadline passed, or the response document version is not APPROVED
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /tm/ingest/runs:
+    get:
+      operationId: listIngestRuns
+      tags: [filings]
+      summary: Nightly USPTO bulk-ingest history and corpus freshness (MASTER_ADMIN)
+      x-contract-status: provisional
+      x-phase: P5
+      x-permission: tm.ingest.read
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Ingest run history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, corpusFreshnessHours]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/IngestRun" }
+                  corpusFreshnessHours: { type: ["number", "null"] }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /documents:
+    post:
+      operationId: createDocumentUpload
+      tags: [documents]
+      summary: Request an upload slot; the client then PUTs bytes straight to object storage
+      description: |
+        Two-step flow: this call returns a single-use presigned URL and a `Document` row in
+        `PENDING_UPLOAD`; the client uploads to R2 without the API seeing the bytes; then
+        `POST /documents/{id}/complete` finalises the version. Only after an antivirus scan and a
+        SHA-256 check does the version become `READY` and enter the proofread queue.
+      x-contract-status: final
+      x-phase: P2
+      x-permission: document.create
+      x-scope: owner-or-all
+      x-idempotent: true
+      x-audit: DOCUMENT_CREATED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DocumentCreateRequest" }
+      responses:
+        "201":
+          description: Upload slot reserved
+          headers:
+            Idempotent-Replay: { $ref: "#/components/headers/IdempotentReplay" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DocumentUploadTicket" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "413":
+          description: Declared file size exceeds the 25 MB limit
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /documents/{documentId}:
+    parameters:
+      - $ref: "#/components/parameters/DocumentId"
+    get:
+      operationId: getDocument
+      tags: [documents]
+      summary: Document metadata, versions and proofread state
+      x-contract-status: final
+      x-phase: P2
+      x-permission: document.read
+      x-scope: owner-or-all
+      responses:
+        "200":
+          description: Document
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /documents/{documentId}/complete:
+    parameters:
+      - $ref: "#/components/parameters/DocumentId"
+    post:
+      operationId: completeDocumentUpload
+      tags: [documents]
+      summary: Finalise an upload and enqueue OCR/proofreading
+      x-contract-status: final
+      x-phase: P2
+      x-permission: document.create
+      x-scope: owner-or-all
+      x-idempotent: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DocumentCompleteRequest" }
+      responses:
+        "200":
+          description: Version stored; processing queued
+          headers:
+            Idempotent-Replay: { $ref: "#/components/headers/IdempotentReplay" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Checksum mismatch or the upload slot is not in PENDING_UPLOAD
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /documents/{documentId}/download:
+    parameters:
+      - $ref: "#/components/parameters/DocumentId"
+    get:
+      operationId: downloadDocument
+      tags: [documents]
+      summary: Issue a short-lived presigned download URL for the current version
+      x-contract-status: final
+      x-phase: P2
+      x-permission: document.read
+      x-scope: owner-or-all
+      x-audit: DOCUMENT_DOWNLOADED
+      parameters:
+        - name: version
+          in: query
+          description: Defaults to the latest version
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Presigned URL, valid for 5 minutes
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, expiresAt]
+                properties:
+                  url: { type: string, format: uri }
+                  expiresAt: { type: string, format: date-time }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /documents/{documentId}/proofread:
+    parameters:
+      - $ref: "#/components/parameters/DocumentId"
+    get:
+      operationId: getProofreadResult
+      tags: [documents]
+      summary: Latest proofread result (findings plus corrected text)
+      x-contract-status: provisional
+      x-phase: P2
+      x-permission: document.read
+      x-scope: owner-or-all
+      responses:
+        "200":
+          description: Proofread result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProofreadResult" }
+        "202":
+          description: Processing still running
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobAccepted" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateProofreadResult
+      tags: [documents]
+      summary: Apply or dismiss individual findings and store a new version
+      x-contract-status: provisional
+      x-phase: P2
+      x-permission: document.proofread
+      x-scope: owner-or-all
+      x-audit: DOCUMENT_PROOFREADED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProofreadUpdateRequest" }
+      responses:
+        "200":
+          description: New version created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: If-Match mismatch against the base version
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /orders:
+    get:
+      operationId: listOrders
+      tags: [commerce]
+      summary: List orders
+      x-contract-status: final
+      x-phase: P4
+      x-permission: order.read
+      x-scope: owner-unless-scope-all
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/OrderStatus" }
+        - name: contactId
+          in: query
+          schema: { type: string }
+        - name: scope
+          in: query
+          schema: { type: string, enum: [mine, all] }
+      responses:
+        "200":
+          description: Order page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Order" }
+                  nextCursor: { type: ["string", "null"] }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createOrder
+      tags: [commerce]
+      summary: Create a quote and price it (no charge)
+      description: |
+        The server is the only pricing authority: the request may carry a `priceListVersion`, never
+        a client-computed price. `marginBps` is exposed to sales and to no client. The invoice
+        snapshot is written on creation so historical documents never drift.
+      x-contract-status: final
+      x-phase: P4
+      x-permission: order.create
+      x-scope: owner-or-all
+      x-idempotent: true
+      x-audit: ORDER_CREATED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderCreateRequest" }
+      responses:
+        "201":
+          description: Order created in QUOTED or INVOICED state
+          headers:
+            Idempotent-Replay: { $ref: "#/components/headers/IdempotentReplay" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: Another order is already open for the same trademark
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /orders/{orderId}:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    get:
+      operationId: getOrder
+      tags: [commerce]
+      summary: Order detail with items, payments and invoice
+      x-contract-status: final
+      x-phase: P4
+      x-permission: order.read
+      x-scope: owner-unless-scope-all
+      responses:
+        "200":
+          description: Order
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /orders/{orderId}/invoice:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    post:
+      operationId: issueInvoice
+      tags: [commerce]
+      summary: Freeze the order into an issued invoice
+      x-contract-status: final
+      x-phase: P4
+      x-permission: order.invoice
+      x-idempotent: true
+      x-audit: INVOICE_ISSUED
+      responses:
+        "201":
+          description: Invoice issued (PDF generation queued)
+          headers:
+            Idempotent-Replay: { $ref: "#/components/headers/IdempotentReplay" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Invoice" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Order is not in an invoiceable state
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /orders/{orderId}/payments:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    get:
+      operationId: listPayments
+      tags: [commerce]
+      summary: List payment attempts
+      x-contract-status: final
+      x-phase: P4
+      x-permission: order.read
+      x-scope: owner-unless-scope-all
+      responses:
+        "200":
+          description: Payment list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Payment" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      operationId: createPayment
+      tags: [commerce]
+      summary: Start a payment for the order
+      description: |
+        Returns a provider intent and a client secret. The browser confirms with the provider SDK, not
+        with this API. Cards and wallets are tokenised by the provider; PAN never reaches Mark-US.
+      x-contract-status: final
+      x-phase: P4
+      x-permission: order.pay
+      x-scope: owner-or-all
+      x-idempotent: true
+      x-audit: PAYMENT_INITIATED
+      x-ratelimit: "5 / 1h per order"
+      responses:
+        "201":
+          description: Payment intent created
+          headers:
+            Idempotent-Replay: { $ref: "#/components/headers/IdempotentReplay" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentIntent" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Order not payable (already paid, cancelled or refunded)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /orders/{orderId}/refund:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    post:
+      operationId: refundOrder
+      tags: [commerce]
+      summary: Refund all or part of a paid order (Master Admin)
+      description: |
+        Partial refunds are allocated across invoice lines in order of service delivery. Refunds above
+        the configured threshold require a second Master Admin approval, recorded in the audit trail.
+      x-contract-status: final
+      x-phase: P4
+      x-permission: order.refund
+      x-audit: REFUND_ISSUED
+      x-idempotent: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RefundRequest" }
+      responses:
+        "201":
+          description: Refund initiated
+          headers:
+            Idempotent-Replay: { $ref: "#/components/headers/IdempotentReplay" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Refund" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: Refundable amount already exhausted
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /notifications:
+    get:
+      operationId: listNotifications
+      tags: [notifications]
+      summary: Notification inbox for the actor
+      x-contract-status: provisional
+      x-phase: P1
+      x-permission: notification.read
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: unreadOnly
+          in: query
+          schema: { type: boolean }
+        - name: kind
+          in: query
+          schema: { $ref: "#/components/schemas/NotificationKind" }
+      responses:
+        "200":
+          description: Notification page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, unreadCount]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Notification" }
+                  unreadCount: { type: integer, minimum: 0 }
+                  nextCursor: { type: ["string", "null"] }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /notifications/{notificationId}/read:
+    parameters:
+      - name: notificationId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: markNotificationRead
+      tags: [notifications]
+      summary: Mark a notification read (idempotent)
+      x-contract-status: final
+      x-phase: P1
+      x-permission: notification.write
+      responses:
+        "204": { description: Marked read }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /notifications/preferences:
+    get:
+      operationId: getNotificationPreferences
+      tags: [notifications]
+      summary: Per-actor channel and quiet-hour preferences
+      x-contract-status: provisional
+      x-phase: P1
+      x-permission: notification.read
+      responses:
+        "200":
+          description: Preferences
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationPreferences" }
+    put:
+      operationId: replaceNotificationPreferences
+      tags: [notifications]
+      summary: Replace preferences
+      description: |
+        Legal and security notifications (deadline warnings, vault alerts) cannot be disabled;
+        `PAYMENT` and `MARKETING` can. Quiet hours defer everything except `SECURITY` and `DEADLINE`.
+      x-contract-status: final
+      x-phase: P1
+      x-permission: notification.write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NotificationPreferences" }
+      responses:
+        "200":
+          description: Stored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationPreferences" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /crm/pipeline:
+    get:
+      operationId: getPipeline
+      tags: [erp]
+      summary: Stage counts, weighted value and stalled-lead aging
+      x-contract-status: provisional
+      x-phase: P7
+      x-permission: crm.pipeline.read
+      parameters:
+        - name: ownerId
+          in: query
+          description: MASTER_ADMIN only; otherwise ignored
+          schema: { type: string }
+        - name: rangeDays
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 365, default: 30 }
+      responses:
+        "200":
+          description: Pipeline summary
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PipelineSummary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /crm/funnel-metrics:
+    get:
+      operationId: getFunnelMetrics
+      tags: [erp]
+      summary: Funnel conversion, deflection rate and NFR counters (D-07)
+      description: |
+        Emits `leadToContactRate`, `contactToAssessmentRate`, `contactToFilingRate`,
+        `orderPaidRate`, `botDeflectionRate`, `meanFirstReplyMinutes` and
+        `p95AssignmentMinutes`. Served from the analytics rollups; never from ad-hoc queries.
+      x-contract-status: provisional
+      x-phase: P7
+      x-permission: crm.metrics.read
+      parameters:
+        - name: rangeDays
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 365, default: 30 }
+        - name: groupBy
+          in: query
+          schema: { type: string, enum: [day, week, month] }
+      responses:
+        "200":
+          description: Funnel metrics
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FunnelMetrics" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /crm/marketing-budget:
+    get:
+      operationId: getMarketingBudget
+      tags: [erp]
+      summary: Budget utilisation by channel and campaign (MASTER_ADMIN)
+      x-contract-status: PENDING-P7
+      x-phase: P7
+      x-permission: erp.budget.read
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Budget rows
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/BudgetRow" }
+                  nextCursor: { type: ["string", "null"] }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: recordMarketingSpend
+      tags: [erp]
+      summary: Record a marketing spend row
+      x-contract-status: PENDING-P7
+      x-phase: P7
+      x-permission: erp.budget.write
+      x-audit: MARKETING_SPEND_RECORDED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BudgetRowCreateRequest" }
+      responses:
+        "201":
+          description: Recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BudgetRow" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /audit-logs:
+    get:
+      operationId: listAuditLogs
+      tags: [audit]
+      summary: Search the audit trail
+      description: |
+        MASTER_ADMIN sees everything; EXPERT sees only rows for cases assigned to them; SALESPERSON
+        sees no audit data (`403`). `before` returns reverse-chronological pages for stable export.
+      x-contract-status: provisional
+      x-phase: P7
+      x-permission: audit.read
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: action
+          in: query
+          schema: { type: string, maxLength: 64 }
+        - name: actorId
+          in: query
+          schema: { type: string }
+        - name: entityType
+          in: query
+          schema: { type: string, maxLength: 64 }
+        - name: entityId
+          in: query
+          schema: { type: string }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Audit page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AuditEntry" }
+                  nextCursor: { type: ["string", "null"] }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /audit-logs/{auditLogId}:
+    parameters:
+      - name: auditLogId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getAuditLog
+      tags: [audit]
+      summary: Single audit entry
+      x-contract-status: provisional
+      x-phase: P7
+      x-permission: audit.read
+      responses:
+        "200":
+          description: Audit entry
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuditEntry" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/jobs:
+    get:
+      operationId: listJobs
+      tags: [audit]
+      summary: List async jobs and their state (MASTER_ADMIN)
+      x-contract-status: provisional
+      x-phase: P7
+      x-permission: admin.jobs.read
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: queue
+          in: query
+          schema: { $ref: "#/components/schemas/QueueName" }
+        - name: state
+          in: query
+          schema: { $ref: "#/components/schemas/JobState" }
+      responses:
+        "200":
+          description: Job page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Job" }
+                  nextCursor: { type: ["string", "null"] }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/jobs/{jobId}/replay:
+    parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: replayJob
+      tags: [audit]
+      summary: Replay a failed or dead-lettered job
+      description: |
+        Idempotent: replays rely on `idempotencyKey` and outbox de-duplication, so replaying a
+        partially completed job must not double-charge, double-send or duplicate audit rows.
+      x-contract-status: final
+      x-phase: P7
+      x-permission: admin.jobs.replay
+      x-audit: JOB_REPLAYED
+      x-idempotent: true
+      responses:
+        "202":
+          description: Replay queued
+          headers:
+            Idempotent-Replay: { $ref: "#/components/headers/IdempotentReplay" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobAccepted" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Job is not in a replayable state
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /analytics/events:
+    post:
+      operationId: ingestAnalyticsEvent
+      tags: [erp]
+      summary: First-party analytics beacon
+      description: |
+        Self-hosted, no third-party analytics (D-07). Accepts a batch of at most 50 events; rejects
+        unknown event names so the taxonomy cannot drift silently.
+      security: []
+      x-contract-status: PENDING-P7
+      x-phase: P7
+      x-ratelimit: "600 / 1min per session"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AnalyticsBatch" }
+      responses:
+        "202": { description: Accepted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "413":
+          description: Batch too large
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /webhooks/stripe:
+    post:
+      operationId: receiveStripeWebhook
+      tags: [commerce]
+      summary: Stripe event receiver
+      description: |
+        Verified with the Stripe signature over the raw body. Handlers are idempotent on
+        `providerEventId`; the outbox drains the follow-up work.
+      security: []
+      x-contract-status: final
+      x-phase: P4
+      responses:
+        "200": { description: Event accepted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Missing or invalid signature
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /webhooks/paypal:
+    post:
+      operationId: receivePayPalWebhook
+      tags: [commerce]
+      summary: PayPal event receiver
+      security: []
+      x-contract-status: final
+      x-phase: P4
+      responses:
+        "200": { description: Event accepted }
+        "401":
+          description: Verification failed
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /webhooks/wechat-pay:
+    post:
+      operationId: receiveWeChatPayWebhook
+      tags: [commerce]
+      summary: WeChat Pay notification receiver
+      description: |
+        WeChat Pay is exposed only where mainland merchant accounts exist; otherwise the
+        `ENABLE_WECHAT_PAY` flag keeps the route dormant (OPEN-01).
+      security: []
+      x-contract-status: PENDING-P4
+      x-phase: P4
+      responses:
+        "200": { description: Event accepted }
+        "401":
+          description: Signature verification failed
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "503":
+          description: Route disabled by configuration
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /webhooks/alipay:
+    post:
+      operationId: receiveAlipayWebhook
+      tags: [commerce]
+      summary: Alipay asynchronous notification receiver
+      security: []
+      x-contract-status: PENDING-P4
+      x-phase: P4
+      responses:
+        "200": { description: Event accepted }
+        "401":
+          description: Signature verification failed
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "503":
+          description: Route disabled by configuration
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /integrations/wecom/callback:
+    get:
+      operationId: verifyWeComCallback
+      tags: [integrations]
+      summary: WeCom callback URL verification handshake
+      security: []
+      x-contract-status: final
+      x-phase: P3
+      parameters:
+        - name: msg_signature
+          in: query
+          required: true
+          schema: { type: string }
+        - name: echostr
+          in: query
+          required: true
+          schema: { type: string }
+        - name: timestamp
+          in: query
+          required: true
+          schema: { type: string }
+        - name: nonce
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Echo the decrypted challenge
+          content:
+            text/plain:
+              schema: { type: string }
+        "401":
+          description: Signature verification failed
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /webhooks/wecom:
+    post:
+      operationId: receiveWeComEvent
+      tags: [integrations]
+      summary: WeCom message event receiver
+      description: |
+        Primary CRM intake (D-06). Inbound messages become `Message` rows and, for new
+        correspondents, `Lead` rows via the outbox pipeline. Deduplicated on
+        `(wechatOpenId, msgId)`.
+      security: []
+      x-contract-status: final
+      x-phase: P3
+      requestBody:
+        required: true
+        content:
+          application/xml:
+            schema: { type: string, description: WeCom XML envelope }
+      responses:
+        "200": { description: Accepted (empty body, as WeCom expects) }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Signature verification failed
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+components:
+  securitySchemes:
+    staffSession:
+      type: apiKey
+      in: cookie
+      name: mkus_staff
+      description: Opaque session handle; the real secret stays server-side in Redis.
+    portalSession:
+      type: apiKey
+      in: cookie
+      name: mkus_portal
+      description: Client session obtained by redeeming a magic link.
+    csrfToken:
+      type: apiKey
+      in: header
+      name: x-csrf-token
+      description: Required on every staff or client mutation; bound to the session record.
+
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque cursor from a previous `nextCursor`; omit for the first page.
+      schema: { type: string, maxLength: 512 }
+    Limit:
+      name: limit
+      in: query
+      description: Page size.
+      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+    Locale:
+      name: locale
+      in: query
+      description: Preferred locale for returned copy.
+      schema: { type: string, enum: [zh-CN, en-US, zh-HK], default: zh-CN }
+    IfMatch:
+      name: If-Match
+      in: header
+      description: Required for updates to versioned aggregates; use the `version` value or ETag.
+      schema: { type: string, pattern: '^"?[0-9]+"?$' }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      description: Client-generated key; replays within 24 h return the original response.
+      schema: { type: string, minLength: 8, maxLength: 128 }
+    StaffId:
+      name: staffId
+      in: path
+      required: true
+      schema: { type: string }
+    ContactId:
+      name: contactId
+      in: path
+      required: true
+      schema: { type: string }
+    LeadId:
+      name: leadId
+      in: path
+      required: true
+      schema: { type: string }
+    ConversationId:
+      name: conversationId
+      in: path
+      required: true
+      schema: { type: string }
+    TrademarkId:
+      name: trademarkId
+      in: path
+      required: true
+      schema: { type: string }
+    ApplicationId:
+      name: applicationId
+      in: path
+      required: true
+      schema: { type: string }
+    OfficeActionId:
+      name: officeActionId
+      in: path
+      required: true
+      schema: { type: string }
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
+      schema: { type: string }
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema: { type: string }
+
+  headers:
+    IdempotentReplay:
+      description: Present and `true` when the response was replayed from a stored idempotency record.
+      schema: { type: string, enum: ["true"] }
+    TraceId:
+      description: Correlation id, also present in logs and error bodies.
+      schema: { type: string }
+    RateLimitRemaining:
+      description: Requests left in the current window.
+      schema: { type: integer }
+    RetryAfter:
+      description: Seconds to wait before retrying.
+      schema: { type: integer }
+
+  responses:
+    BadRequest:
+      description: Validation failed
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Unauthorized:
+      description: Missing, expired or invalid session
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Forbidden:
+      description: Authenticated but not permitted, or the row is out of scope
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    NotFound:
+      description: Resource absent or not visible to this actor
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Conflict:
+      description: State or concurrency conflict
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After: { $ref: "#/components/headers/RetryAfter" }
+        RateLimit-Remaining: { $ref: "#/components/headers/RateLimitRemaining" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457 problem detail with a stable machine-readable `code`.
+      required: [type, title, status, code, traceId]
+      properties:
+        type: { type: string, format: uri, default: "https://api.markus.hk/problems/" }
+        title: { type: string, example: "Payment required before filing" }
+        status: { type: integer, example: 409 }
+        detail: { type: string, description: Human-readable explanation; never contains PII or secrets. }
+        instance: { type: string, format: uri-reference }
+        code:
+          type: string
+          description: Stable error code.
+          enum:
+            - VALIDATION_FAILED
+            - UNAUTHENTICATED
+            - CSRF_FAILED
+            - FORBIDDEN
+            - NOT_FOUND
+            - CONFLICT
+            - VERSION_MISMATCH
+            - PRECONDITION_UNMET
+            - RATE_LIMITED
+            - UNKNOWN_FIELD
+            - STEP_UP_REQUIRED
+            - ACCOUNT_LOCKED
+            - PROVIDER_ERROR
+            - UPSTREAM_UNAVAILABLE
+            - CONSENT_REQUIRED
+            - CORPUS_STALE
+        traceId: { type: string }
+        errors:
+          type: array
+          description: Field-level details, present when `code=VALIDATION_FAILED`.
+          items:
+            type: object
+            required: [path, message]
+            properties:
+              path: { type: string, example: "items[0].niceClass" }
+              message: { type: string }
+              rule: { type: string, example: "pattern" }
+        extensions:
+          type: object
+          description: Additive, feature-specific context; must stay backward compatible.
+          additionalProperties: true
+      additionalProperties: false
+
+    Money:
+      type: object
+      description: Monetary amount as a decimal string. JSON numbers are forbidden (D-05).
+      required: [amount, currency]
+      properties:
+        amount: { type: string, pattern: "^-?[0-9]{1,12}(\\.[0-9]{1,2})?$", example: "1499.00" }
+        currency: { type: string, enum: [USD, CNY, HKD], example: USD }
+      additionalProperties: false
+
+    DisplayMoney:
+      type: object
+      description: Client presentation view. Informational; the charge is always in `Money`.
+      required: [amount, currency, rateSource]
+      properties:
+        amount: { type: string, example: "10600.00" }
+        currency: { type: string, enum: [USD, CNY, HKD] }
+        rateAsOf: { type: string, format: date-time }
+        rateSource: { type: string, enum: [MANUAL, PROVIDER] }
+      additionalProperties: false
+
+    HealthResponse:
+      type: object
+      description: |
+        Shape frozen by the shipped P0 handler and asserted by the CI smoke gate, which greps for
+        `"ok":true`. The four original fields are therefore required and immutable; build metadata
+        may only be added additively.
+      required: [ok, service, env, time]
+      properties:
+        ok: { type: boolean, const: true }
+        service: { type: string, example: markus-api }
+        env: { type: string, enum: [development, test, staging, production] }
+        time: { type: string, format: date-time }
+        version: { type: string, nullable: true, description: Build version, added in P1. }
+        commitSha: { type: string, nullable: true, description: Build commit, added in P1. }
+        uptimeSeconds: { type: integer, minimum: 0, nullable: true, description: Added in P1. }
+      additionalProperties: false
+
+    ReadinessResponse:
+      type: object
+      required: [status, checks]
+      properties:
+        status: { type: string, enum: [ready, degraded] }
+        checks:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/DependencyCheck" }
+      additionalProperties: false
+
+    DependencyCheck:
+      type: object
+      required: [status, latencyMs]
+      properties:
+        status: { type: string, enum: [up, down, degraded] }
+        latencyMs: { type: integer, minimum: 0 }
+        error: { type: string, nullable: true }
+      additionalProperties: false
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password: { type: string, minLength: 12, maxLength: 128, writeOnly: true }
+      additionalProperties: false
+
+    LoginResponse:
+      type: object
+      required: [actor, expiresAt]
+      properties:
+        actor: { $ref: "#/components/schemas/ActorContext" }
+        csrfToken: { type: string, description: Value for the `x-csrf-token` header. }
+        expiresAt: { type: string, format: date-time }
+      additionalProperties: false
+
+    MfaChallengeResponse:
+      type: object
+      required: [challengeId, expiresAt]
+      properties:
+        challengeId: { type: string }
+        expiresAt: { type: string, format: date-time, description: 5-minute lifetime. }
+        methods: { type: array, items: { type: string, enum: [TOTP, WEBAUTHN] } }
+      additionalProperties: false
+
+    MfaVerifyRequest:
+      type: object
+      required: [challengeId, code]
+      properties:
+        challengeId: { type: string }
+        code: { type: string, minLength: 6, maxLength: 10, writeOnly: true }
+      additionalProperties: false
+
+    MagicLinkRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+        contactId: { type: string, description: Optional hint to select among duplicate emails. }
+      additionalProperties: false
+
+    MagicLinkAccepted:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ACCEPTED] }
+        message: { type: string, example: "If the address is known, a sign-in link is on its way." }
+      additionalProperties: false
+
+    MagicLinkVerifyRequest:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string, minLength: 20, maxLength: 512, writeOnly: true }
+      additionalProperties: false
+
+    PortalSessionResponse:
+      type: object
+      required: [contactId, expiresAt]
+      properties:
+        contactId: { type: string }
+        displayName: { type: string }
+        csrfToken: { type: string }
+        expiresAt: { type: string, format: date-time }
+      additionalProperties: false
+
+    Role:
+      type: string
+      enum: [MASTER_ADMIN, EXPERT, SALESPERSON]
+      description: |
+        `MASTER_ADMIN` full control; `EXPERT` read-everything plus case, document and filing writes;
+        `SALESPERSON` own-record access only.
+
+    StaffStatus:
+      type: string
+      enum: [INVITED, ACTIVE, DISABLED]
+
+    ActorContext:
+      type: object
+      required: [actorId, role, locale]
+      properties:
+        actorId: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        locale: { type: string, enum: [zh-CN, en-US, zh-HK] }
+        contactId: { type: string, nullable: true, description: Set for client sessions only. }
+        permissions:
+          type: array
+          description: Effective permission strings, resolved server-side; the client never decides.
+          items: { type: string }
+      additionalProperties: false
+
+    StaffUser:
+      type: object
+      required: [id, email, role, status, createdAt]
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        displayName: { type: string, nullable: true }
+        role: { $ref: "#/components/schemas/Role" }
+        status: { $ref: "#/components/schemas/StaffStatus" }
+        locale: { type: string, enum: [zh-CN, en-US, zh-HK] }
+        mfaEnabled: { type: boolean }
+        lastLoginAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        deactivatedAt: { type: string, format: date-time, nullable: true }
+      additionalProperties: false
+
+    StaffCreateRequest:
+      type: object
+      required: [email, role]
+      properties:
+        email: { type: string, format: email }
+        displayName: { type: string, maxLength: 120 }
+        role: { $ref: "#/components/schemas/Role" }
+        locale: { type: string, enum: [zh-CN, en-US, zh-HK], default: zh-CN }
+      additionalProperties: false
+
+    StaffPatchRequest:
+      type: object
+      properties:
+        displayName: { type: string, maxLength: 120 }
+        role: { $ref: "#/components/schemas/Role" }
+        status: { $ref: "#/components/schemas/StaffStatus" }
+        locale: { type: string, enum: [zh-CN, en-US, zh-HK] }
+      additionalProperties: false
+
+    DisableStaffRequest:
+      type: object
+      properties:
+        reason: { type: string, minLength: 8, maxLength: 500 }
+        reassignOpenCasesTo: { type: string, description: Staff id that inherits open assignments. }
+      additionalProperties: false
+
+    VaultWriteRequest:
+      type: object
+      required: [usptoUsername, usptoPassword]
+      properties:
+        usptoUsername: { type: string, minLength: 3, maxLength: 128, writeOnly: true }
+        usptoPassword: { type: string, minLength: 8, maxLength: 256, writeOnly: true }
+        mfaSeed:
+          type: "null"
+          description: |
+            Forbidden by design. Present only so that a client sending it receives an explicit
+            `400 UNKNOWN_FIELD` instead of silent acceptance (D-01).
+        rotationReason: { type: string, maxLength: 200 }
+      additionalProperties: false
+
+    VaultStatus:
+      type: object
+      required: [hasSecret, updatedAt]
+      properties:
+        hasSecret: { type: boolean }
+        updatedAt: { type: string, format: date-time, nullable: true }
+        rotationDueAt: { type: string, format: date-time, nullable: true }
+        lastRevealedAt: { type: string, format: date-time, nullable: true, description: Metadata only. }
+      additionalProperties: false
+
+    VaultRevealResponse:
+      type: object
+      required: [usptoUsername, usptoPassword]
+      properties:
+        usptoUsername: { type: string }
+        usptoPassword: { type: string, writeOnly: true }
+        expiresInSeconds: { type: integer, const: 60 }
+      additionalProperties: false
+
+    ContactStatus:
+      type: string
+      enum: [LEAD, ACTIVE, INACTIVE, ARCHIVED]
+
+    LeadStage:
+      type: string
+      enum:
+        - INTAKE
+        - CONTACTED
+        - ASSESSED
+        - PROPOSAL
+        - PAYMENT_PENDING
+        - FILED
+        - CLOSED
+      description: Pipeline order is normative for the D-07 funnel metrics.
+
+    LeadSource:
+      type: string
+      enum: [WECOM, REFERRAL, MARKETING, WALK_IN, PARTNER]
+
+    LeadStatus:
+      type: string
+      enum: [NEW, ASSIGNED, CONTACTED, QUALIFIED, CONVERTED, CLOSED]
+
+    Channel:
+      type: string
+      enum: [WECOM, EMAIL, PHONE, INTERNAL, SYSTEM]
+
+    ConversationStatus:
+      type: string
+      enum: [OPEN, PENDING_CLIENT, PENDING_US, RESOLVED, ARCHIVED]
+
+    Contact:
+      type: object
+      required: [id, displayName, locale, stage, status, createdAt]
+      properties:
+        id: { type: string }
+        wechatAlias: { type: string, nullable: true }
+        wechatOpenId: { type: string, nullable: true, description: Present only for linked WeCom correspondents. }
+        displayName: { type: string }
+        email: { type: string, format: email, nullable: true }
+        phoneE164: { type: string, nullable: true }
+        companyName: { type: string, nullable: true }
+        region: { type: string, enum: [HK, US, CN, OTHER], default: HK }
+        locale: { type: string, enum: [zh-CN, en-US, zh-HK] }
+        preferredContactMethod: { $ref: "#/components/schemas/Channel" }
+        tags:
+          type: array
+          items: { type: string, maxLength: 40 }
+        stage: { $ref: "#/components/schemas/LeadStage" }
+        status: { $ref: "#/components/schemas/ContactStatus" }
+        assignedSalespersonId: { type: string, nullable: true }
+        assignedExpertId: { type: string, nullable: true }
+        leadId: { type: string, nullable: true }
+        wecomLinkId: { type: string, nullable: true }
+        consentRecordId: { type: string, nullable: true }
+        version: { type: integer, minimum: 1, description: Optimistic-concurrency token. }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      additionalProperties: false
+
+    ContactCreateRequest:
+      type: object
+      required: [displayName, preferredContactMethod]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        email: { type: string, format: email }
+        phoneE164: { type: string, pattern: "^\\+[1-9][0-9]{7,14}$" }
+        wechatAlias: { type: string, maxLength: 64 }
+        companyName: { type: string, maxLength: 200 }
+        region: { type: string, enum: [HK, US, CN, OTHER], default: HK }
+        locale: { type: string, enum: [zh-CN, en-US, zh-HK], default: zh-CN }
+        preferredContactMethod: { $ref: "#/components/schemas/Channel" }
+        source: { $ref: "#/components/schemas/LeadSource" }
+        tags:
+          type: array
+          items: { type: string, maxLength: 40 }
+        acceptTerms: { type: boolean, const: true, description: Legal acceptance is mandatory (internal terms version). }
+      additionalProperties: false
+
+    ContactPatchRequest:
+      type: object
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        email: { type: string, format: email }
+        phoneE164: { type: string, pattern: "^\\+[1-9][0-9]{7,14}$" }
+        companyName: { type: string, maxLength: 200 }
+        locale: { type: string, enum: [zh-CN, en-US, zh-HK] }
+        preferredContactMethod: { $ref: "#/components/schemas/Channel" }
+        tags:
+          type: array
+          items: { type: string, maxLength: 40 }
+      additionalProperties: false
+
+    AssignRequest:
+      type: object
+      required: [assigneeId, reason]
+      properties:
+        assigneeId: { type: string }
+        reason: { type: string, minLength: 4, maxLength: 300 }
+      additionalProperties: false
+
+    StagePatchRequest:
+      type: object
+      required: [stage]
+      properties:
+        stage: { $ref: "#/components/schemas/LeadStage" }
+        reason: { type: string, maxLength: 300 }
+      additionalProperties: false
+
+    Lead:
+      type: object
+      required: [id, source, status, createdAt, assignmentSlaMinutes]
+      properties:
+        id: { type: string }
+        contactId: { type: string, nullable: true }
+        source: { $ref: "#/components/schemas/LeadSource" }
+        status: { $ref: "#/components/schemas/LeadStatus" }
+        displayName: { type: string }
+        note: { type: string, nullable: true }
+        wecomUserId: { type: string, nullable: true }
+        assigneeId: { type: string, nullable: true }
+        assignedAt: { type: string, format: date-time, nullable: true }
+        assignmentSlaMinutes:
+          type: integer
+          const: 300
+          description: D-07 target is assignment within 5 minutes.
+        contactedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+      additionalProperties: false
+
+    LeadCreateRequest:
+      type: object
+      required: [source, displayName]
+      properties:
+        source: { $ref: "#/components/schemas/LeadSource" }
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        email: { type: string, format: email }
+        phoneE164: { type: string, pattern: "^\\+[1-9][0-9]{7,14}$" }
+        wechatAlias: { type: string, maxLength: 64 }
+        wecomUserId: { type: string, nullable: true }
+        note: { type: string, maxLength: 1000 }
+        assigneeId: { type: string, description: Optional explicit override; otherwise round-robin applies. }
+      additionalProperties: false
+
+    Conversation:
+      type: object
+      required: [id, channel, status, openedAt]
+      properties:
+        id: { type: string }
+        contactId: { type: string }
+        channel: { $ref: "#/components/schemas/Channel" }
+        status: { $ref: "#/components/schemas/ConversationStatus" }
+        subject: { type: string, nullable: true }
+        wecomExternalId: { type: string, nullable: true }
+        lastMessageAt: { type: string, format: date-time, nullable: true }
+        resolvedAt: { type: string, format: date-time, nullable: true }
+        resolution: { type: string, nullable: true, enum: [HUMAN, DEFLECTED, TIMEOUT, null] }
+        handledByStaff: { type: boolean, nullable: true }
+        openedAt: { type: string, format: date-time }
+      additionalProperties: false
+
+    Message:
+      type: object
+      required: [id, conversationId, direction, channel, sentAt]
+      properties:
+        id: { type: string }
+        conversationId: { type: string }
+        direction: { type: string, enum: [INBOUND, OUTBOUND] }
+        channel: { $ref: "#/components/schemas/Channel" }
+        body: { type: string }
+        wecomMessageId: { type: string, nullable: true }
+        deliveredAt: { type: string, format: date-time, nullable: true }
+        failedAt: { type: string, format: date-time, nullable: true }
+        sentAt: { type: string, format: date-time }
+      additionalProperties: false
+
+    MessageCreateRequest:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 4000 }
+        replyToMessageId: { type: string }
+      additionalProperties: false
+
+    ResolveConversationRequest:
+      type: object
+      required: [resolution]
+      properties:
+        resolution: { type: string, enum: [HUMAN, DEFLECTED] }
+        handledByStaff: { type: boolean }
+        note: { type: string, maxLength: 1000 }
+      allOf:
+        - description: "Conditional: `resolution=DEFLECTED` requires `handledByStaff=false`."
+      additionalProperties: false
+
+    CSTicket:
+      type: object
+      required: [id, category, status, createdAt]
+      properties:
+        id: { type: string }
+        contactId: { type: string }
+        trademarkId: { type: string, nullable: true }
+        category: { type: string, enum: [FILING, RENEWAL, OFFICE_ACTION, PAYMENT, OTHER] }
+        status: { type: string, enum: [OPEN, IN_PROGRESS, WAITING_CLIENT, RESOLVED, CLOSED] }
+        assigneeId: { type: string, nullable: true }
+        resolutionNote: { type: string, nullable: true }
+        firstResponseAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        resolvedAt: { type: string, format: date-time, nullable: true }
+      additionalProperties: false
+
+    TicketCreateRequest:
+      type: object
+      required: [category, body]
+      properties:
+        category: { type: string, enum: [FILING, RENEWAL, OFFICE_ACTION, PAYMENT, OTHER] }
+        body: { type: string, minLength: 1, maxLength: 4000 }
+        trademarkId: { type: string }
+      additionalProperties: false
+
+    TimelineEvent:
+      type: object
+      required: [id, kind, at]
+      properties:
+        id: { type: string }
+        kind:
+          type: string
+          enum: [STAGE_CHANGED, NOTE, ORDER_CREATED, ORDER_PAID, FILING_OPENED, FILING_RECORDED, MESSAGE, TICKET, DOCUMENT_UPLOADED]
+        at: { type: string, format: date-time }
+        actorId: { type: string, nullable: true }
+        summary: { type: string }
+        clientVisible: { type: boolean }
+      additionalProperties: false
+
+    TrademarkStatus:
+      type: string
+      enum: [DRAFT, ASSESSING, ASSESSED, WAITING_PAYMENT, FILED, ABANDONED, CLOSED]
+
+    NiceClass:
+      type: string
+      pattern: "^[0-9]{3}$"
+      description: Nice (international) class code, for example `045`.
+
+    Trademark:
+      type: object
+      required: [id, name, markType, status, version, createdAt]
+      properties:
+        id: { type: string }
+        contactId: { type: string }
+        name: { type: string, maxLength: 255 }
+        markType: { type: string, enum: [WORD, DESIGN, COMBINED] }
+        status: { $ref: "#/components/schemas/TrademarkStatus" }
+        description: { type: string, nullable: true }
+        specimenDocumentId: { type: string, nullable: true }
+        specimenApprovedAt: { type: string, format: date-time, nullable: true }
+        designDocumentId: { type: string, nullable: true }
+        powerOfAttorneyDocumentId: { type: string, nullable: true }
+        niceClasses:
+          type: array
+          items: { $ref: "#/components/schemas/NiceClass" }
+        jurisdiction: { type: string, enum: [US], default: US, description: P0 scope is US federal marks only. }
+        externalId: { type: string, nullable: true }
+        deletedAt: { type: string, format: date-time, nullable: true }
+        version: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      additionalProperties: false
+
+    TrademarkCreateRequest:
+      type: object
+      required: [contactId, name, markType, niceClasses, consentForCorpusProcessing]
+      properties:
+        contactId: { type: string }
+        name: { type: string, minLength: 1, maxLength: 255 }
+        markType: { type: string, enum: [WORD, DESIGN, COMBINED] }
+        description: { type: string, maxLength: 4000 }
+        niceClasses:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { $ref: "#/components/schemas/NiceClass" }
+        specimenDocumentId: { type: string }
+        designDocumentId: { type: string }
+        locale: { type: string, enum: [zh-CN, en-US, zh-HK], default: zh-CN }
+        consentForCorpusProcessing:
+          type: boolean
+          const: true
+          description: Records PIPL corpus-processing consent; required before any LLM call.
+      additionalProperties: false
+
+    TrademarkPatchRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        description: { type: string, maxLength: 4000 }
+        niceClasses:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { $ref: "#/components/schemas/NiceClass" }
+        specimenDocumentId: { type: string }
+        designDocumentId: { type: string }
+      additionalProperties: false
+
+    AssessmentConfidence:
+      type: string
+      enum: [LOW, MEDIUM, HIGH, INSUFFICIENT_DATA]
+
+    Assessment:
+      type: object
+      description: |
+        Append-only assessment record. `headlineScore` is `P(eventual registration)` and is never a
+        legal opinion (D-03). `disclaimerVersion` is mandatory.
+      required: [id, trademarkId, modelVersion, headlineScore, headlineConfidence, disclaimerVersion, createdAt]
+      properties:
+        id: { type: string }
+        trademarkId: { type: string }
+        runId: { type: string, nullable: true, description: Links the row to the model run record. }
+        modelVersion: { type: string, example: "reg-prob-2026-02" }
+        disclaimerVersion: { type: string, example: "disclaimer-2026-01" }
+        headlineScore: { type: number, minimum: 0, maximum: 1, example: 0.62 }
+        headlineConfidence: { $ref: "#/components/schemas/AssessmentConfidence" }
+        similarMarkIds:
+          type: array
+          items: { type: string }
+        classSimilarity:
+          type: array
+          items: { $ref: "#/components/schemas/ClassSimilarity" }
+        distinctiveScore: { type: number, minimum: 0, maximum: 1 }
+        specimenScore: { type: number, minimum: 0, maximum: 1 }
+        goodsServicesScore: { type: number, minimum: 0, maximum: 1 }
+        riskFlags:
+          type: array
+          items: { type: string, enum: [DESCRIPTIVE, DISTINCTIVE, LIKELY_CONFLICT, INSUFFICIENT_SPECIMEN, INSUFFICIENT_CORPUS] }
+        recommendedNextActions:
+          type: array
+          items: { type: string }
+        isLegalAdvice: { type: boolean, const: false }
+        createdAt: { type: string, format: date-time }
+      additionalProperties: false
+
+    ClassSimilarity:
+      type: object
+      required: [niceClass, similarity]
+      properties:
+        niceClass: { $ref: "#/components/schemas/NiceClass" }
+        similarity: { type: number, minimum: 0, maximum: 1 }
+        driver: { type: string, enum: [LEXICAL, SEMANTIC, VISUAL, NONE] }
+      additionalProperties: false
+
+    AssessmentJobAccepted:
+      type: object
+      required: [assessmentId, status]
+      properties:
+        assessmentId: { type: string }
+        status: { type: string, enum: [QUEUED] }
+        estimatedSeconds: { type: integer, nullable: true }
+      additionalProperties: false
+
+    CorpusMatch:
+      type: object
+      required: [serialNumber, markText, score, method]
+      properties:
+        serialNumber: { type: string, example: "97842135" }
+        registrationNumber: { type: string, nullable: true }
+        markText: { type: string }
+        niceClass: { $ref: "#/components/schemas/NiceClass" }
+        statusCode: { type: string, enum: ["600", "700"] }
+        status: { type: string, nullable: true, description: Human-readable USPTO status. }
+        filedDate: { type: string, format: date, nullable: true }
+        score: { type: number, minimum: 0, maximum: 1 }
+        method: { type: string, enum: [trigram, bge, hybrid] }
+        isLegalAdvice: { type: boolean, const: false }
+      additionalProperties: false
+
+    ApplicationStatus:
+      type: string
+      enum:
+        - DRAFT
+        - READY_TO_FILE
+        - FILED
+        - PUBLISHED
+        - OFFICE_ACTION
+        - REGISTERED
+        - ABANDONED
+        - REFUSED
+
+    FilingMethod:
+      type: string
+      enum: [ATTENDED]
+      description: |
+        The only permitted value. Unattended or automated USPTO filing is prohibited (D-01,
+        37 CFR 2.193).
+      default: ATTENDED
+
+    Application:
+      type: object
+      required: [id, trademarkId, contactId, status, filingMethod, version, createdAt]
+      properties:
+        id: { type: string }
+        trademarkId: { type: string }
+        contactId: { type: string }
+        status: { $ref: "#/components/schemas/ApplicationStatus" }
+        filingMethod: { $ref: "#/components/schemas/FilingMethod" }
+        assignedExpertId: { type: string, nullable: true }
+        attorney: { $ref: "#/components/schemas/FilingAttorney" }
+        orderId: { type: string, nullable: true }
+        usptoSerialNumber: { type: string, nullable: true }
+        usptoRegistrationNumber: { type: string, nullable: true }
+        filingDate: { type: string, format: date, nullable: true }
+        lastTsdrSyncAt: { type: string, format: date-time, nullable: true }
+        externalSource: { type: string, enum: [MANUAL, WEBCOM, BULK_IMPORT], nullable: true }
+        externalReference: { type: string, nullable: true }
+        deadlineAt: { type: string, format: date-time, nullable: true }
+        version: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      additionalProperties: false
+
+    FilingAttorney:
+      type: object
+      required: [staffId, displayName, barNumber]
+      properties:
+        staffId: { type: string }
+        displayName: { type: string }
+        barNumber: { type: string, description: USPTO bar identifier required for the signature block. }
+        firmName: { type: string, nullable: true }
+      additionalProperties: false
+
+    ApplicationCreateRequest:
+      type: object
+      required: [trademarkId, attorney, specimenDocumentId, powerOfAttorneyDocumentId]
+      properties:
+        trademarkId: { type: string }
+        attorney: { $ref: "#/components/schemas/FilingAttorney" }
+        specimenDocumentId: { type: string }
+        powerOfAttorneyDocumentId: { type: string }
+        orderId: { type: string, description: Paid order that funds this filing. }
+        notes: { type: string, maxLength: 2000 }
+      additionalProperties: false
+
+    FilingSession:
+      type: object
+      required: [id, applicationId, status, checklist, openedAt]
+      properties:
+        id: { type: string }
+        applicationId: { type: string }
+        status: { type: string, enum: [OPEN, COMPLETED, ABANDONED] }
+        openedByStaffId: { type: string }
+        stepUpVerifiedAt: { type: string, format: date-time, description: Must be within 5 minutes. }
+        checklist:
+          type: array
+          description: Attorney-facing ceremony steps, in order.
+          items: { $ref: "#/components/schemas/FilingChecklistItem" }
+        preFiledPacket:
+          type: object
+          description: Pre-filled data packet for manual TEAS entry; the API never submits it.
+          additionalProperties: true
+        openedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time, nullable: true }
+      additionalProperties: false
+
+    FilingChecklistItem:
+      type: object
+      required: [key, label, required]
+      properties:
+        key: { type: string, example: "specimen_approved" }
+        label: { type: string, example: "Specimen version APPROVED" }
+        required: { type: boolean }
+        satisfied: { type: boolean }
+        blocking: { type: boolean, description: True when the item blocks the receipt step. }
+      additionalProperties: false
+
+    FilingCompleteRequest:
+      type: object
+      required: [filingSessionId, usptoSerialNumber, filingDate, receiptDocumentId]
+      properties:
+        filingSessionId: { type: string }
+        usptoSerialNumber: { type: string, pattern: "^[0-9]{8}$" }
+        filingDate: { type: string, format: date }
+        receiptDocumentId: { type: string, description: PDF or screenshot of the USPTO receipt. }
+        notes: { type: string, maxLength: 2000 }
+      additionalProperties: false
+
+    OfficeAction:
+      type: object
+      required: [id, applicationId, receivedAt, responseDueAt, status]
+      properties:
+        id: { type: string }
+        applicationId: { type: string }
+        usptoDocumentCode: { type: string, nullable: true }
+        title: { type: string }
+        summary: { type: string, nullable: true }
+        documentId: { type: string, nullable: true }
+        receivedAt: { type: string, format: date-time }
+        responseDueAt: { type: string, format: date-time, description: Computed from the USPTO notice; never client-supplied. }
+        respondedAt: { type: string, format: date-time, nullable: true }
+        responseDocumentId: { type: string, nullable: true }
+        status: { type: string, enum: [AWAITING_RESPONSE, DRAFTED, ATTORNEY_APPROVED, RESPONDED, OVERDUE] }
+        llmDraftDocumentId: { type: string, nullable: true, description: Advisory draft; never auto-submitted. }
+      additionalProperties: false
+
+    OfficeActionResponseRequest:
+      type: object
+      required: [responseDocumentId, respondedAt]
+      properties:
+        responseDocumentId: { type: string }
+        respondedAt: { type: string, format: date-time }
+        llmDraftDocumentId: { type: string }
+        attorneyNote: { type: string, maxLength: 2000 }
+      additionalProperties: false
+
+    IngestRun:
+      type: object
+      required: [id, startedAt, status]
+      properties:
+        id: { type: string }
+        runDate: { type: string, format: date, nullable: true }
+        startedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time, nullable: true }
+        status: { type: string, enum: [RUNNING, SUCCEEDED, PARTIAL, FAILED] }
+        marksImported: { type: integer, minimum: 0 }
+        marksUpdated: { type: integer, minimum: 0 }
+        marksRejected: { type: integer, minimum: 0 }
+        durationSeconds: { type: integer, minimum: 0, nullable: true }
+        errorCode: { type: string, nullable: true }
+      additionalProperties: false
+
+    DocumentCategory:
+      type: string
+      enum:
+        - SPECIMEN
+        - DESIGN
+        - POWER_OF_ATTORNEY
+        - OA_RESPONSE
+        - USPTO_RECEIPT
+        - INVOICE
+        - IDENTITY
+        - OTHER
+
+    DocumentStatus:
+      type: string
+      enum: [PENDING_UPLOAD, READY, PROCESSING, FAILED, ARCHIVED]
+
+    ProofreadStatus:
+      type: string
+      enum: [NOT_REQUESTED, PENDING, COMPLETED, FAILED]
+
+    Document:
+      type: object
+      required: [id, category, status, currentVersion, createdAt]
+      properties:
+        id: { type: string }
+        contactId: { type: string, nullable: true }
+        trademarkId: { type: string, nullable: true }
+        applicationId: { type: string, nullable: true }
+        category: { $ref: "#/components/schemas/DocumentCategory" }
+        status: { $ref: "#/components/schemas/DocumentStatus" }
+        currentVersion: { type: integer, minimum: 0 }
+        approvedVersion: { type: integer, nullable: true, description: Version cleared by a human. }
+        versions:
+          type: array
+          items: { $ref: "#/components/schemas/DocumentVersion" }
+        proofreadStatus: { $ref: "#/components/schemas/ProofreadStatus" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      additionalProperties: false
+
+    DocumentVersion:
+      type: object
+      required: [version, status, uploadedAt]
+      properties:
+        version: { type: integer, minimum: 1 }
+        status: { type: string, enum: [PENDING_UPLOAD, READY, FAILED, SUPERSEDED] }
+        sizeBytes: { type: integer, minimum: 0 }
+        mimeType: { type: string, example: application/pdf }
+        sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        objectKey: { type: string, description: Storage key; presigned access only, never public. }
+        ocrStatus: { $ref: "#/components/schemas/ProofreadStatus" }
+        proofreadStatus: { $ref: "#/components/schemas/ProofreadStatus" }
+        proofreadFindingCount: { type: integer, minimum: 0, nullable: true }
+        uploadedAt: { type: string, format: date-time, nullable: true }
+      additionalProperties: false
+
+    DocumentCreateRequest:
+      type: object
+      required: [category, filename, sizeBytes, mimeType, sha256]
+      properties:
+        category: { $ref: "#/components/schemas/DocumentCategory" }
+        filename: { type: string, minLength: 1, maxLength: 255 }
+        sizeBytes: { type: integer, minimum: 1, maximum: 26214400, description: 25 MB hard limit. }
+        mimeType: { type: string, enum: [application/pdf, image/png, image/jpeg, image/webp, application/zip] }
+        sha256: { type: string, pattern: "^[0-9a-f]{64}$", description: Verified server-side after upload. }
+        contactId: { type: string }
+        trademarkId: { type: string }
+        applicationId: { type: string }
+      additionalProperties: false
+
+    DocumentUploadTicket:
+      type: object
+      required: [documentId, uploadUrl, expiresAt, method, headers]
+      properties:
+        documentId: { type: string }
+        uploadUrl: { type: string, format: uri, description: Single-use presigned PUT. }
+        method: { type: string, enum: [PUT] }
+        headers:
+          type: object
+          description: Headers that must be replayed exactly, including `Content-Length` and `Content-Type`.
+          additionalProperties: { type: string }
+        expiresAt: { type: string, format: date-time }
+        maxSizeBytes: { type: integer, const: 26214400 }
+      additionalProperties: false
+
+    DocumentCompleteRequest:
+      type: object
+      required: [sha256]
+      properties:
+        sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+      additionalProperties: false
+
+    ProofreadFinding:
+      type: object
+      required: [id, severity, excerpt, suggestion]
+      properties:
+        id: { type: string }
+        severity: { type: string, enum: [INFO, LOW, MEDIUM, HIGH] }
+        rule: { type: string, example: "TYPO_OCR" }
+        page: { type: integer, minimum: 1, nullable: true }
+        excerpt: { type: string }
+        suggestion: { type: string, nullable: true }
+        offsetStart: { type: integer, minimum: 0, nullable: true }
+        offsetEnd: { type: integer, minimum: 0, nullable: true }
+      additionalProperties: false
+
+    ProofreadResult:
+      type: object
+      required: [documentId, version, status, findings]
+      properties:
+        documentId: { type: string }
+        version: { type: integer, minimum: 1 }
+        status: { $ref: "#/components/schemas/ProofreadStatus" }
+        correctedText: { type: string, nullable: true }
+        findings:
+          type: array
+          items: { $ref: "#/components/schemas/ProofreadFinding" }
+        completedAt: { type: string, format: date-time, nullable: true }
+      additionalProperties: false
+
+    ProofreadUpdateRequest:
+      type: object
+      required: [baseVersion, decisions]
+      properties:
+        baseVersion: { type: integer, minimum: 1, description: If-Match equivalent for document versions. }
+        decisions:
+          type: array
+          items:
+            type: object
+            required: [findingId, action]
+            properties:
+              findingId: { type: string }
+              action: { type: string, enum: [ACCEPT, DISMISS, EDIT] }
+              editedText: { type: string, description: Required when `action=EDIT`. }
+            additionalProperties: false
+      additionalProperties: false
+
+    OrderStatus:
+      type: string
+      enum: [QUOTED, INVOICED, PAYMENT_PENDING, PAID, CANCELLED, REFUNDED, PARTIALLY_REFUNDED]
+
+    PaymentStatus:
+      type: string
+      enum: [CREATED, PENDING, SUCCEEDED, FAILED, CANCELLED, REFUNDED]
+
+    PaymentProvider:
+      type: string
+      enum: [STRIPE, PAYPAL, WECHAT_PAY, ALIPAY, MANUAL]
+
+    ServiceCode:
+      type: string
+      enum:
+        - ASSESSMENT_STANDARD
+        - ASSESSMENT_PRIORITY
+        - FILING_15CLASS
+        - FILING_EXTRA_CLASS
+        - OFFICE_ACTION_RESPONSE
+        - RENEWAL_8YEAR
+        - RENEWAL_10YEAR
+        - OTHER
+
+    Order:
+      type: object
+      required: [id, status, currency, subtotal, total, items, createdAt]
+      properties:
+        id: { type: string }
+        orderNo: { type: string, description: Human-facing reference. }
+        contactId: { type: string }
+        trademarkId: { type: string, nullable: true }
+        salesId: { type: string, nullable: true }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        currency: { type: string, enum: [USD, CNY, HKD] }
+        subtotal: { $ref: "#/components/schemas/Money" }
+        discountTotal: { $ref: "#/components/schemas/Money" }
+        total: { $ref: "#/components/schemas/Money" }
+        displayTotal: { $ref: "#/components/schemas/DisplayMoney" }
+        priceListVersion: { type: string, description: Server-side pricing authority snapshot. }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/OrderItem" }
+        payments:
+          type: array
+          items: { $ref: "#/components/schemas/Payment" }
+        invoiceId: { type: string, nullable: true }
+        expiresAt: { type: string, format: date-time, nullable: true, description: Quote expiry. }
+        version: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      additionalProperties: false
+
+    OrderItem:
+      type: object
+      required: [id, serviceCode, quantity, unitPrice, amount]
+      properties:
+        id: { type: string }
+        serviceCode: { $ref: "#/components/schemas/ServiceCode" }
+        description: { type: string, nullable: true }
+        niceClass: { $ref: "#/components/schemas/NiceClass" }
+        quantity: { type: integer, minimum: 1 }
+        unitPrice: { $ref: "#/components/schemas/Money" }
+        amount: { $ref: "#/components/schemas/Money" }
+        marginBps: { type: integer, description: Staff-only commercial margin in basis points; never exposed to clients. }
+      additionalProperties: false
+
+    OrderCreateRequest:
+      type: object
+      required: [contactId, items]
+      properties:
+        contactId: { type: string }
+        trademarkId: { type: string }
+        currency: { type: string, enum: [USD, CNY, HKD], default: USD }
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [serviceCode, quantity]
+            properties:
+              serviceCode: { $ref: "#/components/schemas/ServiceCode" }
+              quantity: { type: integer, minimum: 1, maximum: 20 }
+              niceClass: { $ref: "#/components/schemas/NiceClass" }
+            additionalProperties: false
+        priceListVersion: { type: string, description: Optional expectation; a mismatch yields `409` for re-pricing. }
+        displayCurrency: { type: string, enum: [CNY, HKD] }
+        notes: { type: string, maxLength: 2000 }
+      additionalProperties: false
+
+    Payment:
+      type: object
+      required: [id, orderId, provider, status, amount, createdAt]
+      properties:
+        id: { type: string }
+        orderId: { type: string }
+        provider: { $ref: "#/components/schemas/PaymentProvider" }
+        providerPaymentId: { type: string, nullable: true }
+        status: { $ref: "#/components/schemas/PaymentStatus" }
+        amount: { $ref: "#/components/schemas/Money" }
+        method: { type: string, nullable: true, description: Tokenised instrument label, never card data. }
+        paidAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+      additionalProperties: false
+
+    PaymentIntent:
+      type: object
+      required: [paymentId, provider, clientSecret, amount]
+      properties:
+        paymentId: { type: string }
+        provider: { $ref: "#/components/schemas/PaymentProvider" }
+        clientSecret: { type: string, description: Provider SDK secret; the browser confirms payment with the provider. }
+        amount: { $ref: "#/components/schemas/Money" }
+        expiresAt: { type: string, format: date-time }
+        availableMethods:
+          type: array
+          description: Methods enabled by configuration and region, for example Stripe cards, Apple Pay, Google Pay.
+          items: { type: string }
+      additionalProperties: false
+
+    InvoiceStatus:
+      type: string
+      enum: [DRAFT, ISSUED, PAID, VOID, REFUNDED]
+
+    Invoice:
+      type: object
+      required: [id, orderId, status, total, issuedAt]
+      properties:
+        id: { type: string }
+        invoiceNo: { type: string }
+        orderId: { type: string }
+        contactId: { type: string }
+        status: { $ref: "#/components/schemas/InvoiceStatus" }
+        total: { $ref: "#/components/schemas/Money" }
+        displayTotal: { $ref: "#/components/schemas/DisplayMoney" }
+        lines:
+          type: array
+          description: Immutable snapshot taken at issue time; later price changes never rewrite history.
+          items: { $ref: "#/components/schemas/OrderItem" }
+        documentId: { type: string, nullable: true, description: Generated PDF. }
+        issuedAt: { type: string, format: date-time }
+        paidAt: { type: string, format: date-time, nullable: true }
+        notes: { type: string, nullable: true }
+      additionalProperties: false
+
+    RefundStatus:
+      type: string
+      enum: [PENDING, SUCCEEDED, FAILED, REVERSED]
+
+    Refund:
+      type: object
+      required: [id, orderId, amount, status, createdAt]
+      properties:
+        id: { type: string }
+        orderId: { type: string }
+        paymentId: { type: string, nullable: true }
+        amount: { $ref: "#/components/schemas/Money" }
+        reason: { type: string, maxLength: 500 }
+        approvedByStaffId: { type: string, nullable: true, description: Required above the approval threshold. }
+        status: { $ref: "#/components/schemas/RefundStatus" }
+        providerRefundId: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+      additionalProperties: false
+
+    RefundRequest:
+      type: object
+      required: [amount, reason]
+      properties:
+        amount: { $ref: "#/components/schemas/Money" }
+        reason: { type: string, minLength: 4, maxLength: 500 }
+        approvedByStaffId: { type: string, description: Second approver for threshold refunds. }
+      additionalProperties: false
+
+    NotificationKind:
+      type: string
+      enum: [SECURITY, DEADLINE, PAYMENT, FILING, ASSIGNMENT, SYSTEM, MARKETING]
+
+    Notification:
+      type: object
+      required: [id, kind, title, createdAt]
+      properties:
+        id: { type: string }
+        kind: { $ref: "#/components/schemas/NotificationKind" }
+        title: { type: string }
+        body: { type: string, nullable: true }
+        link: { type: string, nullable: true }
+        entityType: { type: string, nullable: true }
+        entityId: { type: string, nullable: true }
+        readAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+      additionalProperties: false
+
+    NotificationPreferences:
+      type: object
+      required: [channels, quietHours]
+      properties:
+        channels:
+          type: object
+          description: Per-kind enablement. `SECURITY` and `DEADLINE` are always `true` and immutable.
+          additionalProperties: { type: boolean }
+        quietHours:
+          type: object
+          required: [enabled]
+          properties:
+            enabled: { type: boolean }
+            startLocal: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+            endLocal: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+            timezone: { type: string, default: Asia/Hong_Kong }
+          additionalProperties: false
+      additionalProperties: false
+
+    PipelineStage:
+      type: object
+      required: [stage, count]
+      properties:
+        stage: { $ref: "#/components/schemas/LeadStage" }
+        count: { type: integer, minimum: 0 }
+        value: { $ref: "#/components/schemas/Money" }
+        weightedValue: { $ref: "#/components/schemas/Money" }
+        stalledCount: { type: integer, minimum: 0, description: Leads idle beyond the stage target. }
+      additionalProperties: false
+
+    PipelineSummary:
+      type: object
+      required: [stages, generatedAt]
+      properties:
+        stages:
+          type: array
+          items: { $ref: "#/components/schemas/PipelineStage" }
+        totalOpenLeads: { type: integer, minimum: 0 }
+        unassignedLeads: { type: integer, minimum: 0 }
+        generatedAt: { type: string, format: date-time }
+      additionalProperties: false
+
+    FunnelMetricPoint:
+      type: object
+      required: [date, leads, contacts, assessments, filings, paidOrders]
+      properties:
+        date: { type: string, format: date }
+        leads: { type: integer, minimum: 0 }
+        contacts: { type: integer, minimum: 0 }
+        assessments: { type: integer, minimum: 0 }
+        filings: { type: integer, minimum: 0 }
+        paidOrders: { type: integer, minimum: 0 }
+      additionalProperties: false
+
+    FunnelMetrics:
+      type: object
+      required: [series, rates, generatedAt]
+      properties:
+        series:
+          type: array
+          items: { $ref: "#/components/schemas/FunnelMetricPoint" }
+        rates:
+          type: object
+          required:
+            - leadToContactRate
+            - contactToAssessmentRate
+            - contactToFilingRate
+            - orderPaidRate
+            - botDeflectionRate
+            - meanFirstReplyMinutes
+            - p95AssignmentMinutes
+          properties:
+            leadToContactRate: { type: number, minimum: 0, maximum: 1 }
+            contactToAssessmentRate: { type: number, minimum: 0, maximum: 1 }
+            contactToFilingRate: { type: number, minimum: 0, maximum: 1 }
+            orderPaidRate: { type: number, minimum: 0, maximum: 1 }
+            botDeflectionRate: { type: number, minimum: 0, maximum: 1 }
+            meanFirstReplyMinutes: { type: number, minimum: 0 }
+            p95AssignmentMinutes:
+              type: number
+              minimum: 0
+              description: D-07 target is at or below 5.
+          additionalProperties: false
+        generatedAt: { type: string, format: date-time }
+      additionalProperties: false
+
+    BudgetRow:
+      type: object
+      required: [id, channel, periodStart, periodEnd, budget, spent]
+      properties:
+        id: { type: string }
+        channel: { type: string, enum: [WECHAT, REDBOOK, GOOGLE, META, TIKTOK, PARTNER, OTHER] }
+        campaign: { type: string, nullable: true }
+        periodStart: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+        budget: { $ref: "#/components/schemas/Money" }
+        spent: { $ref: "#/components/schemas/Money" }
+        leadsAttributed: { type: integer, minimum: 0, nullable: true }
+        updatedAt: { type: string, format: date-time }
+      additionalProperties: false
+
+    BudgetRowCreateRequest:
+      type: object
+      required: [channel, periodStart, periodEnd, budget, spent]
+      properties:
+        channel: { type: string, enum: [WECHAT, REDBOOK, GOOGLE, META, TIKTOK, PARTNER, OTHER] }
+        campaign: { type: string, maxLength: 200 }
+        periodStart: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+        budget: { $ref: "#/components/schemas/Money" }
+        spent: { $ref: "#/components/schemas/Money" }
+        leadsAttributed: { type: integer, minimum: 0 }
+      additionalProperties: false
+
+    AuditEntry:
+      type: object
+      required: [id, action, actorId, entityType, entityId, at]
+      properties:
+        id: { type: string }
+        action: { type: string, example: VAULT_SECRET_REVEALED }
+        actorId: { type: string }
+        actorRole: { $ref: "#/components/schemas/Role" }
+        entityType: { type: string, example: StaffUser }
+        entityId: { type: string }
+        metadata:
+          type: object
+          description: Redacted context; PII values and secrets are never stored (01-system-design section 11).
+          additionalProperties: true
+        ipHash: { type: string, nullable: true, description: Salted hash, never a raw IP. }
+        at: { type: string, format: date-time }
+      additionalProperties: false
+
+    QueueName:
+      type: string
+      enum:
+        - assessment
+        - document-ocr
+        - proofread
+        - invoice-pdf
+        - notification
+        - wecom-sync
+        - tm-ingest
+        - tm-search-index
+        - reconciliation
+        - maintenance
+
+    JobState:
+      type: string
+      enum: [QUEUED, RUNNING, SUCCEEDED, FAILED, DEAD_LETTERED, REPLAYED]
+
+    Job:
+      type: object
+      required: [id, queue, name, state, attempts, createdAt]
+      properties:
+        id: { type: string }
+        queue: { $ref: "#/components/schemas/QueueName" }
+        name: { type: string }
+        state: { $ref: "#/components/schemas/JobState" }
+        attempts: { type: integer, minimum: 0 }
+        maxAttempts: { type: integer, minimum: 1 }
+        idempotencyKey: { type: string, nullable: true }
+        lastErrorCode: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      additionalProperties: false
+
+    JobAccepted:
+      type: object
+      required: [jobId, status]
+      properties:
+        jobId: { type: string }
+        status: { type: string, enum: [QUEUED] }
+        queue: { $ref: "#/components/schemas/QueueName" }
+      additionalProperties: false
+
+    AnalyticsEvent:
+      type: object
+      required: [name, at]
+      properties:
+        name:
+          type: string
+          description: Closed taxonomy; unknown names are rejected with `400`.
+          enum:
+            - page_view
+            - assessment_requested
+            - assessment_viewed
+            - checkout_started
+            - payment_succeeded
+            - filing_recorded
+            - conversation_opened
+            - conversation_deflected
+        at: { type: string, format: date-time }
+        entityType: { type: string, nullable: true }
+        entityId: { type: string, nullable: true }
+        properties:
+          type: object
+          additionalProperties: { type: ["string", "number", "boolean", "null"] }
+      additionalProperties: false
+
+    AnalyticsBatch:
+      type: object
+      required: [events]
+      properties:
+        sessionId: { type: string, nullable: true }
+        events:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: "#/components/schemas/AnalyticsEvent" }
+      additionalProperties: false
