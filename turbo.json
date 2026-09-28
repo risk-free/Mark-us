@@ -3,18 +3,22 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "dist/**"]
+      "outputs": [".next/**", "dist/**"],
+      "env": ["NEXT_STANDALONE", "NEXT_TELEMETRY_DISABLED"]
     },
     "dev": {
       "cache": false,
       "persistent": true
     },
-    "lint": {},
     "typecheck": {
       "dependsOn": ["^build"]
     },
     "test": {
       "dependsOn": ["^build"]
+    },
+    "@markus/db#build": {
+      "dependsOn": ["^build"],
+      "outputs": []
     }
   }
 }

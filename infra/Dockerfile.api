@@ -1,24 +1,30 @@
 # syntax=docker/dockerfile:1
+
 FROM node:20-alpine AS base
 RUN corepack enable
-
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml turbo.json tsconfig.base.json ./
-COPY apps/api/package.json apps/api/
-COPY packages/core/package.json packages/core/
-RUN pnpm install --filter @markus/api... || pnpm install --filter @markus/api...
+FROM base AS deps
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.json ./
+COPY apps ./apps
+COPY packages ./packages
+COPY workers ./workers
+RUN pnpm install --frozen-lockfile
 
-COPY tsconfig.base.json ./
-COPY apps/api apps/api
-COPY packages/core packages/core
+FROM deps AS build
+RUN pnpm db:generate \
+ && pnpm --filter @markus/config build \
+ && pnpm --filter @markus/core build \
+ && pnpm --filter @markus/api build
 
-RUN pnpm --filter @markus/api build
-
-FROM node:20-alpine
+FROM node:20-alpine AS runtime
 RUN corepack enable
 WORKDIR /app
-ENV NODE_ENV=production
-COPY --from=base /app /app
+ENV NODE_ENV=production \
+    PORT=3001
+COPY --from=build --chown=node:node /app /app
+USER node
 EXPOSE 3001
+HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 \
+  CMD wget -q -O /dev/null http://127.0.0.1:3001/health || exit 1
 CMD ["node", "apps/api/dist/index.js"]

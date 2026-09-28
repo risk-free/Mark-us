@@ -1,2 +1,10 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Shell scripts and Dockerfiles must stay LF: bash on the staging host
+# fails on CRLF ("/usr/bin/env: 'bash\r': No such file or directory").
+*.sh text eol=lf
+Dockerfile.* text eol=lf
+*.yml text eol=lf
+*.mjs text eol=lf
+*.cjs text eol=lf

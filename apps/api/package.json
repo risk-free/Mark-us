@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
+    "@markus/config": "workspace:*",
+    "dotenv": "^16.4.7",
     "hono": "^4.6.16"
   },
   "devDependencies": {

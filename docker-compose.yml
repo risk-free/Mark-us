@@ -1,3 +1,5 @@
+name: MarkUS local
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -7,7 +9,7 @@ services:
       POSTGRES_PASSWORD: markus
       POSTGRES_DB: markus
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -20,12 +22,77 @@ services:
     image: redis:7-alpine
     container_name: markus-redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
+
+  migrate:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.api
+    command: ["pnpm", "db:deploy"]
+    environment: &local-app-env
+      NODE_ENV: development
+      DATABASE_URL: postgresql://markus:markus@postgres:5432/markus
+      REDIS_URL: redis://redis:6379
+      PUBLIC_BASE_URL: http://localhost:3000
+      API_BASE_URL: http://localhost:3001
+      SESSION_SECRET: ${SESSION_SECRET:-insecure-local-development-secret-000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.api
+    environment:
+      <<: *local-app-env
+      PORT: "3001"
+    ports:
+      - "3001:3001"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.web
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.worker
+    environment:
+      <<: *local-app-env
+      RUN_WORKER: "1"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   pgdata:
