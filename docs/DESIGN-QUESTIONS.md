@@ -33,28 +33,28 @@ This document is the **single, living register of open product/design questions*
 
 | ID | Question | Severity | Blocks | Status |
 |---|---|---|---|---|
-| DQ-001 | Anonymous assessment vs. mandatory `Trademark.contactId` | High | P0.1, P5.6 | AWAITING ANSWER |
-| DQ-002 | Expert read scope: assigned cases only vs. all | High | P2.1, P7.1, P8.1 | AWAITING ANSWER |
+| DQ-001 | Anonymous assessment vs. mandatory `Trademark.contactId` | High | P0.1, P5.6 | ANSWERED — R-001 |
+| DQ-002 | Expert read scope: assigned cases only vs. all | High | P2.1, P7.1, P8.1 | ANSWERED — R-002 |
 | DQ-003 | `PipelineStage` / `SalesMetrics`: modelled or derived | Medium | P7.3, P7.6 | AWAITING ANSWER |
 | DQ-004 | Lint standard & CI parity (`turbo run lint` covers only web) | Low | P0.2, P0.3 | ANSWERED — CLEARED |
-| DQ-005 | Magic-link scope model, TTL, delivery channel | High | P2.1, P4.2 | AWAITING ANSWER |
+| DQ-005 | Magic-link scope model, TTL, delivery channel | High | P2.1, P4.2 | ANSWERED — R-005 |
 | DQ-006 | Contact identity: dedup / merge policy across channels | Medium | P3.3, P7.1 | AWAITING ANSWER |
-| DQ-007 | Invoice currency, FX source and FX lock moment | High | P4.1, P4.3 | AWAITING ANSWER |
-| DQ-008 | Order shape for multi-class filings & fee line items | High | P0.1, P4.1 | AWAITING ANSWER |
+| DQ-007 | Invoice currency, FX source and FX lock moment | High | P4.1, P4.3 | ANSWERED — R-007 |
+| DQ-008 | Order shape for multi-class filings & fee line items | High | P0.1, P4.1 | ANSWERED — R-008 |
 | DQ-009 | Refund authority & per-line-item refundability | Medium | P4.2, P4.3 | AWAITING ANSWER |
-| DQ-010 | What the assessment surface shows before M5 | High | P1, P2, P5 | AWAITING ANSWER |
-| DQ-011 | Feature-flag mechanism & who may flip in prod | Medium | P0.3 | AWAITING ANSWER |
-| DQ-012 | Retention schedule & PIPL erasure workflow | High | P2, P3, P8.1 | AWAITING ANSWER |
-| DQ-013 | Staff auth method for Phase 1 (password vs. staff magic link) | Medium | P2.1 | AWAITING ANSWER |
-| DQ-014 | 会话存档 consent capture & non-consented staff | High | P3.4, M3 | AWAITING ANSWER |
-| DQ-015 | Round-robin definition: timezone, holidays, no-staff fallback | Medium | P3.5, M3 | AWAITING ANSWER |
-| DQ-016 | Anonymous assessment endpoint: abuse & scraping controls | Medium | P5.6 | AWAITING ANSWER |
-| DQ-017 | Notification delivery: no transactional-email provider chosen | Medium | P2.5, P3.1 | AWAITING ANSWER |
-| DQ-018 | Staging target & IaC: managed cloud vs. Docker-on-VM | High | P0.3, M0 | AWAITING ANSWER |
-| DQ-019 | Money precision: `Decimal(12,2)` (ARCH-02 §1) vs `Decimal(14,2)` (M3.3) | High | P4, M3.3 | AWAITING ANSWER |
-| DQ-020 | `AuditLog` partitioning conflicts with Prisma's single-field `@id` | High | P7, M11.3 | AWAITING ANSWER |
-| DQ-021 | M3.2 names `TrademarkAssessmentFactors`; ARCH-02 §5.1 does not model it | Medium | P6, M6.1 | AWAITING ANSWER |
-| DQ-022 | Repository had no baseline migration — `0P3__*` is a full baseline | High | P0.3, M3.2 | AWAITING ANSWER |
+| DQ-010 | What the assessment surface shows before M5 | High | P1, P2, P5 | ANSWERED — R-010 |
+| DQ-011 | Feature-flag mechanism & who may flip in prod | Medium | P0.3 | ANSWERED — R-011 |
+| DQ-012 | Retention schedule & PIPL erasure workflow | High | P2, P3, P8.1 | OPEN — business (OPEN-09) |
+| DQ-013 | Staff auth method for Phase 1 (password vs. staff magic link) | Medium | P2.1 | ANSWERED — R-013 |
+| DQ-014 | 会话存档 consent capture & non-consented staff | High | P3.4, M3 | ANSWERED — R-014 |
+| DQ-015 | Round-robin definition: timezone, holidays, no-staff fallback | Medium | P3.5, M3 | ANSWERED — R-015 |
+| DQ-016 | Anonymous assessment endpoint: abuse & scraping controls | Medium | P5.6 | ANSWERED — R-016 |
+| DQ-017 | Notification delivery: no transactional-email provider chosen | Medium | P2.5, P3.1 | OPEN — business (vendor choice) |
+| DQ-018 | Staging target & IaC: managed cloud vs. Docker-on-VM | High | P0.3, M0 | ANSWERED — R-018 (region pending) |
+| DQ-019 | Money precision: `Decimal(12,2)` (ARCH-02 §1) vs `Decimal(14,2)` (M3.3) | High | P4, M3.3 | ANSWERED — R-019 |
+| DQ-020 | `AuditLog` partitioning conflicts with Prisma's single-field `@id` | High | P7, M11.3 | ANSWERED — R-020 |
+| DQ-021 | M3.2 names `TrademarkAssessmentFactors`; ARCH-02 §5.1 does not model it | Medium | P6, M6.1 | ANSWERED — R-021 |
+| DQ-022 | Repository had no baseline migration — `0P3__*` is a full baseline | High | P0.3, M3.2 | ANSWERED — R-022 |
 
 ---
 
@@ -68,10 +68,10 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-27 16:57 CST |
 | Severity | **High** — cheap to fix today, expensive after the baseline migration |
 | Blocks | P0.1 data-model sign-off (an M0 criterion), P5.6 public surface |
-| Status | AWAITING ANSWER |
+| Status | **ANSWERED** — see §5, R-001 |
 | Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Answered by | **Architect** |
+| Answered at | 2026-09-29 — see §5, R-001 |
 
 **Issue.** PRD §4.1 step 2 requires the assessment step to be usable *"anonymous allowed"*, but `packages/db/prisma/schema.prisma:341` makes `Trademark.contactId` mandatory, and every downstream read path (orders, documents, conversations) assumes a `Contact` owner. There is no model for an anonymous candidate mark, and no defined lifecycle for it (retention, conversion, consent basis for storing a submitted mark + any PII).
 
@@ -94,10 +94,10 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-27 16:57 CST |
 | Severity | **High** |
 | Blocks | P2.1 auth matrix, P7.1 staff management, P8.1 security review |
-| Status | AWAITING ANSWER |
+| Status | **ANSWERED** — see §5, R-002 |
 | Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Answered by | **Architect** |
+| Answered at | 2026-09-29 — see §5, R-002 |
 
 **Issue.** `packages/core/src/rbac.ts:36-42` grants `EXPERT` both `contact.read.all` and `lead.read.all`. PRD §2 limits an Expert to *"manage assigned cases"*, while ARCHITECTURE §3.2 says *"expert sees assigned/all cases per policy"* — the policy is undefined, so the code currently encodes a broader scope than the PRD states.
 
@@ -169,10 +169,10 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-27 16:57 CST |
 | Severity | **High** |
 | Blocks | P2.1 (auth core), P4.2 (pay from portal) |
-| Status | AWAITING ANSWER |
+| Status | **ANSWERED** — see §5, R-005 |
 | Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Answered by | **Architect** |
+| Answered at | 2026-09-29 — see §5, R-005 |
 
 **Issue.** ARCHITECTURE §3.1 specifies a *"single-use, hashed at rest, 15-min TTL, bound to `contact_id` + scope"* token, and §4.3 delivery "via WeCom message or email". Undefined: (a) what scopes exist; (b) whether email is a real channel, given `Contact.email` is optional; (c) which roles may issue a link; (d) how many tokens may be live per contact, and re-issue UX; (e) whether a 15-minute TTL is compatible with *paying an invoice days after receiving a link* (PRD §3.5, §4.1 step 8).
 
@@ -216,10 +216,10 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-27 16:57 CST |
 | Severity | **High** |
 | Blocks | P4.1 invoice model, P4.3 FX display & reconciliation |
-| Status | AWAITING ANSWER |
+| Status | **ANSWERED** — see §5, R-007 |
 | Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Answered by | **Architect** |
+| Answered at | 2026-09-29 — see §5, R-007 |
 
 **Issue.** D-05 sets USD base pricing with live CNY *display* conversion, CNY being presentment-only, settlement in HKD/USD. Undefined: (a) which currency the invoice is issued and charged in; (b) the FX rate source and who operates it; (c) when the rate is locked; (d) the FX basis for refunds; (e) whether mainland Alipay / WeChat Pay presentment will be USD (client charged in USD) or CNY.
 
@@ -239,10 +239,10 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-27 16:57 CST |
 | Severity | **High** — affects the P0.1 schema before the baseline migration exists |
 | Blocks | P0.1, P4.1 |
-| Status | AWAITING ANSWER |
+| Status | **ANSWERED** |
 | Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Answered by | **Architect (one line item per mark + Nice class)** |
+| Answered at | 2026-09-29 — see §5, R-008 |
 
 **Issue.** `Order.trademarkId` is singular and `InvoiceLineItem` has no per-class or per-mark dimension. In practice a US application is frequently multi-class: USPTO charges a base filing fee *per class*, and our service fee may be per mark or per class. D-05 requires itemized separation of `SERVICE_FEE` vs `USPTO_FEE`; today the schema cannot express "one order, 3 classes, 3 government fees + 1 service fee" without an ambiguous description string.
 
@@ -286,10 +286,10 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-27 16:57 CST |
 | Severity | **High** |
 | Blocks | P1 (site CTA), P2.6, P5 |
-| Status | AWAITING ANSWER |
+| Status | **ANSWERED** — see §5, R-010 |
 | Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Answered by | **Architect** |
+| Answered at | 2026-09-29 — see §5, R-010 |
 
 **Issue.** PRD §3.6 specifies the probability tool as a live feature, but D-03 states *"Phase 1 keeps manual (attorney) assessment — no model"*, and the M5 gate is where the model is validated. So between M1 (site live) and M5 there is a window with a marketed CTA and no model. Related gap: `Trademark` has `probabilityReviewedAt` but no reviewer and no verdict, so an attorney review of a score is not representable.
 
@@ -312,10 +312,10 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-27 16:57 CST |
 | Severity | **Medium** |
 | Blocks | P0.3 (CI/CD deliverable), and the out-of-order deploy strategy in ARCHITECTURE §8 |
-| Status | AWAITING ANSWER |
+| Status | **ANSWERED** — see §5, R-011 |
 | Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Answered by | **Architect** |
+| Answered at | 2026-09-29 — see §5, R-011 |
 
 **Issue.** ARCHITECTURE §8 says *"feature flags per phase subphase (Unleash-lite or env-based)"* — explicitly undecided. Undefined: the mechanism, the owner of the flag namespace, who may change a flag in production, and whether flipping requires a deploy (git-audited) or is instant.
 
@@ -356,10 +356,10 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-27 16:57 CST |
 | Severity | **Medium** |
 | Blocks | P2.1 |
-| Status | AWAITING ANSWER |
+| Status | **ANSWERED** — see §5, R-013 |
 | Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Answered by | **Architect** |
+| Answered at | 2026-09-29 — see §5, R-013 |
 
 **Issue.** ARCHITECTURE §3.1 says staff authenticate by *"Email+password or magic link"*, but D-06 requires Master-Admin-provisioned accounts, which implies passwords exist. If passwords ship, we need a reset path, a hashing policy and a lockout policy; if staff magic-link only, we need a mail provider (see DQ-017) and a provisioning-time enrolment flow. The staff MFA story also interacts with D-01: our own staff MFA is separate from the attorney's USPTO MFA, and it is not stated whether staff must have MFA on our platform.
 
@@ -377,10 +377,10 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-27 16:57 CST |
 | Severity | **High** (M3 gate depends on it) |
 | Blocks | P3.4, M3 |
-| Status | AWAITING ANSWER |
+| Status | **ANSWERED** — see §5, R-014 |
 | Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Answered by | **Architect** |
+| Answered at | 2026-09-29 — see §5, R-014 |
 
 **Issue.** 会话存档 requires member-side (staff) consent configured in the WeCom admin console and a dual-side notice to contacts (PRD §3.3.3, §6.2, ARCHITECTURE §4.2). Undefined: (a) do we mirror staff consent into our own `ConsentRecord` rows or trust WeCom as the system of record; (b) is WeCom's built-in notice sufficient, or must our channel/script render its own (and who owns that copy — Business/Legal); (c) **what happens when a staff member has not enabled archiving** — their chats are simply absent from our DB, which silently corrupts response-time/SLA metrics and the M3 measurement; (d) retention of archived message bodies.
 
@@ -400,10 +400,10 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-27 16:57 CST |
 | Severity | **Medium** |
 | Blocks | P3.5, M3 (SLA measurement) |
-| Status | AWAITING ANSWER |
+| Status | **ANSWERED** — see §5, R-015 |
 | Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Answered by | **Architect** |
+| Answered at | 2026-09-29 — see §5, R-015 |
 
 **Issue.** ARCHITECTURE §4.1 specifies *"round-robin picker (least-recently-assigned, business hours)"* and PRD §1.3 measures *"new contact → tagged + assigned ≤5 min (median, business hours)"*. Undefined: business hours in which timezone (HKT default, but sales staff are in mainland China), which holiday calendar, what happens when every salesperson is disabled/on leave (fall back to Master Admin, or hold in an unassigned queue?), and when the 5-minute clock starts (first inbound message, or after AI qualification finishes?).
 
@@ -423,10 +423,10 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-27 16:57 CST |
 | Severity | **Medium** |
 | Blocks | P5.6 |
-| Status | AWAITING ANSWER |
+| Status | **ANSWERED** — see §5, R-016 |
 | Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Answered by | **Architect** |
+| Answered at | 2026-09-29 — see §5, R-016 |
 
 **Issue.** P5.6 plans a *public* assessment API, anonymous by design (DQ-001). Unstated: rate limits, bot mitigation, and whether the endpoint may be used to enumerate our USPTO-derived index (which would be a redistribution of USPTO data under our own terms). The 24h result cache (PRD §3.6.8) also bounds cost only for *repeat identical* queries; a scraper varying goods/services strings defeats it.
 
@@ -467,10 +467,10 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-27 18:05 CST |
 | Severity | **High** |
 | Blocks | P0.3 completion, M0 ("pipeline deploys green to staging") |
-| Status | AWAITING ANSWER |
+| Status | **ANSWERED** — see §5, R-018 |
 | Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Answered by | **Architect** |
+| Answered at | 2026-09-29 — see §5, R-018 |
 
 **Issue.** P0.3 requires a pipeline that "deploys green to staging", and ARCHITECTURE §7.5 promises "infrastructure as code" with HK-region API/workers/DB — but no cloud provider, no account and no IaC tool is named anywhere, and no `infra/` Terraform/Pulumi exists. Something had to be built to make the pipeline real, so a baseline was implemented and is now in review: three Dockerfiles, `docker compose` for local full-stack, `infra/compose.staging.yml` pulling SHA-tagged images from GHCR, host-side `deploy.sh` / `rollback.sh` / `healthcheck.sh`, and `.github/workflows/deploy-staging.yml` (GitHub environment `staging` as the manual gate). The open part is what it deploys *onto*.
 
@@ -493,10 +493,10 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-29 01:03 CST |
 | Severity | **High** |
 | Blocks | P4, M3.3 (BLOCKER) |
-| Status | AWAITING ANSWER |
+| Status | **ANSWERED** |
 | Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Answered by | **Architect (option A)** |
+| Answered at | 2026-09-29 — see §5, R-019 |
 
 **Issue.** Two binding documents disagree inside the same architecture package. `ARCH-02` §1 says money is *"Stored `Decimal(12,2)` + explicit `currency CHAR(3)`"*, and the P0 v1 schema already uses `@db.Decimal(12,2)`. Mandate **M3.3** says *"Amounts are stored as `Decimal(14, 2)` in the database"*. Maximum value at 12,2 is 9 999 999 999.99 — enough for this business, but the mandate's stated intent is headroom.
 
@@ -516,10 +516,10 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-29 01:03 CST |
 | Severity | **High** |
 | Blocks | P7 (M11.3 audit volume), `ARCH-02` §6 |
-| Status | AWAITING ANSWER |
+| Status | **ANSWERED** |
 | Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Answered by | **Architect (option B — unpartitioned + R2 archive)** |
+| Answered at | 2026-09-29 — see §5, R-020; ADR D-16 |
 
 **Issue.** `ARCH-02` §6 requires monthly RANGE partitioning of `AuditLog` on `createdAt`. Postgres requires the partition key to be part of every unique constraint on a partitioned table, so a partitioned `AuditLog` needs `PRIMARY KEY (id, createdAt)`. Prisma models single-field `@id` only — a composite primary key would make `AuditLog` unaddressable through the generated client and would violate `ARCH-02` §7.1 ("Prisma is the only schema authority"). The two requirements cannot both hold as written.
 
@@ -541,10 +541,10 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-29 01:03 CST |
 | Severity | **Medium** |
 | Blocks | P6 (M6.1 reproducibility) |
-| Status | AWAITING ANSWER |
+| Status | **ANSWERED** |
 | Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Answered by | **Architect (option A — the JSON columns are the factors)** |
+| Answered at | 2026-09-29 — see §5, R-021 |
 
 **Issue.** Mandate M3.2 lists `TrademarkAssessmentFactors` among the models the P0.3 backlog must deliver. `ARCH-02` §5.1 — the section that calls itself the binding acceptance specification — does not define it; instead `TrademarkAssessment` carries `subSignals Json` and `featureSnapshot Json`. Per the `ARCH-01` §15 rule ("ambiguity is a defect: the Developer halts and raises a question"), this is escalated rather than resolved unilaterally.
 
@@ -562,10 +562,10 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-29 01:03 CST |
 | Severity | **High** — it changes what the migration *is* |
 | Blocks | M3.2 sign-off |
-| Status | AWAITING ANSWER |
+| Status | **ANSWERED** |
 | Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Answered by | **Architect (option A — the baseline is accepted)** |
+| Answered at | 2026-09-29 — see §5, R-022; ADR D-17 |
 
 **Issue.** `ARCH-02` §5 describes the P0.3 deliverable as a migration that *"adds"* models and columns — the language of a delta — and §5.4 provides `ALTER COLUMN … TYPE timestamptz(3)` statements that only make sense against pre-existing tables. In fact `packages/db/prisma/` contained **only** `schema.prisma`: no `migrations/` directory, no applied history, so there is nothing to be a delta against. The P0 v1 schema had never been materialised in a database.
 
@@ -594,6 +594,7 @@ This document is the **single, living register of open product/design questions*
 | FA-007 | DQ-005, DQ-013 | `SESSION_SECRET`: shipped placeholders are now rejected outside development, but a *low-entropy* 32-character string still passes. Decide the rule (base64 ≥32 bytes vs. passphrase policy) with the auth design | Developer → Architect | P2.1 | OPEN |
 | FA-008 | — | Dependency floors resolve to versions with published advisories; `pnpm audit --audit-level=high` is now a CI gate, so the next run is the work list | Developer | before M0 | OPEN |
 | FA-009 | DQ-018 | Confirm the HK region's Node runtime and base image (Node 20 reaches EOL during the project; plan the 22+ upgrade) | Architect | P8.1 | OPEN |
+| FA-010 | — | Commit `schema.prisma`, `migration_lock.toml`, `ci.yml`, `packages/db/package.json` and `pnpm-lock.yaml` **together with** `migrations/0P3__p0_3_backlog/` — `85c7851` landed the generated migration without its source, so a clone at HEAD cannot reproduce the baseline and `pnpm db:drift` fails as soon as that script ships | Developer | before M3.2 sign-off | OPEN |
 
 *New actions are appended here when an answer creates follow-up work (schema change, doc update, migration note).*
 
@@ -606,3 +607,247 @@ This document is the **single, living register of open product/design questions*
 | 2026-09-27 16:57 | Created. Seeded DQ-001…DQ-004 from the P0 scaffold review; DQ-005…DQ-017 added from the same pass over PRD v2.0 / ARCHITECTURE / SCHEDULE. All `AWAITING ANSWER`. | Developer (full-stack) |
 | 2026-09-27 18:05 | DQ-004 answered (option A) and implemented as part of P0.2/P0.3 hardening. DQ-018 raised for the staging target / IaC decision. Follow-up actions FA-001…FA-006 opened. | Developer (full-stack) |
 | 2026-09-29 01:03 | Reviewed the architecture of record (`docs/architecture/*`) and implemented mandates M1.1, M1.6, M2.1, M3.1, M3.2. Raised DQ-019 (money precision), DQ-020 (audit partitioning), DQ-021 (assessment factors), DQ-022 (no baseline migration existed). FA-001 answered: DQ-001/DQ-008 are **not** blocking the schema, because the P0.3 backlog is orthogonal to both; they still block the P1 handlers that use them. | Developer (full-stack) |
+| 2026-09-29 (Architect) | Rulings R-001…R-022 issued in §5. DQ-019/020/021/022 and DQ-001/002/005/007/008/010/011/013/014/015/016/018 answered; DQ-012 and DQ-017 narrowed to business decisions; DQ-003/006/009 untouched. ADRs D-16, D-17, D-18 opened. M3.2, M3.3 and M11.4 corrected; `ARCH-02` §4.1/§5/§5.4/§6/§8 amended. FA-010 opened (split P0.3 commit). | Architect |
+
+---
+
+## 5. Architect rulings (2026-09-29)
+
+Each ruling below is binding. A deviation requires an ADR `D-16+` in `docs/DECISIONS.md`
+**and** a document update in the same change (change-control rule, `docs/architecture/README.md`).
+Where a ruling contradicts a shipped behaviour, the code changes, not the ruling.
+
+### 5.1 The four P0.3 decisions
+
+**R-019 — Money precision: `Decimal(12,2)` stands. Option A.**
+`ARCH-02` §1 is the storage-type authority for the data model; M3.3's `Decimal(14,2)` is a
+defect in the mandate and has been corrected in this pass. Money is computed in **integer
+minor units** inside the service and quantised to the currency's minor unit (2 decimals for
+USD/CNY/HKD) with half-even rounding at each line.
+**Sub-cent precision is prohibited** — `USPTO fees are whole dollars`, a percentage discount is
+converted to an absolute minor-unit amount at order creation and never recomputed, and a
+payment rail cannot settle sub-cent anyway: an invoice that cannot be settled is not a record.
+So option C `(14,4)` is **rejected**, not deferred. Widening `numeric(12,2)` to `numeric(14,2)`
+remains a metadata-only online `ALTER` if the business ever outgrows 9 999 999 999.99
+(≈10¹⁰), so nothing is lost by staying at 12,2. **Done:** M3.3 corrected.
+
+**R-020 — Option B: no partitioning. BRIN + bounded hot window + R2 archive. ADR D-16.**
+1. Partitioning does not buy what §6 wanted: §6 already sends everything older than 24 months
+   to R2 Parquet, so the audit *export* must read archives under option A **and** option B.
+   The only real difference is how the hot 24 months is bounded — `DROP` a partition, or
+   batch-delete a month.
+2. `AuditLog` is append-only: no update churn, no dead-tuple storm, so the classic bloat
+   failure mode §4.2.5 warns about does not apply. Q15's two access paths are
+   `(actor_id, created_at DESC)` and `(entity_type, entity_id)` (§4.1) — both are served by
+   btree, with BRIN on `createdAt` for time-range scans. Partition pruning was never the
+   load-bearing mechanism for either.
+3. Option A costs more than it saves: a composite `PRIMARY KEY (id, createdAt)` breaks the
+   single-field `@id` convention, forces the compliance-critical write path through
+   `$queryRaw` outside the typed client, and needs hand-rolled DDL outside migrations (§7).
+   Trading §7.1 for pruning on a table of this size is a bad exchange.
+
+The interim posture shipped in the baseline — BRIN on `createdAt`,
+`autovacuum_vacuum_scale_factor = 0.02` / `analyze_scale_factor = 0.01`, and the Q17 partial
+index — is **accepted as the final design**, not a placeholder.
+**Requirements on it:** the monthly archival job runs in `worker` (D-15-compliant), records
+the `createdAt` range, row count and a checksum manifest for the month, verifies the count
+before deleting, deletes in 1 000-row batches (§7.5), and alerts loudly if a month is
+skipped — never silently create-at-insert. Retention: 24 months hot, archive 5 years, matching
+§6's stated intent.
+**Escape hatch:** if Q15 or the delete cost degrades, re-partitioning is a new ADR (`D-19+`),
+not a silent change.
+**Done:** `ARCH-02` §6 (`AuditLog` and `Message` rows, maintenance paragraph), §4.1 Q15, §8 Q15,
+and M11.4 amended.
+
+**R-021 — Option A: the JSON columns *are* the factors. M3.2's model name was wrong.**
+Evidence: (a) §1 permits JSON for write-once, non-queried payloads, which is exactly what a
+replay snapshot is; (b) M6.1's requirement is *reproduction*, which `featureSnapshot` +
+`modelVersion` + `runId` + `disclaimerVersion` already give; (c) M6.5's requirement is
+*calibration*, which `ProbabilityRun.calibrationJson` / `sampleSize` / `auc` / `accuracy` /
+`baselineAccuracy` already carry per `modelVersion`; (d) the contract's `Assessment` schema
+exposes named scores, `riskFlags` and `recommendedNextActions` — no per-feature rows — so a
+`TrademarkAssessmentFactors` table would be a contract-visible addition with no consumer.
+**Conditions:** both columns stay `Json` (= `jsonb`), `v`-keyed per §1, and carry a comment
+that sub-signals are non-probabilistic and are never rendered as a percentage.
+If the P6 calibration spike needs *"which feature drove this misprediction"* answered in SQL,
+raise ADR `D-19+` **before P6 starts** with the concrete query in hand, plus the contract
+change that exposes it — never a table added silently.
+**Done:** M3.2 corrected (model name removed).
+
+**R-022 — Option A: the baseline is accepted. ADR D-17.**
+"Zero drift" is §7.6 — apply the migrations to a fresh database and assert
+`prisma migrate diff` from `schema.prisma` is empty. That test cannot distinguish a baseline
+from a delta, and a baseline satisfies M3.2's verification exactly. Manufacturing
+`0P0__baseline` + a delta would produce a *fake upgrade path* that the next reviewer would read
+as real; §7.2 already allows the honest alternative ("an explicit *irreversible,
+restore-from-backup* note").
+**Consequences, recorded:**
+1. `0P3__p0_3_backlog` is a **baseline**: deploy path is `migrate deploy` against an empty
+   database; it must never be applied to a populated one; reversal is
+   restore-from-backup. Documented in `docs/runbooks/db-migrations.md` §3.
+   The migration is *generated* from `schema.prisma` + fragments (its own header), so
+   `schema.prisma` stays the authority and the SQL stays a build artifact — no hand-editing.
+2. §5.4's `ALTER COLUMN … TYPE timestamptz(3)` statements are **void** — every instant is
+   `timestamptz(3)` from creation, so the 8-hour-of-silence hazard §5.4 was written to prevent
+   never opens. The §5.4 *acceptance test* still runs as a test.
+3. The next migration is a genuine delta against this baseline and must be named per §7.2.
+
+### 5.2 The nine P1/P2 blockers
+
+**R-001 — No schema change: anonymous results are never rows.**
+Your option C is right, but not as a new entity. The contract already decides it:
+`TrademarkCreateRequest` **requires** `contactId`, and M8.1's public response is a screening
+result — 24-hour cache keyed by normalised mark text + class, no account, no `trademarkId`.
+So the funnel stays `site_view → contact_created → magic_link_claimed → order_paid` (M8.4):
+a `Trademark` row appears only once a `Contact` exists, and making `contactId` nullable would
+weaken a constraint the funnel never needs. The upside for DQ-012/OPEN-09: **the anonymous
+path persists nothing**, so it needs no PIPL retention basis and no consent record — funnel
+metrics come from the first-party analytics events, not from CRM tables. If P6 ever wants an
+auditable anonymous submission record, that is an ADR + migration before P6, not a nullable FK.
+
+**R-002 — Confirmed: unscoped read-only, exactly as `ARCH-01` §5.4 states.**
+§5.4 is the single source of truth and gives `EXPERT` "All contacts / leads (unscoped):
+read-only". Shipped `contact.read` + `lead.read` matches it. Two conditions: it is read-**only**
+(no write, no bulk export), and every unscoped contact read is a privileged read under G8 /
+M11.3, so it lands in the audit trail and is searchable by Q15. That audit is the compensating
+control for the §1.1 "row-scoping by owner" tension an attorney role creates. The tension is
+accepted and recorded; changing it means an ADR, not a code change.
+
+**R-005 — Email, 15 minutes, single use, scope `portal`; storage moves to Postgres (ADR D-18).**
+- **Channel: email only.** `MagicLinkRequest.required: [email]` is contract-final. WeCom
+  delivery would be a contract change (and can wait for P4+).
+- **TTL: 15 minutes**, not 10 — `ARCH-01` §5.1's credential matrix already says "token 15 min"
+  and §5.2 already says Redis TTL 900 s. The matrix is the authority; `expiresAt` must be
+  `now + 15 min`.
+- **Single use, opaque token, ≥ 20 bytes (contract), stored as `tokenHash` only** — never the
+  raw token, never logged, never echoed in a response; destroyed after 5 wrong attempts
+  (contract and §5.2 agree); rate limits exactly as declared on the operations
+  (5/1h per contact, 20/1h per IP; 10/15min per token); `202` neutral body always.
+- **Storage conflict, resolved:** §5.2 puts the live token in Redis (`ml:<sha256(token)>`), but
+  the shipped `MagicLinkToken` table is the live credential (`tokenHash`, `expiresAt`,
+  `consumedAt`, `attempts`, `requestIp`/`requestUa`). **Postgres wins** — see ADR D-18: it
+  gives atomic single-use (`UPDATE … WHERE consumedAt IS NULL`), a forensic record of issue and
+  redemption, and room for the `pay:<invoiceId>` scope the column comment already anticipates.
+  §5.2 is amended in the same change. Consequence you own: expired/consumed rows need a sweep
+  job in `worker` (there is already an `@@index([expiresAt])` for it).
+- **Scope:** `portal` is the only legal value today. Adding `pay:<invoiceId>` is an
+  authz-surface change → ADR + contract change first.
+
+**R-007 — Currency fixed at order creation; rate snapshotted; rails fail closed.**
+The contract fixes most of it: `OrderCreateRequest.currency ∈ {USD, CNY, HKD}`, default `USD`,
+set once and never re-derived; `Order.displayRateCny` holds the rate snapshot; `Invoice.lines`
+is an immutable snapshot at issue time, so a later price or rate change cannot rewrite an
+issued invoice. Rules: (1) the invoice is denominated in the order currency; (2) display rows
+and the PDF show CNY at `displayRateCny` **with the rate and its `asOf` printed** — no
+mid-flight re-quote; (3) all arithmetic in integer minor units (R-019); (4) a rail that cannot
+present the order currency is **disabled, never re-priced** — `ENABLE_WECHAT_PAY` already
+implements that fail-closed posture for the Alipay/WeChat route.
+The remaining sub-question (can those wallets present USD at all?) is **not** an architecture
+decision: it rides on **OPEN-01**. Until it is answered the route stays flagged off.
+
+**R-008 — One line item per (mark, Nice class).**
+`OrderItem` carries `niceClass`, `quantity ≥ 1`, `unitPrice`, `amount`. So a multi-class filing
+is **n line items**, one per class, `quantity = 1` on each (USPTO fees are per class, not a
+per-unit quantity); a non-class SKU (flat-fee service) omits `niceClass`. `amount` is computed
+in minor units as `unitPrice × quantity`, is the value M3.3's property test reconciles, and is
+what M10.3's refund allocation walks in delivery order. Never a single multi-class line: it
+would make per-class fees, per-class refunds and per-class office-action reasoning
+unrepresentable, which is the whole point of the filing.
+
+**R-010 — No score of any kind is shown before the model gate.**
+D-03 forbids a model in Phase 1; the contract's `Assessment` payload is `x-phase: P6 /
+PENDING-P6`; M8.1's public screening path is P6. So before M5 the surface is mark intake +
+document checklist + "start a conversation" (WeCom/QR) + magic-link claim — **no number, no
+percentage, no "likely to register" copy**. Consent is captured when the `Contact` is created,
+not at assessment. Consequence for handlers: no P1/P2 handler may write a probability to the
+screen or to `Trademark.probabilityScore` outside the §7.7 backfill script.
+
+**R-011 — Flags are rows, flipped by an audited operator action, not by an API.**
+The frozen contract exposes no flag operation, so adding one now is a contract change for a
+P0 convenience. `FeatureFlag` is the store (`enabled`, `rolloutPercent` as a staff-id hash,
+`allowedRoles`, `updatedById`); flipping in production is a `packages/db/scripts/` operator
+action executed **as a named staff identity** (MASTER_ADMIN) that writes an `AuditLog` entry —
+M11.3 covers configuration changes too. Code reads flags through the one module that owns them
+(`ARCH-01` §2.2) with a cache TTL ≤ 60 s. Exposing flag CRUD later = contract change + ADR.
+
+**R-013 — Staff: password + TOTP. Magic links are for clients only.**
+Already decided by `ARCH-01` §5.1 (Argon2id password, mandatory TOTP for `EXPERT` /
+`MASTER_ADMIN`, 12 h sliding session) and by the contract (`/auth/staff/login`,
+`/auth/staff/mfa/verify` vs `/auth/magic-link`, documented as *client* sign-in). No staff magic
+link in Phase 1. The only genuinely open part is FA-007 (`SESSION_SECRET` entropy policy), which
+stays with DQ-005 until P2.1.
+
+**R-014 — No active 会话存档 consent ⇒ not assignable.**
+Fail-closed, exactly like a revoked USPTO credential: assignment eligibility requires
+`status = ACTIVE` **and** a current archive consent, checked inside the round-robin
+transaction, so a conversation with an unarchived rep is never created. Consent state must be a
+**column on the staff row**, not a live WeCom lookup at assign time — assignment runs under
+`FOR UPDATE SKIP LOCKED` against a 5-minute SLA, and an external API failure must never resolve
+to "assign anyway". When consent lapses the rep leaves the round-robin, `MASTER_ADMIN` is
+alerted, and **in-flight assignments are reassigned** to an eligible rep with the handover
+audited (a half-archived conversation is the gap this rule exists to prevent). Losing consent
+is an operational consequence of the role, not a reason to archive nothing.
+
+**R-015 — Ordering only: no time-zone and no holiday logic in assignment.**
+`AssignmentState` already encodes the rule — order by `activeLeads ASC`, tie-break
+`lastAssignedAt ASC` (`@@index([activeLeads, lastAssignedAt])`), eligibility from R-014.
+Time zone and holidays affect **notification timing and SLA display** (D-14 notification maths
+on `responseDeadlineDate`, `Asia/Shanghai` business days), never eligibility: otherwise a lead
+arriving at 02:00 CST would find nobody and the 5-minute SLA (M7/D-07) would silently break.
+No eligible staff ⇒ lead stays unassigned, `AssignmentState` untouched, alert `MASTER_ADMIN`,
+WeCom auto-reply promises a response but **no** SLA. A CN + HK holiday calendar is a
+read-only stored list whenever it is needed.
+
+**R-016 — Mechanism ruled now; numbers ship with the P6 endpoint.**
+Public screening uses the existing Redis token-bucket route class (`ARCH-01` §11.2) keyed by
+**IP** and by **(normalised mark text, class)**, answers `429` on excess, leaks no existence,
+and the 24-hour cache (M8.1) doubles as the primary abuse control since identical queries never
+reach the model again. The concrete `x-ratelimit` numbers are declared **in the contract when
+the endpoint is added at P6** — the contract is the authority for limits, so there is nothing
+to invent now. The failure mode this DQ exists to prevent is a bare route appearing without
+schema, limit and disclaimer: do not add the endpoint until all three land together.
+
+**R-018 — Topology ruled; the region is still yours to answer (OPEN-05).**
+Topology: staging is the existing ECS running **only** the three application artifacts from
+`infra/compose.staging.yml` (`migrate`, `api`, `web`, `worker`), TLS/WAF/CDN terminated at
+Cloudflare, `DATABASE_URL` / `REDIS_URL` pointing at **managed** instances — the compose file
+already declares no db/redis services, which is deliberate: it is what keeps D-15 true without
+an ADR. No new always-on daemon, and no Terraform for a single VM: IaC is the compose file plus
+a documented, idempotent bootstrap script, with secrets from the provider store. Image
+provenance and the SSH-key pinning work stay as FA-004 / FA-005 / FA-009.
+**What I need from you before M0 can be evidenced: the ECS region.** If it is not Hong Kong,
+staging traffic and data residency diverge from `ARCH-01` §3, and the mainland-ICP question
+(OPEN-05) has to be settled before anything is exposed on a `.cn` hostname. Region first,
+hostname second.
+
+### 5.3 Judgment calls J-01…J-04 — accepted as shipped
+
+- **J-01 `ck_filing_attended` CHECK — accepted.** G1 becomes a database invariant instead of a
+  service-layer guard: defence in depth on a hard compliance rule, with the acceptable cost
+  that a hypothetical non-attended filing path needs an ADR plus a migration to open. Record
+  the constraint in §5.3 and add a test asserting the CHECK fires.
+- **J-02 probability stored `0..1` with a range CHECK — accepted, and it is not really a
+  judgment call: it is the contract.** `headlineScore`, `distinctiveScore` and `similarity` are
+  all `minimum: 0, maximum: 1`. PRD §3.6.5's "0-100%" is a display format; `%` is applied at the
+  edge and never stored.
+- **J-03 `lower(email)` functional unique indexes — accepted (BUG-018).** §5's own preamble
+  authorises this: items Prisma cannot express live in the migration SQL and are marked `[SQL]`,
+  so §7.1 is untouched — Prisma remains authoritative for the *model*, and a functional index
+  is an index, not a schema shape. Phone correctly waits for DQ-006: constraining it blind
+  would bake in an E.164 assumption before the dedup/merge policy exists.
+- **J-04 the five tables beyond §5.1 — accepted**, each demanded by a mandate:
+  `MagicLinkToken` (contract `/auth/magic-link` + `ARCH-01` §5.1/§5.2), `Refund` (contract
+  `Refund`), `RefundAllocation` (M10.3 "allocated across lines"), `WebhookEvent` (M10.2 replay
+  and idempotency, `ARCH-01` §11.1), `NotificationPreference` (M9.3 preference writes). Condition:
+  `ARCH-02` §5.1 must list them so the package and `schema.prisma` agree (G10) — added in this
+  pass as §5.1.1.
+
+### 5.4 Still open after this pass
+
+| Item | Status | What it actually waits for |
+| --- | --- | --- |
+| DQ-003, DQ-006, DQ-009 | untouched | Not raised as blockers; DQ-006 must land before P3.3 dedup, DQ-009 before P4.2 refunds |
+| DQ-012 | **business** | OPEN-09 — PRC counsel sets per-column retention + legal basis. Blocks M12.7 sign-off only; no P1/P2 handler |
+| DQ-017 | **business** | Transactional-email vendor purchase (domain + SPF/DKIM/DMARC, deliverability to QQ/163/Gmail proven). Blocks magic-link delivery at P1 |
+| DQ-018 | **yours** | The ECS region — see R-018. OPEN-05 (ICP) follows from it |
+| OPEN-01…OPEN-09 | unchanged | Payment accounts, USPTO licensing, hosting region, PIPL posture, etc. |

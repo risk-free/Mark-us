@@ -326,7 +326,7 @@ erDiagram
 | Q12 | reconciliation sweep (`commerce`) | `payment (status, created_at)`, `payment (paid_at) WHERE status='SUCCEEDED'` partial for daily settlement matching |
 | Q13 | document versions, dedupe on re-upload (`documents`) | `unique document_version (document_id, version_no)`, `unique document_version (document_id, checksum)` |
 | Q14 | notification inbox, unread count (`notifications`) | `notification (user_id, status, created_at DESC)`, `unique (idempotency_key)` |
-| Q15 | audit search, admin only (`audit`) | `audit_log (actor_id, created_at DESC)`, `audit_log (entity_type, entity_id)`, BRIN on `created_at` (monthly partitions) |
+| Q15 | audit search, admin only (`audit`) | `audit_log (actor_id, created_at DESC)`, `audit_log (entity_type, entity_id)`, BRIN on `created_at` (no hot-table partitioning, ADR D-16) |
 | Q16 | outbox relay poll (`worker`) | `outbox_event (published_at, id) WHERE published_at IS NULL` partial index |
 | Q17 | vault read audit (`audit`) | `audit_log (action, created_at DESC) WHERE action LIKE 'VAULT_%'` partial |
 | Q18 | corpus freshness (`admin`) | `tm_ingest_run (run_date DESC)` |
@@ -344,9 +344,12 @@ erDiagram
 
 ## 5. P0.3 migration backlog (binding)
 
-> Deliverable: a single reviewed PR creating `packages/db/prisma/migrations/0P3__*/migration.sql` (expand-only, §7). `schema.prisma` remains authoritative after merge. This section is the acceptance specification; the Developer writes the migration, the Architect reviews it.
+> Deliverable: a single reviewed PR creating `packages/db/prisma/migrations/0P3__*/migration.sql` (expand-only, §7). `schema.prisma` remains authoritative after merge. This section is the acceptance specification; the Developer writes the migration, the Architect reviews it. **ADR D-17:** `0P3__p0_3_backlog` is the **baseline** migration (no pre-existing migrations history); it must not be applied to a populated database (deploy to an empty target only, reversal = restore-from-backup). The §5.4 ALTERs are superseded because `timestamptz(3)` is set from creation.
 
-### 5.1 New models
+> *Note:* The models below correspond to the P0.3 backlog. In addition, `MagicLinkToken`,
+`RefundAllocation`, `WebhookEvent` and `NotificationPreference` are part of P0.3 as shipped
+(informed by contract + mandates M3.4, M9.3, M10.2, M10.3) and must remain consistent with
+`schema.prisma` and `03-api-contract.yaml`.
 
 ```prisma
 // --- Eventing -------------------------------------------------------------
@@ -527,9 +530,9 @@ CREATE SEQUENCE seq_order_number   START 1;
 CREATE SEQUENCE seq_invoice_number START 1;
 ```
 
-### 5.4 Timezone conversion migration (`timestamp(3)` → `timestamptz(3)`)
+### 5.4 Timezone conversion migration (`timestamp(3)` → `timestamptz(3)`) **[ADR D-17 — superseded]**
 
-Rationale: Postgres `timestamp without time zone` silently accepts local-time writes; with a HK/China/ET team this produces untraceable 8-hour errors on statutory deadlines. Convert every instant column, then pin the Prisma annotations.
+Rationale: Postgres `timestamp without time zone` silently accepts local-time writes; with a HK/China/ET team this produces untraceable 8-hour errors on statutory deadlines. **[Superseded by ADR D-17]** Because the P0.3 baseline declares every instant as `timestamptz(3)` from creation, the conversion statements below are not executed against an existing schema. The acceptance test remains binding.
 
 ```sql
 -- executed in dependency-safe order, table by table
@@ -546,11 +549,12 @@ Then, in `schema.prisma`, annotate **every** instant field with `@db.Timestamptz
 
 ---
 
-## 6. Partitioning and retention
+## 6. Partitioning and retention (**ADR D-16**: `AuditLog` and `Message` are **not** partitioned;
+   hot data kept bounded via monthly archival to R2 with deletion in batches).
 
 | Table | Strategy | Retention | Rationale |
 | --- | --- | --- | --- |
-| `AuditLog` | **monthly RANGE partitions** on `createdAt` + BRIN | 24 months hot → archive to R2 (Parquet) for 5 years | unbounded growth; compliance needs 5-year retrievability, not 5-year hot rows |
+| `AuditLog` | **no hot-table partitioning (ADR D-16)**; BRIN on `createdAt`, `autovacuum_vacuum_scale_factor = 0.02` / `analyze_scale_factor = 0.01`, Q17 partial index | 24 months hot → archive to R2 (Parquet) for 5 years | unbounded growth; compliance needs 5-year retrievability; hot window bounded, not range-sharded |
 | `Message` | monthly partitions once > 10M rows | 24 months content, then `[redacted]` tombstone | 会话存档 content is the heaviest PII store |
 | `OutboxEvent` | none | rows deleted 7 days after `publishedAt` | relay guarantees only need short replay |
 | `Notification` | none | 90 days | inbox is a convenience, `CSTicket` is the record |
@@ -560,7 +564,12 @@ Then, in `schema.prisma`, annotate **every** instant field with `@db.Timestamptz
 | `Invoice`, `Payment`, `Order`, `Application`, `OfficeAction`, `Document` | none | **5 years minimum**, then legal hold review | trademark record retention obligations |
 | `Contact` | none | 5 years after last activity; PIPL erasure request → hard-delete PII columns, keep FK stubs with pseudonymous ids | PIPL Arts. 47 + D-04 |
 
-**Partition maintenance job (monthly, `worker`):** create next 2 months' partitions ahead of time, archive+drop partitions older than hot retention, alert if a partition is missing (fail writes loudly, never silently create at insert time).
+**Partition maintenance job (monthly, `worker`):** archive all partitions/months older than the hot
+retention window to R2 (Parquet) with a row-count + checksum manifest, verify manifest against
+counts, delete in 1 000-row batches (never TRUNCATE/COPY-in-place that creates an
+ACCESS EXCLUSIVE on the entire hot set), alert if a month is missing — never silently create
+partitions at insert time. `AuditLog`/`Message` are **not** range-partitioned in the hot table
+(ADR D-16).
 
 ---
 
@@ -583,7 +592,7 @@ Then, in `schema.prisma`, annotate **every** instant field with `@db.Timestamptz
 | Assigned leads list (Q1) | < 50 ms @ 10k leads per rep | `EXPLAIN (ANALYZE, BUFFERS)` uses the composite index, no sequential scan |
 | Corpus similarity search (Q7) | < 800 ms p95, ≤ 200 candidates | `SET LOCAL statement_timeout = '2s'`; uses GIN trigram; row estimate < 5k before scoring |
 | OA deadline sweep (Q9) | full sweep < 30 s @ 50k applications | index-only scan on `response_deadline` partial |
-| Audit search (Q15) | < 300 ms @ 5M rows | partition pruning visible in plan |
+| Audit search (Q15) | < 300 ms @ 5M rows | BRIN/btree scans over hot table; when range crosses the archive boundary the API reads hot + R2 (archive search path) (ADR D-16) |
 | Webhook upsert (Q11) | < 20 ms | index-only, no seq scan under concurrency test of 200 rps |
 | Assignment transaction (Q: round-robin) | < 100 ms, no deadlock under 50 concurrent assigns | `FOR UPDATE SKIP LOCKED` on `AssignmentState`; deadlock detector in the integration suite |
 

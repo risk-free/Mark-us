@@ -133,7 +133,30 @@ Platform implements a **credential vault**:
 
 **Decision:** Nothing in scope justifies it. Dropped from all phases; revisit only with a proven hotspot.
 
-## D-15: No always-on self-hosted service
+## D-15: Do not range-partition `AuditLog` in the hot table
+**ID:** D-16
+**Status:** ACCEPTED
+**Date:** 2026-09-29
+**Owner:** ARCH + DEV
+**Impact:** P7, M11.3, M11.4
+
+### Context
+`ARCH-02` §6 required monthly RANGE partitioning of `AuditLog` on `createdAt`. Postgres requires the partition key in every unique key, so partitioned `AuditLog` would need `PRIMARY KEY (id, createdAt)`. Prisma models single-field `@id` only and `ARCH-02` §7.1 requires Prisma as the only schema authority. 
+
+### Decision
+Keep the single-field `@id`; do **not** hot-table RANGE-partition `AuditLog` or `Message`. Use BRIN on `createdAt`, tune autovacuum (`autovacuum_vacuum_scale_factor = 0.02`, `analyze_scale_factor = 0.01`), and maintain the Q17 partial index. Archive closed months to R2 (Parquet) at 24 months, verify manifests (row count + checksum), and delete old hot rows in 1 000-row batches. `M11.4` audit export spans hot + archive as one ordered stream.
+
+### Rationale
+- Export/read requirement already crosses archives in either case; no load-bearing plan benefit for the declared access paths.
+- Avoids composite PK, `$queryRaw` audit writer, or hand-written lifecycle outside `prisma migrate`.
+- Matches the stated compliance target (5-year retrievability) without violating the "Prisma is the only schema authority" constraint.
+
+### Consequences
+- `ARCH-02` §6, §4.1 Q15, §8 Q15 updated; M11.4 updated.
+- Partition maintenance job in `worker` replaces "create partitions" with "archive + batch delete".
+- If query/export performance degrades, re-partition only via a new ADR (D-19+).
+
+---
 
 **Flag:** The team can operate this system but is not staffed for 24/7 maintenance. Every always-on
 daemon we run ourselves - metrics stack, analytics product, model server - turns into a patching,

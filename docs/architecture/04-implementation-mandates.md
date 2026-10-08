@@ -225,7 +225,7 @@ matching rollback note in `docs/architecture/02-data-model.md` or the runbook.
 ### M3.2 — P0.3 backlog delivery (GATE)
 **Statement:** The P0.3 migration backlog in `ARCH-02` §5 is delivered as one reviewed series
 before P1 handlers depend on it: `OutboxEvent`, `ProbabilityRun`, `TrademarkAssessment`,
-`TrademarkAssessmentFactors`, `TmCorpusMark`, `TmCorpusClass`, `TmCorpusMarkClass`, `TmSimilarity`,
+`TmCorpusMark`, `TmCorpusClass`, `TmCorpusMarkClass`, `TmSimilarity`,
 `TmIngestRun`, `AssignmentState`, `FeatureFlag`, plus the column additions, soft deletes, MFA and
 vault columns, invoice snapshot column, notification dedupe key, and `timestamptz` conversions.
 **Owner:** DEV · **Phase:** P1 · **Depends on:** M3.1
@@ -234,7 +234,7 @@ drift); `ARCH-02` §5 checklist ticked with per-item evidence links.
 **Halt:** Any item deferred out of P0.3 requires an ADR and a re-sequenced `docs/SCHEDULE.md`.
 
 ### M3.3 — Monetary exactness (BLOCKER)
-**Statement:** Amounts are stored as `Decimal(14, 2)` in the database and serialised as decimal
+**Statement:** Amounts are stored as `Decimal(12, 2)` in the database and serialised as decimal
 strings. Currency arithmetic happens in integer minor units inside the service; floating point is
 banned for money by lint rule and by test.
 **Owner:** DEV + QA · **Phase:** P4 · **Depends on:** M3.1
@@ -643,7 +643,9 @@ update or delete path exists on the audit table.
 
 ### M11.4 — Audit export is stable and complete (MAJOR)
 **Statement:** Audit export pages in reverse chronological order using a `before` cursor so a full
-export is reproducible and gap-free, with a recorded export event.
+export is reproducible and gap-free, with a recorded export event. The reader spans the hot table
+and the R2 archive (`ARCH-02` §6) as one ordered stream, so periods older than the hot window are
+exported complete rather than skipped.
 **Owner:** DEV · **Phase:** P7 · **Depends on:** M11.3
 **Verification:** Test exporting 10 000 rows in pages, asserting no duplicates or gaps and asserting
 the export itself is audited.

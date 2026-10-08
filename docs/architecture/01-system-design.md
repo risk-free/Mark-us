@@ -149,7 +149,7 @@ flowchart TB
 | `documents` | `Document`, `DocumentVersion` | `requestUpload`, `commitVersion`, `runOcr`, `proofread`, `approveVersion`, `issueDownloadUrl` | R2, OCR adapter (PaddleOCR/cloud), LanguageTool | other modules' tables |
 | `commerce` | `Order`, `InvoiceLineItem`, `Invoice`, `Payment`, `Campaign` | `createOrder`, `quoteOrder`, `startPayment`, `capturePayment`, `refund`, `renderInvoice`, `reconcile` | Stripe, PayPal, PDF renderer, notify | `Trademark` (read via service) |
 | `notifications` | `Notification` | `enqueue`, `dispatch`, `markRead`, `getPreferences` | WeCom message, SMTP, portal inbox | — |
-| `audit` | `AuditLog` | `record`, `query` | — (append-only) | all writes except through `record` |
+| `audit` | `AuditLog` | `record`, `query` | — (append-only; no hot-table range partitioning — see ADR D-16) | all writes except through `record` |
 | `integrations` | — | `receiveWecomCallback`, `receivePaymentWebhook` | WeCom, Stripe, PayPal | — |
 
 \* models marked `*` are **new in the P0.3 migration backlog** — see `02-data-model.md` §5.
