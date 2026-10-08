@@ -3,11 +3,15 @@
 **Document ID:** `ARCH-04`
 **Status:** APPROVED — binding on Developer and QA
 **Date:** 2026-09-27
-**Code baseline at approval:** pushed `091d0f8` plus the uncommitted P0.5 platform-hardening
-working tree of 2026-09-27 (`packages/config` boot gate, `eslint.config.mjs`, `infra/Dockerfile.web`
-and `Dockerfile.worker`, `infra/compose.staging.yml`, `infra/scripts/`, `deploy-staging.yml`,
-`dependabot.yml`, expanded CI). That work is uncommitted and **must be committed and pushed before
-implementation starts**; see §16.
+**Code baseline at approval:** last pushed commit `d8598b6` — the P0 scaffold plus the tracked part
+of the 2026-09-27 P0.5 platform hardening (`.env.example`, `.gitattributes`, `ci.yml`,
+`docker-compose.yml`, `apps/api`, `workers`, `pnpm-lock.yaml`). The rest of that working tree —
+`packages/config/`, `scripts/`, `eslint.config.mjs`, `infra/Dockerfile.web`, `infra/Dockerfile.worker`,
+`infra/compose.staging.yml`, `infra/scripts/`, `infra/README.md`, `packages/db/prisma/migrations/`,
+`packages/db/scripts/`, `docs/runbooks/`, `.dockerignore`, `.github/dependabot.yml`,
+`.github/workflows/deploy-staging.yml`, `apps/web/public/` — was **still uncommitted as of the D-15
+amendment `2f4862d`** and **must be committed and pushed before implementation starts**; see §16.
+This package landed at `8b312ff`.
 **Audience:** Developer (implementation), QA (verification), Architect (change control)
 **Supersedes:** nothing; extends `ARCH-01`, `ARCH-02`, `ARCH-03`
 

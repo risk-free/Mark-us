@@ -7,8 +7,8 @@
 | Date | 2026-09-27 |
 | Status | **APPROVED — binding on Developer & QA** |
 | Supersedes | `docs/ARCHITECTURE.md` §1–§4 (that document remains the narrative/rationale reference; where they conflict, **this document wins**) |
-| Inputs | `PRD.md` v2.0, `docs/DECISIONS.md` (D-01…D-14), `docs/SCHEDULE.md` (P0–P8, M0–M7) |
-| Code baseline | P0 scaffold @ `091d0f8` plus the uncommitted P0.5 platform-hardening working tree of 2026-09-27 (`packages/config`, `eslint.config.mjs`, `Dockerfile.web`/`Dockerfile.worker`, `compose.staging.yml`, `infra/scripts/`, `deploy-staging.yml`, expanded CI) |
+| Inputs | `PRD.md` v2.0, `docs/DECISIONS.md` (D-01…D-15), `docs/SCHEDULE.md` (P0–P8, M0–M7) |
+| Code baseline | last pushed commit `d8598b6` — the P0 scaffold plus the tracked part of the 2026-09-27 P0.5 platform hardening (`.env.example`, `.gitattributes`, `.github/workflows/ci.yml`, `docker-compose.yml`, `apps/api`, `workers`, `pnpm-lock.yaml`). The **rest of that working tree was still uncommitted as of `2f4862d`** — `git status` is authoritative; it includes `packages/config/`, `scripts/`, `eslint.config.mjs`, `infra/Dockerfile.web`/`Dockerfile.worker`, `infra/compose.staging.yml`, `infra/scripts/`, `infra/README.md`, `packages/db/prisma/migrations/`, `packages/db/scripts/`, `docs/runbooks/`, `.dockerignore`, `.github/dependabot.yml`, `.github/workflows/deploy-staging.yml`, `apps/web/public/`. It must be committed and pushed before implementation begins. This package landed at `8b312ff`; the D-15 amendment at `2f4862d` |
 
 **Change control:** any deviation from this document requires an ADR appended to `docs/DECISIONS.md` (D-15+) *before* code is written. Ambiguity is a defect: if a requirement here cannot be implemented as written, the Developer **halts and raises a question** — it does not improvise.
 

@@ -9,8 +9,8 @@ served by PRC lawyers with US bar admission (D-01).
 | Doc | Purpose |
 | --- | --- |
 | [PRD.md](./PRD.md) | Requirements v2.0 — reviewed & approved |
-| [docs/DECISIONS.md](./docs/DECISIONS.md) | D-01…D-14 architecture/decision log |
-| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | System design, monorepo layout, RBAC, flows |
+| [docs/DECISIONS.md](./docs/DECISIONS.md) | D-01…D-15 architecture/decision log |
+| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | **Superseded** — historical narrative and rationale only, not an implementation source |
 | [docs/SCHEDULE.md](./docs/SCHEDULE.md) | P0–P8 man-day plan, M0–M7 gates |
 | [docs/architecture/](./docs/architecture/) | **Architecture of record** — system design, data model, OpenAPI contract, implementation mandates (approved) |
 | [docs/DESIGN-QUESTIONS.md](./docs/DESIGN-QUESTIONS.md) | Open design questions (DQ-001…) — raise here before deciding in code |

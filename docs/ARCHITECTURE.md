@@ -2,6 +2,19 @@
 
 *Created: 2026-09-26 | Companion to PRD v2.0 | Decisions: docs/DECISIONS.md*
 
+> **SUPERSEDED — this is not an implementation source.**
+>
+> The architecture of record is [`docs/architecture/`](./architecture/); start at
+> [`docs/architecture/README.md`](./architecture/README.md). Per the precedence rule recorded
+> there, where this document and that package disagree **the package wins** and this file is
+> corrected in the same change. It is retained for narrative and rationale; the supersession of
+> §1–§4 is recorded explicitly in `01-system-design.md` document control.
+>
+> Known divergences as of `2f4862d` (2026-10-08): this file specifies **Node 20**, **self-hosted
+> BGE** and **self-hosted PostHog**. All three are superseded — one pinned Node major everywhere
+> (`M1.6`; the working tree pins 22), a managed embedding API and a first-party analytics beacon
+> (`D-15`), and `M12.8` forbids introducing any always-on self-hosted service.
+
 ---
 
 ## 1. System Overview

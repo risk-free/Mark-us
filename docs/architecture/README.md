@@ -3,10 +3,14 @@
 **Package ID:** `ARCH`
 **Status:** APPROVED
 **Date:** 2026-09-27
-**Code baseline at approval:** pushed `091d0f8` plus the uncommitted P0.5 platform-hardening
-working tree of 2026-09-27 (`packages/config`, `eslint.config.mjs`, `Dockerfile.web`/`Dockerfile.worker`,
-`compose.staging.yml`, `infra/scripts/`, `deploy-staging.yml`, `dependabot.yml`, expanded CI). That
-work must be committed and pushed before implementation begins.
+**Code baseline at approval:** last pushed commit `d8598b6` — the P0 scaffold plus the tracked part
+of the 2026-09-27 P0.5 platform hardening. The remainder of that working tree (`packages/config/`,
+`scripts/`, `eslint.config.mjs`, `infra/Dockerfile.web`/`Dockerfile.worker`,
+`infra/compose.staging.yml`, `infra/scripts/`, `infra/README.md`, `packages/db/prisma/migrations/`,
+`packages/db/scripts/`, `docs/runbooks/`, `.dockerignore`, `.github/dependabot.yml`,
+`.github/workflows/deploy-staging.yml`, `apps/web/public/`) was **still uncommitted as of `2f4862d`**
+and must be committed and pushed before implementation begins. This package landed at `8b312ff`;
+the D-15 amendment at `2f4862d`.
 **Owner:** Chief Software Architect
 **Audience:** Developer (implementation), QA (verification), Architect (change control)
 
@@ -27,7 +31,7 @@ query.
 
 ```mermaid
 flowchart LR
-  PRD[PRD.md v2.0] --> DEC[docs/DECISIONS.md<br/>D-01…D-14]
+  PRD[PRD.md v2.0] --> DEC[docs/DECISIONS.md<br/>D-01…D-15]
   DEC --> SD[01-system-design.md]
   DEC --> DM[02-data-model.md]
   DEC --> API[03-api-contract.yaml]
