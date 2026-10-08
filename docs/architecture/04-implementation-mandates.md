@@ -395,12 +395,16 @@ e-mail, phone or `contactId` pattern.
 **Halt:** Missing PIPL consent (`CONSENT_REQUIRED`) blocks the call, not the assessment record.
 
 ### M6.4 — Graceful degradation (MAJOR)
-**Statement:** When the LLM, corpus or OCR dependency is unavailable, the assessment returns
-`INSUFFICIENT_DATA` with explicit risk flags rather than a fabricated score. The `Score <10s p95`
-target for the public assessment path (`docs/SCHEDULE.md` task 5.6) is monitored per stage.
+**Statement:** When the LLM, corpus, embedding API or OCR dependency is unavailable, the assessment
+returns `INSUFFICIENT_DATA` with explicit risk flags rather than a fabricated score. When the
+embedding API is unavailable, `/tm/search` skips the BGE re-rank over its trigram candidates and
+answers with `method: trigram` and reduced recall instead of failing — ranking quality degrades,
+availability does not. The `Score <10s p95` target for the public assessment path
+(`docs/SCHEDULE.md` task 5.6) is monitored per stage.
 **Owner:** DEV + SRE · **Phase:** P6 · **Depends on:** M6.1
 **Verification:** Test with each dependency stubbed to fail, asserting the flag set, the absence of a
-headline score, and a user-visible explanation; latency assertion per stage.
+headline score, and a user-visible explanation; a stubbed-out embedding API asserting the response
+is `200` with `method: trigram`; latency assertion per stage.
 
 ### M6.5 — Calibration reporting (MAJOR)
 **Statement:** A calibration report (reliability curve, sample size, confidence interval) is
@@ -708,6 +712,22 @@ what was erased and what was retained.
 **Verification:** Test over a seeded contact asserting the export contents and that the erasure report
 matches the documented matrix exactly.
 
+### M12.8 — No always-on self-hosted service (GATE)
+**Statement:** Production runs as exactly three deployable artifacts (`web`, `api`, `worker`) plus
+managed services. No always-on self-hosted daemon — metrics stack, analytics product, message broker,
+model or embedding server, cache, database — is introduced anywhere without an ADR in
+`docs/DECISIONS.md`. Work that a managed provider would otherwise run is delivered either by a
+managed service or by a batch job inside `worker`, never by a fourth running service. Developer
+tooling (`.devcontainer`), test fixtures and CI containers are not services and are unaffected.
+**Owner:** ARCH + SRE · **Phase:** P0 decision (D-15), enforced P1 onward · **Depends on:** none
+**Verification:** A topology assertion reading the rendered `docker-compose.yml` and
+`infra/compose.staging.yml`, enumerating production-profiled services and failing unless the set is
+`{migrate, api, web, worker}` plus an allow-listed managed dependency; a grep-based documentation
+test asserting no file under `docs/architecture/` declares a self-hosted always-on service; CI step
+on any new `services:` entry in a compose file requiring an `ADR:` reference in the commit.
+**Halt:** A proposal to self-host a long-running component in order to satisfy a phase gate returns to
+the Architect. The phase does not proceed on a daemon nobody is rostered to operate 24/7.
+
 ---
 
 ## 14. Testing and quality gates
@@ -850,7 +870,7 @@ flowchart TD
 | Filings | §6.2, §6.5 | §2.2 | `/applications*` | M9.1–M9.5 |
 | Commerce | §6.3 | §2.3 | `/orders*`, `/webhooks/*` | M10.1–M10.6 |
 | Notifications, ERP, audit | §10, §11.1 | §2.3 | `/notifications*`, `/crm/*`, `/audit-logs`, `/admin/jobs` | M11.1–M11.5 |
-| Reliability and operations | §9, §12 | §6, §7 | `/health*`, `/metrics` | M12.1–M12.7, M14.1–M14.5 |
+| Reliability and operations | §9, §12 | §6, §7 | `/health*`, `/metrics` | M12.1–M12.8, M14.1–M14.5 |
 | Quality strategy and gates | §13 | §8 | all | M13.1–M13.6 |
 
 ---

@@ -112,7 +112,7 @@ flowchart TB
     ST[Stripe HK]
     PP[PayPal]
     TS[USPTO<br/>TSDR + bulk XML]
-    LLM[LLM provider CN<br/>+ BGE self-hosted]
+    LLM[LLM provider CN<br/>+ managed embedding API<br/>BGE family]
   end
 
   Visitor --> CDN
@@ -201,7 +201,7 @@ flowchart LR
   ST[Stripe] --> CF
   PP[PayPal] --> CF
   TS[USPTO] -.->|outbound only: TSDR + bulk| API2
-  LLM[LLM provider / BGE] -.->|outbound only| API2
+  LLM[LLM provider<br/>+ embedding API] -.->|outbound only| API2
   CF --> WEB & API1 & API2
   WEB --> PGM
   API1 & API2 --> PGM & RDM & R2M
@@ -236,14 +236,14 @@ flowchart LR
 | Object storage | Cloudflare R2 + SSE-KMS | AWS S3 | no egress fee (HK → US traffic for documents), S3-compatible API | vendor lock → S3-compatible adapter only, no R2-specific calls in domain code |
 | Server-side crypto | Cloudflare KMS (envelope) + `node:crypto` AES-256-GCM | Vault | no extra always-on service; per-attorney DEK, KEK rotation without re-encrypting plaintext | KMS outage → vault writes fail closed, reads of non-vault features unaffected |
 | Payments | Stripe HK (cards, Apple/Google Pay, Alipay, WeChat Pay) + PayPal | Airwallex, Adyen, direct Alipay/WeChat merchant | single integration, one webhook surface, HK entity settlement, mainland wallets via one integration | Alipay/WeChat mainland require separate merchant onboarding → **OPEN-05** |
-| LLM | OpenAI-compatible gateway (DeepSeek/GLM/Kimi) + self-hosted BGE | OpenAI/Anthropic direct | PIPL + latency + cost; international fallback for EN copy | provider outage → fallback chain, queue, and human path (degradation matrix §9.4) |
+| LLM | OpenAI-compatible gateway (DeepSeek/GLM/Kimi) + managed embedding API serving a BGE-family model | OpenAI/Anthropic direct, self-hosted model server | PIPL + latency + cost; international fallback for EN copy; no always-on self-hosted daemon (**D-15**, M12.8) | provider outage → fallback chain, queue and human path (degradation matrix §9.4); embedding outage → search returns `method: trigram` (M6.4) |
 | Corpus | USPTO bulk XML → Postgres `TmCorpusMark` (A1) | OpenSearch (A2), Elastic | lowest ops at 1.2M marks, `pg_trgm` suffices, one backup story | search latency ceiling → A2 upgrade trigger defined (§1.3) |
 | Validation | Zod 3 | class-validator, Joi | single schema → shared by API, form validation, and OpenAPI generation | bundle size on client → import schemas from `@markus/core` only where needed |
 | AuthN | Redis-backed opaque sessions, Argon2id staff passwords, TOTP for `MASTER_ADMIN`/`EXPERT`, single-use magic links for clients | Self-issued JWT | immediate revocation (staff disable must kill access now), no token bloat, magic link fits non-technical Chinese sellers | session store loss → staff re-login, clients re-request link; acceptable |
 | Testing | Jest + RTL (unit/component), Playwright (E2E), k6 (load), OpenAPI contract tests | Vitest, Cypress | Jest decided in D-14; native `@testing-library` for React 19 | Jest ESM friction → `.cjs` config + `moduleNameMapper` (already in repo) |
 | Monorepo | pnpm 9 workspaces + Turborepo 2 | Nx, Lerna, none | cache without paid cloud, native workspace protocol, minimal config | config drift between packages → root `tsconfig.base.json` only, packages extend it (Mandate 9) |
 | CI/CD | GitHub Actions (`.github/workflows/ci.yml`) | GitLab CI, Jenkins | repo already on GitHub, free minutes, matrix support | runner supply-chain → pin actions to major tags + Dependabot; Node 20 deprecation warning tracked (OPEN-06) |
-| Observability | Sentry (errors + traces) + Prometheus/Grafana + self-hosted PostHog | Datadog, New Relic, GA | PIPL-safe (self-hosted product analytics), cost ceiling, D-07 forbids Google Analytics | metric cardinality → label allow-list (Mandate 31) |
+| Observability | Sentry (errors + traces) + managed Prometheus-compatible metrics/alerting + first-party beacon → Postgres | Datadog, New Relic, GA, self-hosted Prometheus/Grafana/PostHog | no always-on self-hosted service (**D-15**, M12.8): the team has no 24/7 maintenance capacity; analytics stays first-party and D-07 forbids Google Analytics | metric cardinality → label allow-list (Mandate 31); provider lock-in → `/metrics` keeps the Prometheus text format so the scraper is swappable |
 | Email/identity | WeCom + SMTP (HK provider) | SES | seller base is on WeCom | deliverability → SPF/DKIM/DMARC mandatory before first send |
 
 **Explicitly out of scope (D-14):** Rust/WASM, gRPC, Kafka, Kubernetes (containers + systemd/compose-free orchestration suffice), service mesh, GraphQL.
@@ -579,10 +579,10 @@ sequenceDiagram
 | Signal | Content |
 | --- | --- |
 | **Logs** | JSON to stdout → Docker/log driver. Mandatory fields: `ts, level, requestId, traceId, actorId, actorType, role, route, method, status, durationMs, module, event`. **Prohibited:** request/response bodies containing client PII, secrets, tokens, card data, full message content. Message/chat content is referenced by id only. |
-| **Metrics (Prometheus, `/metrics`)** | `http_requests_total{route,method,status}`, `http_duration_seconds{route}`, `db_query_duration_seconds{module}`, `queue_job_duration_seconds{queue}`, `queue_depth{queue}`, `queue_failed_total{queue}`, `assignment_latency_seconds` (the 5-min NFR), `payment_webhook_latency_seconds`, `assessment_duration_seconds`, `corpus_ingest_marks_total`, `oauth/uptime`. **Label allow-list only** — no user ids, no raw URLs. |
+| **Metrics (`/metrics`, Prometheus text format)** | `http_requests_total{route,method,status}`, `http_duration_seconds{route}`, `db_query_duration_seconds{module}`, `queue_job_duration_seconds{queue}`, `queue_depth{queue}`, `queue_failed_total{queue}`, `assignment_latency_seconds` (the 5-min NFR), `payment_webhook_latency_seconds`, `assessment_duration_seconds`, `corpus_ingest_marks_total`, `oauth/uptime`. **Label allow-list only** — no user ids, no raw URLs. Scraped by the managed metrics service (**D-15**), never by a locally run Prometheus. |
 | **Traces** | Sentry; 100 % of API requests sampled, 100 % of job executions; propagate `traceId` into BullMQ job data. |
 | **Errors** | Sentry with release = git SHA, environment, and `requestId`; PII scrubbed server-side before send. |
-| **Product analytics** | self-hosted PostHog; event names in `docs/analytics/event-taxonomy.md`; consent-gated for clients; staff events always allowed. **No Google Analytics (D-07).** |
+| **Product analytics** | first-party beacon (`ARCH-03` `/analytics/events`) written straight into Postgres; funnels and retention are read from that table, not from a hosted analytics product. Event names in `docs/analytics/event-taxonomy.md`; consent-gated for clients; staff events always allowed. **No Google Analytics (D-07)** and no self-hosted analytics daemon (**D-15**, M12.8). |
 | **Dashboards** | `Service overview`, `Queue health`, `Funnel (D-07 metrics)`, `Payments`, `Corpus freshness`, `SLO`. |
 | **Alerts** | paging: payments reconciliation failure, DLQ growth, DB saturation > 85 %, error rate > 2 % 5 min, assignment latency > 4 min for 15 min. ticket-only: corpus stale > 26 h, webhook lag > 15 min. |
 
@@ -671,7 +671,7 @@ Code + unit tests + updated OpenAPI + ADR if design changed + telemetry (logs/me
 
 | Objective | Target | Measurement |
 | --- | --- | --- |
-| API latency | p95 < 300 ms (excl. `/tm/search`), p99 < 800 ms | Prometheus histogram, 7-day window |
+| API latency | p95 < 300 ms (excl. `/tm/search`), p99 < 800 ms | histogram series exposed on `/metrics`, 7-day window |
 | Search latency | p95 < 800 ms | same |
 | Assignment latency | p95 < 5 min, 100 % measured | `assignment_latency_seconds` |
 | Payment webhook processing | p95 < 30 s from provider event to `order=PAID` | `payment_webhook_latency_seconds` |

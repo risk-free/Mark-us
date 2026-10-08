@@ -21,7 +21,7 @@ query.
 | [01-system-design.md](./01-system-design.md) | Module boundaries, deployable topology, stack matrix, auth and session model, request and job flows, state management, reliability, security, CI/CD, NFRs, open decisions | Developer, Architect |
 | [02-data-model.md](./02-data-model.md) | Entity model with ER diagrams, index and query plan, P0.3 migration backlog, partitioning and retention, migration protocol | Developer, DBA/SRE |
 | [03-api-contract.yaml](./03-api-contract.yaml) | OpenAPI 3.1 contract: 65 paths, 83 operations, 106 schemas, with per-operation maturity, phase, permission and audit annotations | Developer, QA |
-| [04-implementation-mandates.md](./04-implementation-mandates.md) | 75 numbered mandates with owners, dependencies, automated verification and halt conditions, plus the definition of done and the halt-item log | Developer, QA, Architect |
+| [04-implementation-mandates.md](./04-implementation-mandates.md) | 76 numbered mandates with owners, dependencies, automated verification and halt conditions, plus the definition of done and the halt-item log | Developer, QA, Architect |
 
 ## How the documents fit together
 

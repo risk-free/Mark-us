@@ -133,6 +133,31 @@ Platform implements a **credential vault**:
 
 **Decision:** Nothing in scope justifies it. Dropped from all phases; revisit only with a proven hotspot.
 
+## D-15: No always-on self-hosted service
+
+**Flag:** The team can operate this system but is not staffed for 24/7 maintenance. Every always-on
+daemon we run ourselves - metrics stack, analytics product, model server - turns into a patching,
+backup and paging obligation with nobody rostered to own it, which is exactly the work a managed
+provider takes on.
+
+**Decision:** The runtime footprint is the three deployable artifacts (`web`, `api`, `worker`) plus
+managed services. A fourth always-on service may not be introduced without an ADR (mandate M12.8).
+Three consequences follow:
+
+| Concern | Was | Now |
+|---|---|---|
+| Product analytics | self-hosted PostHog | First-party beacon (`ARCH-03`, `/analytics/events`) written into Postgres; funnels and retention are read from that table. D-07 is unchanged - still no third-party analytics. |
+| Search embeddings | Self-hosted BGE | Managed OpenAI-compatible API serving a BGE-family model. The query and its trigram candidate set are embedded on demand per request; no embedding is persisted, so there is no vector index, model server or nightly embedding job to operate. |
+| Metrics and alerting | Self-hosted Prometheus + Grafana | Managed Prometheus-compatible metrics and alerting scraping `/metrics`, which keeps the Prometheus text format so the scraper itself stays swappable. |
+
+**Constraints:** the embedding API sits in the same residency class as the LLM gateway (D-04, PIPL)
+and receives mark text and class only, never client PII (rule G3). Its outage degrades `/tm/search`
+to `method: trigram` rather than failing it (M6.4), so the candidate window and re-rank budget must
+fit inside the 2 s p95 envelope of M7.4. Corpus-wide vector search would mean persisted embeddings,
+a vector index and a migration, and therefore needs a new ADR before anyone writes it.
+
+**Refs:** `docs/architecture/01-system-design.md` §4, §10; `docs/architecture/04-implementation-mandates.md` M6.4, M7.4, M12.8.
+
 ---
 
 ## Business-side prerequisites (non-code, start immediately)

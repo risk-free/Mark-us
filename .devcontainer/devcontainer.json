@@ -1,0 +1,33 @@
+{
+  // Mark-US development workspace (ARCH-04 M14.2 environment parity).
+  //
+  // Opens the repo inside a Node 22 container that shares the compose network
+  // with postgres:16 and redis:7, so DATABASE_URL / REDIS_URL point at the
+  // `postgres` and `redis` service names. Postgres gets `pg_trgm` + `unaccent`
+  // from the baseline migration on first `pnpm db:migrate`.
+  //
+  // Reopen in Container: VS Code command palette -> Dev Containers: Reopen in Container.
+  // CLI equivalent:   devcontainer up --workspace-folder .
+  "name": "Mark-US",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "dev",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+  "forwardPorts": [3000, 3001],
+  "portsAttributes": {
+    "3000": { "label": "markus-web", "onAutoForward": "notify" },
+    "3001": { "label": "markus-api", "onAutoForward": "notify" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Prisma.prisma",
+        "dbaeumer.vscode-eslint",
+        "EditorConfig.EditorConfig",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  },
+  "postCreateCommand": "corepack enable && pnpm install --frozen-lockfile",
+  "postCreateComment": "Then: pnpm db:generate && pnpm db:migrate && pnpm dev"
+}

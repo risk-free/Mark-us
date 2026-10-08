@@ -94,5 +94,28 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Editor / CLI workspace for .devcontainer/devcontainer.json.
+  # Shares the compose network, so DATABASE_URL and REDIS_URL resolve the
+  # `postgres` / `redis` service names instead of localhost. The host-side
+  # ports published by those services remain reachable from the machine
+  # exactly as they are without a container.
+  dev:
+    profiles: ["dev"]
+    image: mcr.microsoft.com/devcontainers/typescript-node:1-22-bookworm
+    init: true
+    working_dir: /workspace
+    command: sleep infinity
+    volumes:
+      - .:/workspace:cached
+      - markus-dev-node-modules:/workspace/node_modules
+    environment:
+      <<: *local-app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   pgdata:
+  markus-dev-node-modules:
