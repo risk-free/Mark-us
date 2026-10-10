@@ -3,14 +3,11 @@
 **Package ID:** `ARCH`
 **Status:** APPROVED
 **Date:** 2026-09-27
-**Code baseline at approval:** last pushed commit `d8598b6` — the P0 scaffold plus the tracked part
-of the 2026-09-27 P0.5 platform hardening. The remainder of that working tree (`packages/config/`,
-`scripts/`, `eslint.config.mjs`, `infra/Dockerfile.web`/`Dockerfile.worker`,
-`infra/compose.staging.yml`, `infra/scripts/`, `infra/README.md`, `packages/db/prisma/migrations/`,
-`packages/db/scripts/`, `docs/runbooks/`, `.dockerignore`, `.github/dependabot.yml`,
-`.github/workflows/deploy-staging.yml`, `apps/web/public/`) was **still uncommitted as of `2f4862d`**
-and must be committed and pushed before implementation begins. This package landed at `8b312ff`;
-the D-15 amendment at `2f4862d`.
+**Code baseline at approval:** last pushed commit `bd1cb58` — the P0 scaffold, the full 2026-09-27
+P0.5 platform hardening tree, and the approved P0.3 backlog schema + baseline migration
+(`packages/db/prisma/migrations/0P3__p0_3_backlog/`); `git status` is clean. CI status for `bd1cb58`
+is not yet confirmed. This package landed at `8b312ff`; the D-15 amendment at `2f4862d`; rulings at
+`2bda965`.
 **Owner:** Chief Software Architect
 **Audience:** Developer (implementation), QA (verification), Architect (change control)
 

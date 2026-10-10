@@ -4,7 +4,7 @@
 | --- | --- |
 | Document | `docs/architecture/02-data-model.md` |
 | Revision | **A** |
-| Baseline schema | last committed `packages/db/prisma/schema.prisma` is the `091d0f8` ("P0 v1") version — `d8598b6` did not touch it. The approved P0.3 backlog schema is present in the working tree but **uncommitted as of `2f4862d`** (≈580 insertions / 142 deletions: `@db.Timestamptz(3)` throughout, vault/TOTP/assignment fields, plus the `packages/db/prisma/migrations/0P3__p0_3_backlog/` baseline). Both must be committed with the ARCH-02 §5 backlog |
+| Baseline schema | committed and pushed at `bd1cb58` — `packages/db/prisma/schema.prisma` (the approved P0.3 backlog schema: `@db.Timestamptz(3)` throughout, vault/TOTP/assignment fields) together with its generated baseline `packages/db/prisma/migrations/0P3__p0_3_backlog/`. Both landed in the same commit, so a clean clone reproduces the baseline and `pnpm db:drift` can pass. Supersedes the earlier `091d0f8` ("P0 v1") schema |
 | Status | **APPROVED** — §5 is the binding P0.3 migration backlog |
 
 ---
