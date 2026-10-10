@@ -72,7 +72,7 @@ This document is the **single, living register of defects and latent production 
 | BUG-031 | `optionalUrl` accepts `javascript:`/`file:`/`data:`; no https enforcement | Medium | STATIC | OPEN |
 | BUG-032 | `docker-compose.yml` binds DB+Redis to `0.0.0.0` with weak creds, no Redis auth | Medium | STATIC | OPEN |
 | BUG-033 | `.gitattributes` lacks `eol=lf`; Windows checkout breaks shell-based CI steps | Medium | STATIC | OPEN |
-| BUG-034 | Node 20 is EOL in CI and in the base image | Medium | STATIC | OPEN |
+| BUG-034 | Node 20 is EOL in CI and in the base image | Medium | STATIC | CLEARED |
 | BUG-035 | `apps/web` has no error boundary and no security headers | Low | STATIC | OPEN |
 | BUG-036 | `workers/package.json` declares `types` that the build never emits | Low | STATIC | OPEN |
 | BUG-037 | `sourceMap: true` inherited → production image ships `.js.map` | Low | STATIC | OPEN |
@@ -1225,10 +1225,10 @@ Then normalise the working tree once (`git add --renormalize .`) so the fix take
 | **Evidence** | STATIC |
 | **Location** | `.github/workflows/ci.yml` (`node-version: 20`); `infra/Dockerfile.api` (`FROM node:20-alpine`); root `package.json` (`engines.node: ">=20"`) |
 | **Blocks** | P0.3; runtime patching |
-| **Status** | OPEN |
-| **Discussion** | — |
-| **Answered by / Answered at** | — |
-| **Verified by / Verified at** | --- |
+| **Status** | CLEARED |
+| **Discussion** | - |
+| **Answered by / Answered at** | ARCH at 2026-10-11 Beijing time |
+| **Verified by / Verified at** | `pnpm test` green on Node 22; `check:node` gate passes; `engines >=22` pinned in `package.json`; `node:22-alpine` in `infra/Dockerfile.api`; CI runner `node-version: 22` |
 
 **Issue.** Node 20 reached end-of-life in April 2026. Both the CI runner and the container base image target it, and the floating `node:20-alpine` tag now receives no upstream patches. `engines.node: ">=20"` permits it without warning.
 
