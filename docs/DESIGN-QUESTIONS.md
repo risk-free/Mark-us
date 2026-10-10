@@ -593,7 +593,7 @@ This document is the **single, living register of open product/design questions*
 | FA-006 | DQ-004 | Revisit type-aware ESLint rules once the codebase has substantive types; measure the runtime cost first | Developer | P2 | OPEN |
 | FA-007 | DQ-005, DQ-013 | `SESSION_SECRET`: shipped placeholders are now rejected outside development, but a *low-entropy* 32-character string still passes. Decide the rule (base64 ≥32 bytes vs. passphrase policy) with the auth design | Developer → Architect | P2.1 | OPEN |
 | FA-008 | — | Dependency floors resolve to versions with published advisories; `pnpm audit --audit-level=high` is now a CI gate, so the next run is the work list | Developer | before M0 | OPEN |
-| FA-009 | DQ-018 | Confirm the HK region's Node runtime and base image (Node 20 reaches EOL during the project; plan the 22+ upgrade) | Architect | P8.1 | OPEN |
+| FA-009 | DQ-018 | Confirm the HK region's Node runtime and base image — Node 22 LTS is adopted everywhere (`node:22-alpine`); remainder is the HK region itself (OPEN-05, DQ-018) | Architect | P8.1 | OPEN |
 | FA-010 | — | **RESOLVED at `bd1cb58`** — `schema.prisma`, `migration_lock.toml`, `ci.yml`, `packages/db/package.json`, `pnpm-lock.yaml` and `migrations/0P3__p0_3_backlog/` are now committed together, so a clean clone reproduces the baseline and `pnpm db:drift` can pass. Confirm on the `bd1cb58` CI run | Developer | before M3.2 sign-off | RESOLVED |
 
 *New actions are appended here when an answer creates follow-up work (schema change, doc update, migration note).*
@@ -609,6 +609,7 @@ This document is the **single, living register of open product/design questions*
 | 2026-09-29 01:03 | Reviewed the architecture of record (`docs/architecture/*`) and implemented mandates M1.1, M1.6, M2.1, M3.1, M3.2. Raised DQ-019 (money precision), DQ-020 (audit partitioning), DQ-021 (assessment factors), DQ-022 (no baseline migration existed). FA-001 answered: DQ-001/DQ-008 are **not** blocking the schema, because the P0.3 backlog is orthogonal to both; they still block the P1 handlers that use them. | Developer (full-stack) |
 | 2026-09-29 (Architect) | Rulings R-001…R-022 issued in §5. DQ-019/020/021/022 and DQ-001/002/005/007/008/010/011/013/014/015/016/018 answered; DQ-012 and DQ-017 narrowed to business decisions; DQ-003/006/009 untouched. ADRs D-16, D-17, D-18 opened. M3.2, M3.3 and M11.4 corrected; `ARCH-02` §4.1/§5/§5.4/§6/§8 amended. FA-010 opened (split P0.3 commit). | Architect |
 | 2026-10-11 (Architect) | Baseline pointers refreshed to `bd1cb58` after the Developer committed and pushed the P0.5 working tree + P0.3 schema/baseline (`git status` clean). FA-010 RESOLVED. `docs/DECISIONS.md` renumbered (audit ADR D-16; D-15 heading restored; D-17/D-18 written). `ARCH-01` §11/`ARCH-02` §7/`ARCH-04` baseline rows/`ARCH` README updated. CI status pending. | Architect |
+| 2026-10-11 (Architect) | OPEN-06 **RESOLVED** — Node 22 LTS is pinned everywhere (CI `node-version: 22`, `engines >= 22`, `node:22-alpine`, `check:node` gate); stale "Node 20" text corrected in `ARCH-01` §1 runtime components / §4 tech matrix / §15 open decisions, M1.6, `ARCH-04` open-issues, `ARCH` README. `TmSimilarity.method` vocabulary aligned to the contract authority `trigram|bge|hybrid` in `ARCH-02` §5.1/§5.5 and `schema.prisma` (comment only, no migration). | Architect |
 
 ---
 

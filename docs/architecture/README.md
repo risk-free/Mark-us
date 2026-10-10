@@ -96,7 +96,7 @@ positions are:
 | OPEN-03 | Probability cohort and label horizon | Field labelled `PENDING-P6`, no calibration claim |
 | OPEN-04 | Attorney roster, bar numbers, capacity | Filing preconditions cannot be validated end to end |
 | OPEN-05 | Hong Kong hosting and ICP path | Staging topology stays provisional |
-| OPEN-06 | Node 20 or 22: the whole working tree pins 20, but the CI runner is deprecated and `01` recommends 22 LTS (mandate `M1.6`) | Pin before the first production deploy |
+| OPEN-06 | **RESOLVED** — Node 22 LTS pinned everywhere (mandate `M1.6`) | done |
 | OPEN-07 | Refund approval threshold | Configuration value, required before P4 sign-off |
 | OPEN-08 | Model minimum sample size for release | Release pipeline stays blocked for P6 |
 | OPEN-09 | PIPL retention basis per PII column | Erasure cannot be declared complete |

@@ -21,7 +21,7 @@
 | Artifact | Package | Runtime | Scaling axis |
 | --- | --- | --- | --- |
 | `web` | `apps/web` | Next.js 15 (App Router, Node runtime) | horizontal, stateless |
-| `api` | `apps/api` | Hono on Node 20 LTS | horizontal, stateless |
+| `api` | `apps/api` | Hono on Node 22 LTS | horizontal, stateless |
 | `worker` | `workers` | BullMQ consumers | horizontal, stateless |
 | libraries | `packages/*` | in-process | n/a |
 
@@ -242,7 +242,7 @@ flowchart LR
 | AuthN | Redis-backed opaque sessions, Argon2id staff passwords, TOTP for `MASTER_ADMIN`/`EXPERT`, single-use magic links for clients | Self-issued JWT | immediate revocation (staff disable must kill access now), no token bloat, magic link fits non-technical Chinese sellers | session store loss → staff re-login, clients re-request link; acceptable |
 | Testing | Jest + RTL (unit/component), Playwright (E2E), k6 (load), OpenAPI contract tests | Vitest, Cypress | Jest decided in D-14; native `@testing-library` for React 19 | Jest ESM friction → `.cjs` config + `moduleNameMapper` (already in repo) |
 | Monorepo | pnpm 9 workspaces + Turborepo 2 | Nx, Lerna, none | cache without paid cloud, native workspace protocol, minimal config | config drift between packages → root `tsconfig.base.json` only, packages extend it (Mandate 9) |
-| CI/CD | GitHub Actions (`.github/workflows/ci.yml`) | GitLab CI, Jenkins | repo already on GitHub, free minutes, matrix support | runner supply-chain → pin actions to major tags + Dependabot; Node 20 deprecation warning tracked (OPEN-06) |
+| CI/CD | GitHub Actions (`.github/workflows/ci.yml`) | GitLab CI, Jenkins | repo already on GitHub, free minutes, matrix support | runner supply-chain → pin actions to major tags + Dependabot; Node 22 LTS pinned everywhere (OPEN-06 resolved) |
 | Observability | Sentry (errors + traces) + managed Prometheus-compatible metrics/alerting + first-party beacon → Postgres | Datadog, New Relic, GA, self-hosted Prometheus/Grafana/PostHog | no always-on self-hosted service (**D-15**, M12.8): the team has no 24/7 maintenance capacity; analytics stays first-party and D-07 forbids Google Analytics | metric cardinality → label allow-list (Mandate 31); provider lock-in → `/metrics` keeps the Prometheus text format so the scraper is swappable |
 | Email/identity | WeCom + SMTP (HK provider) | SES | seller base is on WeCom | deliverability → SPF/DKIM/DMARC mandatory before first send |
 
@@ -695,7 +695,7 @@ Code + unit tests + updated OpenAPI + ADR if design changed + telemetry (logs/me
 | **OPEN-03** | Is the **M5 accuracy gate** (AUC ≥ 0.70, accuracy ≥ 70 %, +10 pp over baseline) measured on the 2021–2023 cohort with a held-out test set defined as "applications filed in the trailing 12 months of the cohort"? Confirm the label horizon and the minimum cohort size before the model work starts. | Product + attorney SME | P5/P6 scoring (M5a) | Use the 2021–2023 cohort with a stratified 70/15/15 split, document the choice as an ADR, and report results with confidence intervals |
 | **OPEN-04** | **Attorney roster and capacity** — names, bar jurisdictions, USPTO IDs, and weekly hours available for filing ceremonies and OA response SLAs. The schedule's 18–20 weeks assumes ≥ 2 attorneys from P5 onward. | Managing Director | P5 onward, all M-gates | Plan for 2 attorneys; flag any schedule impact before P5 planning starts |
 | **OPEN-05** | HK hosting provider + whether **ICP filing is required** for the chosen HK-region deployment and for the mainland-origin API traffic path. Affects network topology and the P0 infrastructure choice. | Managing Director / IT | P0.4 infra | Deploy in a HK region with a mainland-routable path; no ICP-dependent features |
-| **OPEN-06** | Node.js baseline for CI/production: GitHub Actions now warns that Node 20 runners are deprecated (annotation on run `36242996677`). Move to Node 22 LTS now, or pin 20 for the remainder of P0? | Architect | nothing blocking | Migrate to Node 22 LTS in P0.3 (`engines >= 22`, `node-version: 22`, Dockerfiles `node:22-alpine`) |
+| **OPEN-06** | **RESOLVED** — Node.js baseline is **Node 22 LTS**, adopted in P0.3 (`engines >= 22`, `node-version: 22`, `node:22-alpine` in all Dockerfiles and compose). GitHub Actions had flagged Node 20 runners as deprecated (annotation on run `36242996677`). | Architect | nothing blocking | done |
 
 ---
 

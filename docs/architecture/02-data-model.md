@@ -194,7 +194,7 @@ erDiagram
     string trademarkId FK
     string corpusMarkId FK
     float score
-    string method "trigram|embedding"
+    string method "trigram|bge|hybrid"
   }
 ```
 
@@ -449,7 +449,7 @@ model TmSimilarity {
   corpusMarkId String
   corpusMark   TmCorpusMark @relation(fields: [corpusMarkId], references: [id], onDelete: Cascade)
   score        Float
-  method       String   // trigram | bge
+  method       String   // trigram | bge | hybrid
   computedAt   DateTime @default(now()) @db.Timestamptz(3)
   @@unique([assessmentId, corpusMarkId, method])
   @@index([assessmentId, score(sort: Desc)])

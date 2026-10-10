@@ -108,14 +108,14 @@ token, card number and vault secret never appears in captured logs.
 `node-version`, every `infra/Dockerfile.*` base image, and the local and staging compose files. No
 file may pin a different major.
 **Owner:** DEV + SRE · **Phase:** P0.3 · **Depends on:** none
-**Current state:** the working tree pins **Node 20** everywhere (`engines.node >= 20`,
-`node:20-alpine` in all three Dockerfiles, `node-version: 20` in CI), while GitHub Actions has
-flagged the Node 20 runner as deprecated (annotation on run `36242996677`) and `01` recommends
-moving to Node 22 LTS.
+**Current state:** the working tree pins **Node 22 LTS** everywhere (`engines.node >= 22`,
+`node:22-alpine` in all three Dockerfiles, `node-version: 22` in CI, plus the `check:node` gate),
+so the six locations already agree. Node 20 runners had been flagged deprecated by GitHub Actions
+(annotation on run `36242996677`); OPEN-06 is closed.
 **Verification:** CI step that extracts the major from each of the six locations and fails on any
 mismatch; a scheduled job that fails when the pinned runner image is announced as deprecated.
-**Halt:** OPEN-06. The Architect's recommendation is Node 22 LTS, adopted in P0.3 as one atomic
-change (engines, CI, all Dockerfiles, compose) with a green build before it merges.
+**Halt:** none. OPEN-06 is resolved — Node 22 LTS is adopted as one atomic change (engines, CI,
+all Dockerfiles, compose) with a green build.
 
 ---
 
@@ -903,7 +903,7 @@ flowchart LR
 | OPEN-03 | Exact probability cohort and label horizon | M6.1, M6.5 | Architect + Legal |
 | OPEN-04 | Attorney roster, bar numbers and capacity | M9.1, M9.2 | Business |
 | OPEN-05 | Hong Kong hosting provider and ICP path | M14.2 | Business |
-| OPEN-06 | Node 20 or Node 22: everything currently pins 20, but the CI runner is flagged deprecated and `01` recommends 22 LTS | M1.6, M14.1 | Architect |
+| OPEN-06 | **RESOLVED** — Node 22 LTS pinned everywhere (`engines >= 22`, CI `node-version: 22`, `node:22-alpine`), no mismatch | M1.6, M14.1 | Architect |
 | OPEN-07 | Refund approval threshold value | M10.3 | Business |
 | OPEN-08 | Model minimum sample size for release | M6.5 | Architect |
 | OPEN-09 | Retention basis per PII column for PIPL erasure | M12.7 | Legal |
