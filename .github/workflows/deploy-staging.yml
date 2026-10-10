@@ -1,0 +1,85 @@
+name: Deploy staging
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit SHA to deploy (blank = the commit that triggered the run)"
+        required: false
+        type: string
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  deploy:
+    name: build · push · deploy · verify
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.image }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/Dockerfile.${{ matrix.image }}
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/markus-${{ matrix.image }}:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/markus-${{ matrix.image }}:staging
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+        strategy:
+          fail-fast: false
+          matrix:
+            image: [api, web, worker]
+
+      - name: Configure SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.STAGING_SSH_KEY }}" >~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.STAGING_HOST }}" >>~/.ssh/known_hosts
+
+      - name: Deploy
+        run: |
+          ssh -i ~/.ssh/id_ed25519 \
+            "${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }}" \
+            "cd '${{ secrets.STAGING_DEPLOY_PATH }}' && \
+             DEPLOY_PATH='${{ secrets.STAGING_DEPLOY_PATH }}' \
+             MARKUS_REGISTRY_PATH='${{ github.repository }}' \
+             bash infra/scripts/deploy.sh '${{ github.sha }}'"
+
+      - name: Verify from outside the host
+        run: |
+          API_HEALTH_URL="${{ vars.STAGING_API_HEALTH_URL }}" \
+          WEB_URL="${{ vars.STAGING_WEB_URL }}" \
+          bash infra/scripts/healthcheck.sh
+
+      - name: Roll back
+        if: failure()
+        run: |
+          ssh -i ~/.ssh/id_ed25519 \
+            "${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }}" \
+            "cd '${{ secrets.STAGING_DEPLOY_PATH }}' && \
+             DEPLOY_PATH='${{ secrets.STAGING_DEPLOY_PATH }}' \
+             MARKUS_REGISTRY_PATH='${{ github.repository }}' \
+             bash infra/scripts/rollback.sh"

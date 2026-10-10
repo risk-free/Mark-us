@@ -1,5 +1,19 @@
-// Mark-US data model — authoritative schema (PRD v2.0 §5, DECISIONS D-09..D-14)
-// Migration workflow: pnpm db:migrate -- <name>   (prisma migrate dev)
+// Mark-US data model — authoritative schema
+//
+// Authority: docs/architecture/02-data-model.md (ARCH-02) rev A, §5 P0.3 backlog.
+// Baseline: 0P3__p0_3_backlog/migration.sql (full baseline — the repository had no
+//            prior migration, so ARCH-02 §5.4's ALTER-based timestamptz conversion is
+//            subsumed: instant columns are declared as timestamptz(3) from the start).
+//
+// Conventions (ARCH-02 §1):
+//   instants   -> @db.Timestamptz(3), always UTC
+//   calendar   -> @db.Date (corpus) or String "YYYY-MM-DD" (business deadlines, ARCH-02 §1)
+//   money      -> Decimal(12,2) + explicit currency (see DQ-019: M3.3 says 14,2)
+//   soft delete-> deletedAt on Contact, Trademark, Document
+//
+// Items Prisma cannot express (partial/functional indexes, CHECK constraints,
+// sequences, GIN trigram, BRIN, autovacuum) live in the migration SQL and are
+// marked [SQL] at the model they belong to.
 
 generator client {
   provider = "prisma-client-js"
@@ -179,26 +193,42 @@ model StaffUser {
   locale       String      @default("zh-CN")
   timezone     String      @default("Asia/Hong_Kong")
   wecomUserid  String?     @unique
-  lastLoginAt  DateTime?
+  lastLoginAt  DateTime?   @db.Timestamptz(3)
 
   // USPTO credential vault (D-01): envelope-encrypted ciphertext only.
-  // MFA/OTP seed is NEVER stored — attorneys complete MFA themselves.
+  // MFA/OTP seed is NEVER stored — attorneys complete MFA themselves (mandate G2).
   usptoUsername       String?
   usptoPasswordCipher Bytes?
   usptoKeyVersion     Int?
-  usptoVaultUpdatedAt DateTime?
+  usptoVaultUpdatedAt DateTime? @db.Timestamptz(3)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  // MFA + step-up (ARCH-01 §5.1, mandates M2.4/M2.5)
+  totpSecretCipher Bytes?
+  totpEnabledAt    DateTime? @db.Timestamptz(3)
+  vaultStepUpAt    DateTime? @db.Timestamptz(3) // last successful step-up, 5-min window
+  vaultRotatedAt   DateTime? @db.Timestamptz(3) // 90-day forced re-rotation (D-01)
+
+  // Deactivation instead of deletion (ARCH-02 §1)
+  disabledAt   DateTime? @db.Timestamptz(3)
+  lastAssignedAt DateTime? @db.Timestamptz(3) // round-robin cursor fallback
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   assignedContacts      Contact[]           @relation("ContactOwner")
   assignedConversations Conversation[]      @relation("ConversationOwner")
   assignedLeads         Lead[]              @relation("LeadOwner")
   filedApplications     Application[]       @relation("ExpertFiled")
+  filedByApplications   Application[]       @relation("FiledBy")
   uploadedVersions      DocumentVersion[]
+  issuedInvoices        Invoice[]           @relation("InvoiceIssuer")
   auditLogs             AuditLog[]
   notifications         Notification[]
   consentRecords        ConsentRecord[]
+  assignmentState       AssignmentState?
+  notificationPrefs     NotificationPreference[]
+  featureFlagUpdates    FeatureFlag[]       @relation("FeatureFlagUpdater")
+  deletedContacts       Contact[]           @relation("ContactDeletedBy")
 
   @@index([role, status])
 }
@@ -208,35 +238,42 @@ model StaffUser {
 // ---------------------------------------------------------------------------
 
 model Contact {
-  id     String        @id @default(cuid())
-  name   String
-  email  String?       @unique
-  phone  String?       @unique
-  wechatAlias String?
-  locale String        @default("zh-CN")
-  tags   String[]      @default([])
-  status ContactStatus @default(NEW)
-  stage  LeadStage     @default(NEW)
+  id          String        @id @default(cuid())
+  name        String // PII (ARCH-02 §1.1) — never logged, never sent to an LLM
+  email       String?       @unique // PII
+  phone       String?       @unique // PII
+  wechatAlias String? // PII
+  locale      String        @default("zh-CN")
+  tags        String[]      @default([]) // [SQL] GIN index (Q: CRM tag filters)
+  status      ContactStatus @default(NEW)
+  stage       LeadStage     @default(NEW)
 
   assignedSalespersonId String?
   assignedSalesperson   StaffUser? @relation("ContactOwner", fields: [assignedSalespersonId], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  // Soft delete (ARCH-02 §1, M3.5) — PIPL erasure scrubs PII columns in P8
+  deletedAt   DateTime? @db.Timestamptz(3)
+  deletedById String?
 
-  trademarks     Trademark[]
-  orders         Order[]
-  payments       Payment[]
-  conversations  Conversation[]
-  leads          Lead[]
-  documents      Document[]
-  tickets        CSTicket[]
-  wecomLinks     WeComLink[]
-  consentRecords ConsentRecord[]
-  notifications  Notification[]
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  @@index([assignedSalespersonId])
+  trademarks      Trademark[]
+  orders          Order[]
+  payments        Payment[]
+  conversations   Conversation[]
+  leads           Lead[]
+  documents       Document[]
+  tickets         CSTicket[]
+  wecomLinks      WeComLink[]
+  consentRecords  ConsentRecord[]
+  notifications   Notification[]
+  deletedBy       StaffUser?     @relation("ContactDeletedBy", fields: [deletedById], references: [id])
+  magicLinks      MagicLinkToken[]
+
+  @@index([assignedSalespersonId, stage]) // Q2
   @@index([stage])
+  @@index([deletedAt])
 }
 
 model Lead {
@@ -251,22 +288,33 @@ model Lead {
   assignedSalespersonId String?
   assignedSalesperson   StaffUser? @relation("LeadOwner", fields: [assignedSalespersonId], references: [id])
 
-  convertedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  // Assignment SLA instrumentation (D-07, M4.1): createdAt -> assignedAt
+  assignedAt    DateTime? @db.Timestamptz(3)
+  assignedById  String? // null = automatic round-robin
+  assignedBy    String? // "AUTO" | "MANUAL" — manual requires a reason (M4.1)
+  reassignReason String?
+  convertedAt   DateTime? @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @db.Timestamptz(3)
 
-  @@index([assignedSalespersonId])
+  @@index([assignedSalespersonId, status, createdAt(sort: Desc)]) // Q1
   @@index([status])
+  @@index([contactId])
 }
 
 model Conversation {
   id       String             @id @default(cuid())
   channel  Channel
   status   ConversationStatus @default(OPEN)
-  sentiment String?
-  resolved Boolean            @default(false)
-  archived Boolean            @default(false)
-  lastMessageAt DateTime?
+  // D-07 deflection metric is derived from exactly these two facts (M4.3)
+  handledByStaff Boolean            @default(false)
+  resolution     String? // DEFLECTED | HUMAN | null
+  sentiment      String?
+  resolved       Boolean            @default(false)
+  archived       Boolean            @default(false)
+  // WeCom 会话存档 conversation key — dedupe for at-least-once archive delivery
+  wecomSessionId String?
+  lastMessageAt  DateTime?          @db.Timestamptz(3)
 
   contactId String
   contact   Contact @relation(fields: [contactId], references: [id])
@@ -274,41 +322,70 @@ model Conversation {
   assignedSalespersonId String?
   assignedSalesperson   StaffUser? @relation("ConversationOwner", fields: [assignedSalespersonId], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   messages Message[]
 
+  @@index([assignedSalespersonId, status, lastMessageAt(sort: Desc)]) // Q3
   @@index([contactId])
-  @@index([assignedSalespersonId])
   @@index([status])
+  // [SQL] unique (channel, wecomSessionId) — archive replay safety (M4.2)
 }
 
 model Message {
-  id             String           @id @default(cuid())
-  direction      MessageDirection
-  contentType    String           @default("text")
-  content        String
-  wecomMsgid     String?
-  createdAt      DateTime         @default(now())
+  id          String           @id @default(cuid())
+  direction   MessageDirection
+  contentType String           @default("text")
+  content     String // PII — referenced by id in logs, never logged (ARCH-01 §10)
+  wecomMsgid  String?
+  // PIPL erasure inside archived content (ARCH-02 §5.2)
+  redactedAt DateTime? @db.Timestamptz(3)
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
 
   conversationId String
-  conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
-  @@index([conversationId, createdAt])
+  @@index([conversationId, createdAt]) // Q4
+  // [SQL] unique (conversationId, wecomMsgid) WHERE wecomMsgid IS NOT NULL (Q4)
 }
 
 model WeComLink {
   id             String   @id @default(cuid())
   externalUserId String   @unique
   channel        Channel
-  verifiedAt     DateTime?
-  createdAt      DateTime @default(now())
+  verifiedAt     DateTime? @db.Timestamptz(3)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
 
   contactId String
   contact   Contact @relation(fields: [contactId], references: [id])
 
   @@index([contactId])
+}
+
+// ---------------------------------------------------------------------------
+// Client credentials (D-06: magic link is the client's only credential)
+// ---------------------------------------------------------------------------
+
+/// Single-use magic link. The token itself is never stored — only its SHA-256 hash.
+model MagicLinkToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  scope     String    @default("portal") // see DQ-005 (portal | pay:<invoiceId> | …)
+  expiresAt DateTime  @db.Timestamptz(3)
+  consumedAt DateTime? @db.Timestamptz(3)
+  attempts  Int       @default(0)
+  requestIp String?
+  requestUa String?
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  issuedById String?
+
+  @@index([contactId, createdAt(sort: Desc)])
+  @@index([expiresAt])
 }
 
 // ---------------------------------------------------------------------------
@@ -316,10 +393,10 @@ model WeComLink {
 // ---------------------------------------------------------------------------
 
 model Trademark {
-  id          String          @id @default(cuid())
-  title       String
+  id          String  @id @default(cuid())
+  title       String // business-confidential; LLM only with recorded consent
   description String?
-  imageText   String?         // design element — word-mark-first scope (D-02)
+  imageText   String? // design element — word-mark-first scope (D-02)
   niceClass   Int
   goodsServices String
 
@@ -327,30 +404,42 @@ model Trademark {
   filingBasis     String?
   serialNumber    String?         @unique
   registrationNumber String?      @unique
-  filedAt         DateTime?
-  registeredAt    DateTime?
+  filedAt         DateTime?       @db.Timestamptz(3)
+  filedDate       String? // YYYY-MM-DD, USPTO calendar semantics (ARCH-02 §1)
+  registeredAt    DateTime?       @db.Timestamptz(3)
+  registrationDate String?
 
-  // Probability model (D-03): P(eventual registration), non-probabilistic sub-signals
+  // Denormalised latest headline score. The append-only source of truth is
+  // TrademarkAssessment (M6.1). Float + range CHECK per ARCH-02 §5.3.
   probabilityScore        Float?
   probabilityModelVersion String?
-  probabilityReviewedAt   DateTime?
+  probabilityReviewedAt   DateTime? @db.Timestamptz(3)
+  probabilityReviewedById String?
+  probabilityVerdict      String? // ATTORNEY_CONFIRMED | ATTORNEY_OVERRIDDEN | null
 
   // USPTO corpus (D-02): index status of this mark in our local index
   corpusStatus String?
 
+  // PIPL/D-04: mark text may only reach the LLM with recorded consent
+  consentForCorpusAt DateTime? @db.Timestamptz(3)
+
+  deletedAt DateTime? @db.Timestamptz(3)
+
   contactId String
   contact   Contact @relation(fields: [contactId], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  applications Application[]
-  documents    Document[]
-  orders       Order[]
+  applications  Application[]
+  documents     Document[]
+  orders        Order[]
+  assessments   TrademarkAssessment[]
 
-  @@index([contactId])
-  @@index([niceClass])
+  @@index([contactId])           // Q6
+  @@index([niceClass, status])   // Q6
   @@index([status])
+  @@index([deletedAt])
 }
 
 model Application {
@@ -358,49 +447,75 @@ model Application {
   serialNumber   String?           @unique
   status         ApplicationStatus @default(DRAFT)
   filingBasis    String?
-  filedAt        DateTime?
-  responseDeadline DateTime?
-  nextReminderAt DateTime?
-  tsdrLastSyncAt DateTime?
+  filedAt        DateTime?         @db.Timestamptz(3)
+  filedDate      String? // YYYY-MM-DD statutory filing date
+
+  // Attended filing ceremony (D-01, 37 CFR 2.193, ARCH-01 §6.2).
+  // ATTENDED is the only permitted value: a human attorney signs inside TEAS.
+  filingMethod    String    @default("ATTENDED")
+  filingSessionId String?   @unique
+  filingStartedAt DateTime? @db.Timestamptz(3)
+  filingChecklist Json? // generated packet state
+  receiptKey      String? // attorney's receipt artefact key (R2)
+  filedById       String?
+
+  responseDeadline     DateTime? @db.Timestamptz(3) // 23:59:59 America/New_York
+  responseDeadlineDate String? // YYYY-MM-DD, display + reminder math
+  nextReminderAt       DateTime? @db.Timestamptz(3)
+  tsdrLastSyncAt       DateTime? @db.Timestamptz(3)
+
+  // Optimistic concurrency (M1.4)
+  version Int @default(1)
 
   trademarkId String
   trademark   Trademark @relation(fields: [trademarkId], references: [id])
 
   expertAssignedId String?
   expertAssigned   StaffUser? @relation("ExpertFiled", fields: [expertAssignedId], references: [id])
+  filedBy          StaffUser? @relation("FiledBy", fields: [filedById], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   officeActions OfficeAction[]
+  documents     Document[]
+  orders        Order[]
 
-  @@index([status])
-  @@index([nextReminderAt])
-  @@index([expertAssignedId])
+  @@index([status])                        // Q8
+  @@index([nextReminderAt])                // Q8
+  @@index([expertAssignedId, status])      // Q8
+  @@index([responseDeadline])
 }
 
 model OfficeAction {
   id                String   @id @default(cuid())
   kind              String // NON_FINAL | FINAL | SUSPENSION | ...
   usptoActionCode   String?
-  issuedAt          DateTime?
-  responseDeadline  DateTime?
-  bodyText          String?  // extracted via ODP/OCR
-  analysis          Json?    // LLM draft + attorney review result
-  responseFiledAt   DateTime?
+  issuedAt          DateTime? @db.Timestamptz(3)
+  responseDeadline  DateTime? @db.Timestamptz(3)
+  responseDeadlineDate String? // YYYY-MM-DD (ARCH-02 §1, §5.2)
+  rawActionKey      String? // vendor-supplied stable key when available
+  bodyText          String? // business-confidential; LLM only with consent
+  analysis          Json? // LLM draft + attorney review result
+  responseFiledAt   DateTime? @db.Timestamptz(3)
+  approvedById      String? // human approval of the response (M9.4)
+
+  // Optimistic concurrency (M1.4)
+  version Int @default(1)
 
   applicationId String
-  application   Application @relation(fields: [applicationId], references: [id])
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   @@index([applicationId])
-  @@index([responseDeadline])
+  @@index([responseDeadline]) // Q9
+  // [SQL] unique (applicationId, usptoActionCode, responseDeadline) (Q9)
 }
 
 // ---------------------------------------------------------------------------
-// Documents (D-09 — versioned, OCR + proofreading in Phase 2)
+// Documents (versioned, append-only; OCR + proofreading in P2)
 // ---------------------------------------------------------------------------
 
 model Document {
@@ -408,19 +523,29 @@ model Document {
   filename       String
   kind           DocKind  @default(OTHER)
   currentVersion Int      @default(1)
+  checksum       String? // checksum of the current version
+  // Optimistic concurrency (M1.4) — If-Match on mutations
+  version        Int      @default(1)
+  deletedAt      DateTime? @db.Timestamptz(3)
 
   contactId String
   contact   Contact   @relation(fields: [contactId], references: [id])
+
   trademarkId String?
   trademark   Trademark? @relation(fields: [trademarkId], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  applicationId String?
+  application   Application? @relation(fields: [applicationId], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   versions DocumentVersion[]
 
   @@index([contactId])
   @@index([trademarkId])
+  @@index([applicationId])
+  @@index([deletedAt])
 }
 
 model DocumentVersion {
@@ -429,44 +554,68 @@ model DocumentVersion {
   storageKey     String
   sizeBytes      Int
   checksum       String
-  ocrText        String?
+  mimeType       String?
+  scanStatus     String   @default("PENDING") // PENDING | CLEAN | QUARANTINED
+  ocrText        String? // PII
   proofreadStatus String? // PENDING | NEEDS_REVISION | APPROVED
+  // Only a human may set this (M5.2); the OCR pipeline is structurally unable to
+  approvedById    String?
+  approvedAt      DateTime? @db.Timestamptz(3)
   uploadedById   String?
   uploadedBy     StaffUser? @relation(fields: [uploadedById], references: [id])
-  createdAt      DateTime @default(now())
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
 
   documentId String
   document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
-  @@unique([documentId, versionNo])
+  @@unique([documentId, versionNo]) // Q13
+  @@unique([documentId, checksum])  // Q13 — identical bytes create no new version
 }
 
 // ---------------------------------------------------------------------------
-// Commerce (D-05: itemized invoices, multi-rail payments)
+// Commerce (D-05: itemised invoices, multi-rail payments)
 // ---------------------------------------------------------------------------
 
 model Order {
   id       String      @id @default(cuid())
-  number   String      @unique
+  number   String      @unique // "MK-2026-000123" from seq_order_number (§1)
   status   OrderStatus @default(DRAFT)
-  currency String      @default("USD")
+  currency String      @default("USD") // ISO-4217
   subtotal Decimal     @default(0) @db.Decimal(12, 2)
   total    Decimal     @default(0) @db.Decimal(12, 2)
 
+  priceListVersion String? // frozen at creation (M10.1)
   contactId String
   contact   Contact    @relation(fields: [contactId], references: [id])
+
   trademarkId String?
   trademark   Trademark? @relation(fields: [trademarkId], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  applicationId String?
+  application   Application? @relation(fields: [applicationId], references: [id])
+
+  // Optimistic concurrency (M1.4)
+  version Int @default(1)
+
+  expiresAt  DateTime? @db.Timestamptz(3)
+  paidAt     DateTime? @db.Timestamptz(3)
+  cancelReason String?
+
+  // D-05 CNY display must be reproducible server-side (never computed in the browser)
+  displayRateCny  Decimal? @db.Decimal(12, 6)
+  displayRateAsOf DateTime? @db.Timestamptz(3)
+  displayRateSource String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   lineItems InvoiceLineItem[]
   invoice   Invoice?
   payments  Payment[]
 
-  @@index([contactId])
-  @@index([status])
+  @@index([contactId, createdAt(sort: Desc)]) // Q10
+  @@index([status, createdAt(sort: Desc)])    // Q10
+  @@index([trademarkId])
 }
 
 model InvoiceLineItem {
@@ -477,52 +626,313 @@ model InvoiceLineItem {
   quantity    Int      @default(1)
   refundable  Boolean  @default(true)
   sortOrder   Int      @default(0)
+  // Multi-class filings produce one USPTO_FEE line per Nice class (DQ-008)
+  niceClass   Int?
+  // [SQL] CHECK (refundedAmount >= 0 AND refundedAmount <= unitAmount * quantity) —
+  // Prisma cannot express multiplication in a CHECK; application must validate.
+  refundedAmount Decimal @default(0) @db.Decimal(12, 2)
 
   orderId String
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
+  refundAllocations RefundAllocation[]
+
   @@index([orderId])
+  @@unique([orderId, sortOrder])
 }
 
 model Invoice {
   id       String        @id @default(cuid())
-  number   String        @unique
+  number   String        @unique // "INV-2026-000123" from seq_invoice_number
   locale   String        @default("zh-CN")
   status   InvoiceStatus @default(ISSUED)
-  pdfKey   String?
-  issuedAt DateTime      @default(now())
-  paidAt   DateTime?
-  createdAt DateTime     @default(now())
+  pdfKey   String? // R2 object key of the immutable PDF snapshot
+
+  // Immutable legal snapshot (M10.4) — later price-list or order changes never alter it
+  subtotal     Decimal @db.Decimal(12, 2)
+  total        Decimal @db.Decimal(12, 2)
+  currency     String  @default("USD")
+  billingName  String // PII snapshot
+  billingEmail String?
+  voidedAt     DateTime? @db.Timestamptz(3)
+  issuedAt     DateTime  @default(now()) @db.Timestamptz(3)
+  issuedById   String?
+  dueAt        DateTime? @db.Timestamptz(3) // PRD §5.6
+  paidAt       DateTime? @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
 
   orderId String  @unique
   order   Order   @relation(fields: [orderId], references: [id])
+
+  issuedBy StaffUser? @relation("InvoiceIssuer", fields: [issuedById], references: [id])
+
+  @@index([issuedAt(sort: Desc)])
 }
 
 model Payment {
-  id       String        @id @default(cuid())
-  amount   Decimal       @db.Decimal(12, 2)
-  currency String        @default("USD")
+  id       String          @id @default(cuid())
+  amount   Decimal         @db.Decimal(12, 2)
+  currency String          @default("USD")
   provider PaymentProvider
   method   PaymentMethod
-  status   PaymentStatus @default(REQUIRES_ACTION)
+  status   PaymentStatus   @default(REQUIRES_ACTION)
 
-  transactionId   String? @unique // provider charge/payout id
-  providerEventId String? @unique // webhook idempotency key
+  transactionId   String? @unique
+  providerEventId String? @unique // webhook idempotency key (Q11)
+  idempotencyKey  String? @unique // client-supplied Idempotency-Key
   rawEvent        Json?
-  paidAt          DateTime?
-  refundedAt      DateTime?
+
+  paidAt      DateTime? @db.Timestamptz(3)
+  refundedAt  DateTime? @db.Timestamptz(3)
 
   orderId String?
   order   Order?    @relation(fields: [orderId], references: [id])
   contactId String
-  contact   Contact @relation(fields: [contactId], references: [id])
+  contact   Contact  @relation(fields: [contactId], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   @@index([orderId])
   @@index([contactId])
   @@index([status])
+  // [SQL] partial index (status, createdAt) WHERE status='SUCCEEDED' (Q12) —
+  // Prisma cannot express partial indexes; application must filter on status.
+}
+
+/// Refunds are rows, never mutations of history (ARCH-01 §6.3, DQ-009).
+/// providerRefundId is the reconciliation key for the daily job (M10.5).
+model Refund {
+  id               String   @id @default(cuid())
+  amount           Decimal  @db.Decimal(12, 2)
+  currency         String   @default("USD")
+  providerRefundId String?  @unique
+  reason           String
+  approvedById     String? // second approver above the refund threshold (M10.3)
+  createdById      String
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+
+  paymentId String
+  payment   Payment @relation(fields: [paymentId], references: [id])
+  orderId   String?
+  allocations RefundAllocation[]
+
+  @@index([paymentId])
+  @@index([createdAt(sort: Desc)])
+}
+
+/// Per-line allocation so a partial refund can be reconciled and re-refunded safely.
+model RefundAllocation {
+  id       String  @id @default(cuid())
+  amount   Decimal @db.Decimal(12, 2)
+
+  refundId String
+  refund   Refund  @relation(fields: [refundId], references: [id], onDelete: Cascade)
+  lineItemId String
+  lineItem InvoiceLineItem @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
+
+  @@unique([refundId, lineItemId])
+}
+
+/// Provider webhook ledger (PRD §5.6; supersedes the nullable unique on Payment).
+/// Every delivery is claimed here before any state mutation, so a replay returns the
+/// recorded outcome instead of re-applying (ARCH-01 §11.1, M10.2).
+model WebhookEvent {
+  id              String   @id @default(cuid())
+  provider        String
+  providerEventId String
+  type            String
+  payload         Json
+  status          String   @default("RECEIVED") // RECEIVED | PROCESSED | FAILED | IGNORED
+  attemptCount    Int      @default(0)
+  lastError       String?
+  signatureValid  Boolean  @default(false)
+  receivedAt      DateTime @default(now()) @db.Timestamptz(3)
+  processedAt     DateTime? @db.Timestamptz(3)
+  rawBodyRetainedUntil DateTime? @db.Timestamptz(3) // 30 days for disputes
+
+  @@unique([provider, providerEventId])
+  @@index([status, receivedAt])
+  @@index([receivedAt(sort: Desc)])
+}
+
+// ---------------------------------------------------------------------------
+// Eventing (ARCH-01 §2.3, M3.4) — written in the same transaction as the change
+// ---------------------------------------------------------------------------
+
+model OutboxEvent {
+  id            BigInt   @id @default(autoincrement())
+  aggregateType String
+  aggregateId   String
+  type          String
+  payload       Json
+  traceId       String?
+  requestId     String?
+  attempts      Int      @default(0)
+  publishedAt   DateTime? @db.Timestamptz(3)
+  replayedAt    DateTime? @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([publishedAt, id])
+  @@index([aggregateType, aggregateId])
+  // [SQL] CHECK ("payload" ? 'v') — Prisma cannot express the ? jsonb operator;
+  // application must enforce payload versioning logic.
+  // [SQL] partial index (id) WHERE published_at IS NULL (Q16)
+}
+
+// ---------------------------------------------------------------------------
+// Probability (D-03) — append-only, never presented without model + disclaimer
+// ---------------------------------------------------------------------------
+
+model ProbabilityRun {
+  id               String   @id @default(cuid())
+  modelVersion     String   @unique
+  cohort           String   @default("2021-2023")
+  trainedAt        DateTime? @db.Timestamptz(3)
+  auc              Float?
+  accuracy         Float?
+  baselineAccuracy Float?
+  calibrationJson  Json? // per-bucket observed vs predicted
+  sampleSize       Int?
+  status           String   @default("candidate") // candidate | promoted | rejected | RELEASED
+  releasedAt       DateTime? @db.Timestamptz(3)
+  approvedByIds    String[] @default([]) // two-person approval (M6.5)
+  evaluatedAt      DateTime? @db.Timestamptz(3)
+  notes            String?
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+
+  assessments TrademarkAssessment[]
+
+  @@index([status])
+}
+
+model TrademarkAssessment {
+  id                String   @id @default(cuid())
+  trademarkId       String
+  trademark         Trademark @relation(fields: [trademarkId], references: [id], onDelete: Cascade)
+  pRegistration     Float // 0..1, headline = P(eventual registration); [SQL] CHECK
+  subSignals        Json // NON-probabilistic features; never rendered as %
+  modelVersion      String
+  runId             String?
+  run               ProbabilityRun? @relation(fields: [runId], references: [id])
+  disclaimerVersion String
+  featureSnapshot   Json // corpus version, top candidates, class
+  requestedById     String?
+  createdAt         DateTime @default(now()) @db.Timestamptz(3)
+
+  similarities TmSimilarity[]
+
+  @@unique([trademarkId, modelVersion, createdAt]) // append-only, replay-safe
+  @@index([trademarkId, createdAt(sort: Desc)])
+}
+
+// ---------------------------------------------------------------------------
+// USPTO corpus (D-02, option A1) — LIVE only: 600 pending + 700 registered
+// ---------------------------------------------------------------------------
+
+model TmCorpusMark {
+  id                 String   @id @default(cuid())
+  serialNumber       String   @unique
+  registrationNumber String?
+  markText           String
+  normalizedText     String // lower/unaccented/singularised at ingest — never ILIKE at query time
+  statusCode         String // "600" pending | "700" registered
+  filingDate         DateTime? @db.Date
+  registrationDate   DateTime? @db.Date
+  abandonDate        DateTime? @db.Date
+  goodsSummary       String?
+  sourceFile         String
+  sourceUpdatedAt    DateTime? @db.Timestamptz(3) // provenance (M7.1)
+  ingestedAt         DateTime @default(now()) @db.Timestamptz(3)
+  ingestRunId        String?
+
+  classes     TmCorpusMarkClass[]
+  similarities TmSimilarity[]
+
+  @@index([statusCode, filingDate(sort: Desc)])
+  @@index([ingestedAt])
+  @@index([ingestRunId])
+  // [SQL] CREATE EXTENSION pg_trgm + GIN (normalized_text gin_trgm_ops) (Q7, ARCH-02 §4.2.4)
+}
+
+model TmCorpusClass {
+  id    String @id // Nice class, e.g. "025"
+  label String
+
+  marks TmCorpusMarkClass[]
+}
+
+model TmCorpusMarkClass {
+  markId  String
+  classId String
+  mark     TmCorpusMark @relation(fields: [markId], references: [id], onDelete: Cascade)
+  class    TmCorpusClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@id([markId, classId])
+  @@index([classId])
+}
+
+model TmSimilarity {
+  id           String   @id @default(cuid())
+  assessmentId String
+  assessment   TrademarkAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  corpusMarkId String
+  corpusMark   TmCorpusMark @relation(fields: [corpusMarkId], references: [id], onDelete: Cascade)
+  score        Float
+  method       String // trigram | bge
+  computedAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([assessmentId, corpusMarkId, method])
+  @@index([assessmentId, score(sort: Desc)])
+  @@index([corpusMarkId])
+}
+
+model TmIngestRun {
+  id             String   @id @default(cuid())
+  runDate        DateTime @db.Date
+  status         String   @default("running") // running | complete | failed
+  filesProcessed Int      @default(0)
+  marksUpserted  Int      @default(0)
+  marksSkipped   Int      @default(0)
+  marksImported  Int      @default(0)
+  marksUpdated   Int      @default(0)
+  marksRejected  Int      @default(0)
+  errorLog       Json?
+  startedAt      DateTime @default(now()) @db.Timestamptz(3)
+  finishedAt     DateTime? @db.Timestamptz(3)
+
+  @@unique([runDate])
+  @@index([status, startedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Assignment round-robin (D-06, M4.1) — SELECT ... FOR UPDATE SKIP LOCKED
+// ---------------------------------------------------------------------------
+
+model AssignmentState {
+  staffId        String    @id
+  activeLeads    Int       @default(0)
+  lastAssignedAt DateTime? @db.Timestamptz(3)
+  version        Int       @default(0)
+
+  staff StaffUser @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([activeLeads, lastAssignedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Feature flags (M14.1) — money and filing features default OFF
+// ---------------------------------------------------------------------------
+
+model FeatureFlag {
+  name           String   @id
+  enabled        Boolean  @default(false)
+  rolloutPercent Int      @default(0) // 0..100, staff-id hash
+  allowedRoles   String[] @default([])
+  updatedById    String?
+  updatedBy      StaffUser? @relation("FeatureFlagUpdater", fields: [updatedById], references: [id])
+  note           String?
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
 }
 
 // ---------------------------------------------------------------------------
@@ -536,73 +946,103 @@ model CSTicket {
   severity          Severity     @default(MEDIUM)
   description       String
   resolution        String?
-  resolvedAt        DateTime?
+  assignedToId      String?
+  resolvedAt        DateTime?    @db.Timestamptz(3)
   satisfactionScore Int?
-  slaDueAt          DateTime?
+  slaDueAt          DateTime?    @db.Timestamptz(3)
 
   contactId String
   contact   Contact @relation(fields: [contactId], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   @@index([contactId])
   @@index([status, slaDueAt])
 }
 
 model Notification {
-  id       String              @id @default(cuid())
-  channel  NotificationChannel
-  template String
-  payload  Json?
-  status   String              @default("PENDING") // PENDING | SENT | FAILED
-  sentAt   DateTime?
-  createdAt DateTime           @default(now())
+  id             String              @id @default(cuid())
+  channel        NotificationChannel
+  // Stable dedupe key: kind + entityId + recipientId + occurrence (M11.1)
+  idempotencyKey String              @unique
+  // SECURITY and DEADLINE cannot be opted out of (M9.3, M11.1)
+  kind           String              @default("GENERAL")
+  protected      Boolean             @default(false)
+  template       String
+  payload        Json?
+  status         String              @default("PENDING") // PENDING | SENT | FAILED
+  sentAt         DateTime?           @db.Timestamptz(3)
+  readAt         DateTime?           @db.Timestamptz(3)
+  createdAt      DateTime            @default(now()) @db.Timestamptz(3)
 
   userId String?
   user   StaffUser? @relation(fields: [userId], references: [id])
   contactId String?
   contact   Contact? @relation(fields: [contactId], references: [id])
 
-  @@index([userId, status])
-  @@index([contactId])
+  @@index([userId, status, createdAt(sort: Desc)]) // Q14
+  @@index([contactId, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+}
+
+model NotificationPreference {
+  id        String  @id @default(cuid())
+  channel   NotificationChannel
+  enabled   Boolean @default(true)
+  // SECURITY/DEADLINE are not represented here by design (M9.3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  userId String
+  user   StaffUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channel])
 }
 
 model AuditLog {
   id         String   @id @default(cuid())
-  action     String // VAULT_READ | ORDER_PAID | CASE_FILED | ROLE_CHANGED | ...
+  action     String // VAULT_SECRET_REVEAL | ORDER_PAID | FILING_RECORDED | LEAD_ASSIGNED | ...
   entityType String
   entityId   String?
-  metadata   Json?
+  metadata   Json? // never secrets, never raw PII (M11.3)
   ip         String?
-  createdAt  DateTime @default(now())
+  requestId  String?
+  traceId    String?
+  outcome    String? // success | denied | error
+  actorId    String?
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
 
-  actorId String?
-  actor   StaffUser? @relation(fields: [actorId], references: [id])
+  actor StaffUser? @relation(fields: [actorId], references: [id])
 
-  @@index([actorId, createdAt(sort: Desc)])
+  @@index([actorId, createdAt(sort: Desc)]) // Q15
   @@index([entityType, entityId])
+  // [SQL] BRIN (created_at) + partial (action, created_at DESC) WHERE action LIKE 'VAULT_%' (Q15, Q17)
+  // [SQL] monthly RANGE partitions on createdAt (ARCH-02 §6) + autovacuum_scale_factor=0.02
 }
 
 model ConsentRecord {
-  id        String      @id @default(cuid())
-  kind      ConsentKind
-  granted   Boolean
-  evidence  String?
-  ip        String?
-  createdAt DateTime    @default(now())
+  id            String      @id @default(cuid())
+  kind          ConsentKind
+  granted       Boolean
+  evidence      String?
+  ip            String?
+  // PIPL: consent must name the policy version it was given under (ARCH-02 §5.2)
+  policyVersion String?
+  source        String? // PORTAL | WECOM_CONSOLE | STAFF_CONSOLE
+  createdAt     DateTime    @default(now()) @db.Timestamptz(3)
 
   staffId String?
   staff   StaffUser? @relation(fields: [staffId], references: [id])
   contactId String?
-  contact   Contact?   @relation(fields: [contactId], references: [id])
+  contact   Contact? @relation(fields: [contactId], references: [id])
 
   @@index([contactId, kind])
   @@index([staffId, kind])
 }
 
 // ---------------------------------------------------------------------------
-// ERP (P7): marketing budget tracking
+// ERP (P7): marketing budget tracking. Pipeline/funnel are served from rollups
+// (M11.2); the rollup tables are added with the P7 implementation (DQ-003).
 // ---------------------------------------------------------------------------
 
 model Campaign {
@@ -610,10 +1050,11 @@ model Campaign {
   name    String
   channel String
   budget  Decimal  @db.Decimal(12, 2)
+  spent   Decimal  @default(0) @db.Decimal(12, 2)
   period  String // e.g. "2026-Q1"
   notes   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   @@index([period])
 }

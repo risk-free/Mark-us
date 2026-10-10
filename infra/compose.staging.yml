@@ -1,0 +1,62 @@
+name: markus-staging
+
+# Invoked as:  docker compose --env-file secrets.env -f infra/compose.staging.yml ...
+# by infra/scripts/deploy.sh. secrets.env lives on the host only (never in git).
+
+x-app-env: &app-env
+  NODE_ENV: production
+  DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set in secrets.env}
+  REDIS_URL: ${REDIS_URL:?REDIS_URL must be set in secrets.env}
+  PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL must be set in secrets.env}
+  API_BASE_URL: ${API_BASE_URL:?API_BASE_URL must be set in secrets.env}
+  SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set in secrets.env}
+  KMS_KEY_ID: ${KMS_KEY_ID:?KMS_KEY_ID must be set in secrets.env}
+  VAULT_MASTER_KEY: ${VAULT_MASTER_KEY:?VAULT_MASTER_KEY must be set in secrets.env}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  migrate:
+    image: ghcr.io/${MARKUS_REGISTRY_PATH:?MARKUS_REGISTRY_PATH must be set}/markus-api:${MARKUS_SHA:?MARKUS_SHA must be set}
+    command: ["pnpm", "db:deploy"]
+    environment:
+      <<: *app-env
+    restart: "no"
+
+  api:
+    image: ghcr.io/${MARKUS_REGISTRY_PATH}/markus-api:${MARKUS_SHA}
+    environment:
+      <<: *app-env
+      PORT: "3001"
+    ports:
+      - "127.0.0.1:3001:3001"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    logging: *logging
+
+  web:
+    image: ghcr.io/${MARKUS_REGISTRY_PATH}/markus-web:${MARKUS_SHA}
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *logging
+
+  worker:
+    image: ghcr.io/${MARKUS_REGISTRY_PATH}/markus-worker:${MARKUS_SHA}
+    environment:
+      <<: *app-env
+      RUN_WORKER: "1"
+    restart: unless-stopped
+    logging: *logging

@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   verify:
-    name: lint · typecheck · test · build
+    name: lint · contract · node-baseline · typecheck · test · build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +24,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: Install
@@ -32,6 +32,12 @@ jobs:
 
       - name: Lint
         run: pnpm lint
+
+      - name: Contract lint (ARCH-03, M1.1)
+        run: pnpm contract:lint
+
+      - name: Single Node major (M1.6)
+        run: pnpm check:node
 
       - name: Shellcheck
         run: |
@@ -50,6 +56,55 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: "1"
 
+  migrations:
+    name: schema · migration drift (M3.1)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: markus
+          POSTGRES_PASSWORD: markus
+          POSTGRES_DB: markus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U markus -d markus"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://markus:markus@localhost:5432/markus
+      SHADOW_DATABASE_URL: postgresql://markus:markus@localhost:5432/markus_shadow
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: prisma validate
+        run: pnpm db:validate
+
+      - name: migration.sql matches schema.prisma + fragments
+        run: pnpm db:drift
+
+      - name: Apply migrations to a scratch database
+        run: |
+          psql "$DATABASE_URL" -c 'CREATE DATABASE markus_shadow;' || true
+          pnpm db:deploy
+
+      - name: Migrated database matches the Prisma schema (zero drift)
+        run: pnpm db:drift
+        env:
+          DATABASE_URL: ${{ env.SHADOW_DATABASE_URL }}
+
   supply-chain:
     name: dependency audit
     runs-on: ubuntu-latest
@@ -60,7 +115,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: Install

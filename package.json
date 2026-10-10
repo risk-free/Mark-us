@@ -10,7 +10,12 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "contract:lint": "node scripts/lint-contract.mjs",
+    "check:node": "node scripts/check-node-baseline.mjs",
     "db:generate": "pnpm --filter @markus/db generate",
+    "db:validate": "pnpm --filter @markus/db validate",
+    "db:build-migration": "pnpm --filter @markus/db build-migration",
+    "db:drift": "pnpm --filter @markus/db test",
     "db:migrate": "pnpm --filter @markus/db migrate",
     "db:deploy": "pnpm --filter @markus/db migrate:deploy"
   },
@@ -22,9 +27,10 @@
     "globals": "^15.15.0",
     "turbo": "^2.3.3",
     "typescript": "^5.7.3",
-    "typescript-eslint": "^8.70.1"
+    "typescript-eslint": "^8.70.1",
+    "yaml": "^2.7.0"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   }
 }
