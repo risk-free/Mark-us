@@ -100,6 +100,7 @@ positions are:
 | OPEN-07 | Refund approval threshold | Configuration value, required before P4 sign-off |
 | OPEN-08 | Model minimum sample size for release | Release pipeline stays blocked for P6 |
 | OPEN-09 | PIPL retention basis per PII column | Engineering baseline recorded 2026-10-11 (`ARCH-02` §6 erasure matrix, DQ-012 ANSWERED); legal basis per class PENDING PRC counsel (P2) — erasure not yet legally declarable |
+| OPEN-10 | `Company` / contact-link / merge API surface | Schema + ADR recorded (D-20, D-21); OpenAPI endpoints pending before P3 (`M4.2`, `M4.6`) |
 
 ## Handoff
 

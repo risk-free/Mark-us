@@ -38,7 +38,7 @@ This document is the **single, living register of open product/design questions*
 | DQ-003 | `PipelineStage` / `SalesMetrics`: modelled or derived | Medium | P7.3, P7.6 | AWAITING ANSWER |
 | DQ-004 | Lint standard & CI parity (`turbo run lint` covers only web) | Low | P0.2, P0.3 | ANSWERED — CLEARED |
 | DQ-005 | Magic-link scope model, TTL, delivery channel | High | P2.1, P4.2 | ANSWERED — R-005 |
-| DQ-006 | Contact identity: dedup / merge policy across channels | Medium | P3.3, P7.1 | AWAITING ANSWER |
+| DQ-006 | Contact identity: dedup / merge policy across channels | Medium | P3.3, P7.1 | ANSWERED — R (2026-10-11): Person/Company split (D-20), never auto-merge, MASTER_ADMIN audited merge (D-21) |
 | DQ-007 | Invoice currency, FX source and FX lock moment | High | P4.1, P4.3 | ANSWERED — R-007 |
 | DQ-008 | Order shape for multi-class filings & fee line items | High | P0.1, P4.1 | ANSWERED — R-008 |
 | DQ-009 | Refund authority & per-line-item refundability | Medium | P4.2, P4.3 | AWAITING ANSWER |
@@ -195,16 +195,26 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-27 16:57 CST |
 | Severity | **Medium** (escalates to High once P3 sync starts) |
 | Blocks | P3.3 客户联系 sync, P7.1 staff management |
-| Status | AWAITING ANSWER |
-| Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Status | **ANSWERED** |
+| Discussion | Answer below (2026-10-11, owner/MD) |
+| Answered by | **Architect (rulings D-20, D-21)** |
+| Answered at | 2026-10-11 — see Answer below |
 
 **Issue.** `Contact.email` and `Contact.phone` are unique but optional; `WeComLink.externalUserId` is unique. Nothing states whether a `Contact` is *one legal person/company* or *one channel identity*. A client who first arrives via 微信客服 (no email, no phone) and later follows up via 客户联系, or who uses two WeChat accounts for the same company, produces duplicates that fragment orders, invoices and document history.
 
 **Options.** **A** Match on `WeComLink` first, then normalised email/phone; never auto-merge — flag a candidate duplicate for Master Admin. **B** Auto-merge with `AuditLog`. **C** Salesperson confirms before merge.
 
 **Engineering view.** A, with an explicit merge operation restricted to Master Admin and fully audited. Related: should `Contact` carry a `legalName`/`company` field separate from the channel-facing `name` (invoices need a legal name; the WeChat contact name is not one)? Please rule on the identity model, because invoices, payment receipts and power-of-attorney documents all depend on it.
+
+**Answer (2026-10-11, owner/MD; recorded by Architect as ADRs D-20, D-21).** The owner expanded the model beyond a single flat contact:
+- We chat with **people**; one person can represent **several companies over time** (job changes) and several at once.
+- A **group** has **many subsidiaries**; a **company** owns **many marks**; an individual can also own a mark.
+- Cross-sell runs **through a person** *and* **through a company/group**.
+
+**Option A** accepted (never auto-merge). Recorded as:
+1. **D-20 — identity model.** `Contact` = the natural person (add `Contact.legalName`); new **`Company`** (legal entity, `registrationNo`, self-relation `parentCompanyId` for group/subsidiary); new **`ContactCompany`** temporal M:N (`role` `LEGAL_REP|CONTACT|ATTORNEY|FINANCE|OTHER`, `startedAt`/`endedAt`, `isPrimary` — history kept, not overwritten); **`Trademark` owner is polymorphic** — `contactId` (individual) **XOR** `companyId` (company), enforced by `ck_trademark_owner_xor`. Both cross-sell vectors are first-class. Full shape in `ARCH-02` §2.1/§5.
+2. **D-21 — merge policy.** Detection **never mutates**: it writes a `ContactMergeCandidate` (match order `WeComLink` → normalised email → normalised phone). Merge is **`MASTER_ADMIN`-only, audited**, reassigning every FK edge to the survivor via each owning module's port in one transaction; the loser gets `mergedIntoId` + `deletedAt` and is **never hard-deleted**.
+3. These tables land in the **P0.3 backlog before P3 WeCom sync** (mandate `M4.6`; `M4.2` updated), so links are created against the right entity from the start. Open follow-up: the `Company`/contact-link/merge endpoints in `03-api-contract.yaml` (OPEN-10).
 
 ---
 
@@ -618,6 +628,7 @@ This document is the **single, living register of open product/design questions*
 | 2026-10-11 (Architect) | CI rulings on the Developer's three inbound items: (1) deploy-staging trigger stays **manual until FA-002** (staging credentials), not PD-02 — retraction accepted; (2a) `COPY --chown` **prohibited repo-wide** (BUG-041, RULED — use `COPY` + `RUN chown -R node:node /app`); (2b) runtime smoke **declared Linux-only** (BUG-041); (3) R-021 condition `v`-keyed jsonb now enforced with CHECKs on `subSignals`/`featureSnapshot` (separate from the `--chown` change), compose-smoke content assertions get marker + byte-size floor immediately. Drift gate re-run after the CHECK fragments. | Architect |
 | 2026-10-11 (Architect) | **DQ-017 ANSWERED (PD-03)** — transactional-email vendor = **AliCloud DirectMail (国际站, Singapore endpoint `smtpdm-ap-southeast-1.aliyuncs.com`)**; sending identity `mail.<domain>` with SPF/DKIM/DMARC mandatory; email treated as **mandatory**. Tech-matrix SES placeholder superseded; CN-site (Hangzhou) variant explicitly not the default (D-04/PIPL). Remaining: domain purchase at P1 (Ops) + 微信客服 proactive-cap confirmation. | Architect |
 | 2026-10-11 (Architect) | **DQ-012 ANSWERED (PD-04)** — Art. 47 erasure = **pseudonymisation, not hard delete**: `Contact` PII columns nulled (pseudonymous `id` stub + FK edges kept), `Message.content` → `[redacted]` tombstone, `WeComLink` rows deleted, R2 doc objects async-deleted ≤ 7 days. Statutory financial/filing + append-only keys (Invoice/Payment/Order/Application/OfficeAction/TrademarkAssessment/AuditLog/ConsentRecord) **outrank erasure**. Interim matrix added to `02-data-model.md` §6 for M12.7; legal basis per class remains **OPEN-09** (PRC counsel, P2). | Architect |
+| 2026-10-11 (Architect) | **DQ-006 ANSWERED (PD-05)** — owner ruled Option A + expanded identity model. **ADR D-20**: `Contact` = natural person (`+legalName`), new `Company` (self-relation `parentCompanyId` = group/subsidiary), new `ContactCompany` temporal M:N (role + `startedAt`/`endedAt`, history kept), `Trademark` owner **polymorphic** (`contactId` XOR `companyId`, `ck_trademark_owner_xor`); cross-sell via person *and* company/group. **ADR D-21**: never auto-merge — detection writes `ContactMergeCandidate`, merge is `MASTER_ADMIN`-only and audited, loser soft-deleted with `mergedIntoId`, never hard-deleted. `ARCH-02` §1/§2/§3/§4/§5/§6, `ARCH-01` §2.2 (+merge orchestration footnote), `ARCH-04` new mandate **M4.6** + `M4.2` updated + OPEN-10 opened (API surface). | Architect |
 
 ---
 
@@ -846,7 +857,9 @@ credentials are provisioned (FA-002).
   authorises this: items Prisma cannot express live in the migration SQL and are marked `[SQL]`,
   so §7.1 is untouched — Prisma remains authoritative for the *model*, and a functional index
   is an index, not a schema shape. Phone correctly waits for DQ-006: constraining it blind
-  would bake in an E.164 assumption before the dedup/merge policy exists.
+  would bake in an E.164 assumption before the dedup/merge policy exists. **(DQ-006 ANSWERED
+  2026-10-11 — D-20/D-21: dedup now matches on normalised phone; the phone normalisation rule
+  can proceed as a `[SQL]` functional unique index.)**
 - **J-04 the five tables beyond §5.1 — accepted**, each demanded by a mandate:
   `MagicLinkToken` (contract `/auth/magic-link` + `ARCH-01` §5.1/§5.2), `Refund` (contract
   `Refund`), `RefundAllocation` (M10.3 "allocated across lines"), `WebhookEvent` (M10.2 replay
@@ -858,7 +871,8 @@ credentials are provisioned (FA-002).
 
 | Item | Status | What it actually waits for |
 | --- | --- | --- |
-| DQ-003, DQ-006, DQ-009 | untouched | Not raised as blockers; DQ-006 must land before P3.3 dedup, DQ-009 before P4.2 refunds |
+| DQ-003, DQ-009 | untouched | Not raised as blockers; DQ-009 must land before P4.2 refunds |
+| DQ-006 | RESOLVED | Person/Company split + temporal M:N + polymorphic mark owner (D-20); never auto-merge, MASTER_ADMIN audited merge (D-21). Schema + mandates `M4.6`/updated `M4.2` recorded; API endpoints = OPEN-10 |
 | DQ-012 | RESOLVED (interim) | Option A confirmed: schedule per `ARCH-02` §6 as interim baseline; Art. 47 erasure = pseudonymisation (PII columns nulled, `id` stub + FK edges kept; `Message.content` → `[redacted]` tombstone; `WeComLink` rows deleted; R2 objects deleted); statutory financial/filing + append-only records outrank erasure. Legal basis per class still PENDING PRC counsel (OPEN-09, P2) |
 | DQ-017 | RESOLVED | Vendor = AliCloud DirectMail (intl, SG endpoint), `mail.<domain>`, SPF/DKIM/DMARC before first send, email mandatory. Remaining: domain purchase (P1, Ops) + 微信客服 cap confirmation (Tencent) |
 | DQ-018 | RESOLVED | ECS region = HK, ICP deferred (`.com`), staging credentials pending (FA-002) |

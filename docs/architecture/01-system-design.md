@@ -143,7 +143,7 @@ flowchart TB
 | --- | --- | --- | --- | --- |
 | `auth` | — (Redis sessions) | `staffLogin`, `verifyMfa`, `logout`, `issueMagicLink`, `redeemMagicLink`, `assertPermission` | Redis session store, Argon2 hasher, WeCom identity (read-only) | any domain table |
 | `staff` | `StaffUser`, `ConsentRecord` | `provisionStaff`, `updateStaff`, `disableStaff`, `writeVaultSecret`, `revealVaultSecret`, `rotateVaultSecret` | KMS/SSE, SMTP/WeCom notify, audit writer | `Contact`, `Order` |
-| `crm` | `Contact`, `Lead`, `Conversation`, `Message`, `WeComLink`, `CSTicket` | `captureLead`, `assignLead`, `moveStage`, `openConversation`, `appendMessage`, `resolveConversation`, `raiseTicket` | WeCom archive client, round-robin assigner, notify | `Trademark`, `Order` |
+| `crm` | `Contact`, `Company`, `ContactCompany`, `ContactMergeCandidate`, `Lead`, `Conversation`, `Message`, `WeComLink`, `CSTicket` | `captureLead`, `assignLead`, `moveStage`, `openConversation`, `appendMessage`, `resolveConversation`, `raiseTicket`, `linkContactCompany`, `flagDuplicate`, `mergeContact` (**MASTER_ADMIN**, ADR D-21) | WeCom archive client, round-robin assigner, notify | `Trademark`, `Order` |
 | `trademarks` | `Trademark`, `TrademarkAssessment`*, `ProbabilityRun`* | `createTrademark`, `requestAssessment`, `getAssessment`, `acceptAssessment` | corpus search port, LLM gateway port (analysis copy only) | `Application`, `Payment` |
 | `filings` | `Application`, `OfficeAction` | `openFiling`, `recordFilingReceipt`, `syncTsdr`, `ingestOfficeAction`, `fileResponse` | TSDR client, ODP/OCR result reader, document writer | `Order`, `Contact` |
 | `documents` | `Document`, `DocumentVersion` | `requestUpload`, `commitVersion`, `runOcr`, `proofread`, `approveVersion`, `issueDownloadUrl` | R2, OCR adapter (PaddleOCR/cloud), LanguageTool | other modules' tables |
@@ -153,6 +153,12 @@ flowchart TB
 | `integrations` | — | `receiveWecomCallback`, `receivePaymentWebhook` | WeCom, Stripe, PayPal | — |
 
 \* models marked `*` are **new in the P0.3 migration backlog** — see `02-data-model.md` §5.
+
+† `mergeContact` (ADR D-21) is the one legitimate **cross-module orchestration**: `crm` owns the merge
+decision and the `Contact`/`ContactMergeCandidate` rows, but reassignment of FKs owned elsewhere is
+delegated to each owning module's port (`trademarks.reassignOwner`, `commerce.reassignContact`,
+`documents.reassignContact`, `filings.reassignContact`, …) inside one transaction. `crm` still never
+writes another module's table directly. The FK matrix in `02-data-model.md` §3 is the spec.
 
 ### 2.3 Event catalogue (in-process bus + transactional outbox)
 

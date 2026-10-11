@@ -295,6 +295,73 @@ The remediation pass for FA-008 cleared 12 of 14 advisories (2 critical → 0, 6
 
 ---
 
+## D-20: Identity model — natural person, organization, and a temporal many-to-many link
+**ID:** D-20
+**Status:** ACCEPTED
+**Date:** 2026-10-11
+**Owner:** ARCH
+**Impact:** P0.3 schema backlog (`Contact`/`Company`/`ContactCompany`/`Trademark`), P3 WeCom intake (`M4.2`), CRM cross-sell (P7), API contract
+**Source:** DQ-006 (owner ruling 2026-10-11)
+
+### Context
+`Contact` conflated two different things: the **human we talk to** and the **legal/business entity** that owns marks and pays invoices. The owner set the real-world model straight:
+- We chat with **people**.
+- One person can be tied to **several companies over time** (job changes) and to **several at once** (group/role).
+- A **group** has **multiple subsidiary companies**.
+- A **company** can own **multiple marks**; an **individual person** can also own a mark.
+- Cross-sell runs **through a person** *and* **through a company/group**.
+
+A single flat `Contact` cannot express any of that: it forces either duplicate people or duplicate companies, and it makes "who owns this mark / who is billed" ambiguous.
+
+### Decision
+1. **`Contact` = the natural person** (channel identity). Add `Contact.legalName String?` (the person's legal name — needed when an individual owns a mark). `Contact.name` stays the channel-facing display name.
+2. **New `Company` = the legal entity/organization.** `name` (display), `legalName` (registered), `registrationNo String?` (统一社会信用代码 / company registration), `jurisdiction String?`, `companyType String?`, **`parentCompanyId String?`** (self-relation; a root with children *is* a group), `deletedAt`, timestamps.
+3. **New `ContactCompany` = temporal many-to-many** between person and company: `contactId`, `companyId`, `role CompanyRole` (`LEGAL_REP|CONTACT|ATTORNEY|FINANCE|OTHER`), `title String?`, `startedAt?`, `endedAt?` (null = current), `isPrimary Boolean`. History is **kept**, not overwritten — a job change ends one row and starts another.
+4. **`Trademark` owner becomes polymorphic**: add `Trademark.companyId String?`; `contactId` remains for an **individual** owner. A CHECK requires **exactly one** of (`contactId`, `companyId`) to be set. The person we deal with is reached via `ContactCompany` of the owning company, or directly for individual owners.
+5. **Both cross-sell vectors are first-class:** person → `ContactCompany` → companies → `Company.parentCompanyId` tree → subsidiaries → their marks/orders; and the same traversal keyed by company/group.
+
+### Alternatives rejected
+- **Keep a text `Contact.company` field** — cannot model groups, temporal reassignment or M:N; duplicates return immediately.
+- **Model a company as another `Contact` with a `type` flag** — overloads unique email/phone, assignment and PII rules; "assigned salesperson" is meaningless for a shell company.
+- **Separate `CompanyGroup` entity** — a group is just a root `Company`; a separate table adds a join for no behavioural difference. Revisit only if a group ever needs its own billing/identity.
+
+### Consequences
+- New models/columns land in the **P0.3 backlog migration before P3 (`M4.2`)**, so WeCom intake links against the right entity from the start — no backfill. Because `0P3__p0_3_backlog` has **not** been applied to any populated database (ADR D-17), these models extend that baseline migration; if it has already been applied to the staging DB, a single follow-up `expand` migration is written instead (never an in-place destructive edit).
+- Module ownership: `crm` owns `Company` and `ContactCompany` (see `ARCH-01` §2.2).
+- API contract gains `Company` resources and contact↔company link endpoints (follow-up mandate).
+- Cross-sell analytics (D-07 funnel, P7) gain a company/group dimension.
+- PII: `Contact.legalName` is Direct PII; `Company.legalName`/`registrationNo` are business registry data (not personal PII).
+
+---
+
+## D-21: Contact merge is never automatic — Master-Admin, audited, via a candidate queue
+**ID:** D-21
+**Status:** ACCEPTED
+**Date:** 2026-10-11
+**Owner:** ARCH
+**Impact:** P0.3 schema backlog (`ContactMergeCandidate`, `Contact.mergedIntoId`), CRM RBAC, `M4.2`
+**Source:** DQ-006 (owner ruling 2026-10-11)
+
+### Context
+Same fragments as D-20: a client arriving on one channel and continuing on another produces duplicate `Contact` rows that split orders, invoices and document history. Merge is a destructive, audit-relevant action on an entity that bears invoices and powers of attorney.
+
+### Decision (owner chose Option A)
+1. **Detection never mutates.** Create a `ContactMergeCandidate` row: `primaryContactId`, `matchedContactId`, `reason ContactMergeReason` (`WECOM_ID|EMAIL|PHONE|MANUAL`), `score Float?`, `status` (`PENDING|MERGED|DISMISSED`), `reviewedById?`, `reviewedAt?`. Match order: `WeComLink.externalUserId` → normalised `email` → normalised `phone`.
+2. **Merge is an explicit `MASTER_ADMIN`-only, audited operation.** Reassign every FK edge (orders, invoices, payments, documents, conversations, messages, trademarks, leads, tickets, consent records, notifications, magic-link tokens, WeCom links, contact↔company links) to the surviving `Contact`; set the loser's `Contact.mergedIntoId` **and** `deletedAt`; write an `AuditLog` entry. The loser is **never hard-deleted** — it remains a pseudonymous stub.
+3. Add `Contact.mergedIntoId String?` (self-relation).
+4. **No auto-merge at any tier.** Company merge is out of scope for now (future ADR) — only person/`Contact` merge ships.
+
+### Alternatives rejected
+- **Auto-merge with audit (B)** — a silent cross-channel identity merge on an entity carrying invoices is unacceptable; a wrong merge corrupts financial history.
+- **Salesperson confirms (C)** — the operator who benefits from a clean CRM is not the authority who should bear the audit risk; Master-Admin is.
+
+### Consequences
+- New migration items (`ContactMergeCandidate`, `Contact.mergedIntoId`) join the P0.3 backlog.
+- A `MASTER_ADMIN` RBAC grant plus a merge mandate with a hard verification (no orphan FK / no lost financial edge after merge).
+- `ContactMergeCandidate` rows are retained as evidence after resolution.
+
+---
+
 ## Business-side prerequisites (non-code, start immediately)
 
 | Item | Owner | Blocks |

@@ -19,7 +19,7 @@
 | Instants (wall clock) | `timestamptz(3)` — Prisma annotation `@db.Timestamptz(3)`. The P0 v1 schema uses bare `DateTime` (= `timestamp(3)`, **no timezone**); the P0.3 migration in §5.4 converts every instant column. Until then: all writes are UTC, all reads assume UTC — a temporary, explicitly accepted hazard. |
 | Dates (calendar) | `*Date String?` in ISO `YYYY-MM-DD` where the calendar date is legally meaningful (USPTO response deadlines, filing dates). Never store "date" as a midnight timestamp. |
 | Business deadlines | `responseDeadline` = `timestamptz` at **23:59:59 America/New_York** on the statutory date, **plus** `responseDeadlineDate` (ISO) for display and D-14 notification math. |
-| Soft delete | `deletedAt timestamptz` on `Contact`, `Trademark`, `Document`. Hard delete is permitted only for `Campaign`, `ConsentRecord` (superseded rows), and expired tokens. Every soft delete writes `AuditLog`. |
+| Soft delete | `deletedAt timestamptz` on `Contact`, `Company`, `Trademark`, `Document`. Hard delete is permitted only for `Campaign`, `ConsentRecord` (superseded rows), and expired tokens. Every soft delete writes `AuditLog`. A merged `Contact` is soft-deleted with `mergedIntoId` set (**ADR D-21**), never hard-deleted. |
 | Deactivation | `StaffUser.status = DISABLED` + `disabledAt`; never delete a staff row (audit continuity). |
 | Enumerations | Prisma `enum` in Postgres. **Adding a value is a non-breaking migration**; renaming/removing is breaking and needs expand-then-contract. |
 | JSON columns | Only for genuinely open-ended, non-queried payloads (`OfficeAction.analysis`, `Payment.rawEvent`, `Notification.payload`, `TrademarkAssessment.subSignals`). Anything that must be filtered, indexed, or joined gets real columns. JSON payloads are schema-versioned with a `v` key. |
@@ -31,8 +31,8 @@
 
 | Classification | Fields | Storage | Logging | LLM |
 | --- | --- | --- | --- | --- |
-| **Direct PII** | `Contact.name`, `email`, `phone`, `wechatAlias`, `Message.content`, `DocumentVersion.ocrText`, `WeComLink.externalUserId` | plaintext at rest (R2/PG volume encryption + disk encryption), row-scoping by owner | **never** logged (ids only) | **never** sent |
-| **Business-confidential** | `Trademark.title`, `goodsServices`, `imageText`, `OfficeAction.bodyText` | plaintext, tenant-scoped | metadata only | mark text may be sent **only** with explicit client consent captured at assessment submission (`ConsentRecord(PIPL_PRIVACY)`) and only through the redaction pipeline |
+| **Direct PII** | `Contact.name`, `Contact.legalName`, `Contact.email`, `Contact.phone`, `Contact.wechatAlias`, `Message.content`, `DocumentVersion.ocrText`, `WeComLink.externalUserId` | plaintext at rest (R2/PG volume encryption + disk encryption), row-scoping by owner | **never** logged (ids only) | **never** sent |
+| **Business-confidential** | `Trademark.title`, `goodsServices`, `imageText`, `OfficeAction.bodyText`, `Company.legalName`, `Company.registrationNo` | plaintext, tenant-scoped | metadata only | mark text may be sent **only** with explicit client consent captured at assessment submission (`ConsentRecord(PIPL_PRIVACY)`) and only through the redaction pipeline |
 | **Credentials** | `StaffUser.usptoPasswordCipher`, `passwordHash`, `totpSecretCipher` | envelope-encrypted (KMS) | never | never |
 | **Financial** | `Payment.*`, `Invoice.*`, `Campaign.budget` | plaintext, audit-logged | amounts only, never provider payloads | never |
 | **Public** | `TmCorpusMark.*` (USPTO published data) | plaintext | counts only | allowed |
@@ -58,6 +58,10 @@ erDiagram
   CONTACT ||--o{ LEAD : "converted_from"
   CONTACT ||--o{ CONSENT_RECORD : "grants"
   CONTACT ||--o{ NOTIFICATION : "receives"
+  CONTACT ||--o{ CONTACT_COMPANY : "represents (temporal M:N)"
+  COMPANY ||--o{ CONTACT_COMPANY : "represented_by"
+  COMPANY ||--o{ COMPANY : "parent/group_of"
+  CONTACT ||--o{ CONTACT_MERGE_CANDIDATE : "duplicate_of"
   CONVERSATION ||--o{ MESSAGE : "contains"
   CONTACT ||--o{ CSTICKET : "raises"
 
@@ -73,12 +77,44 @@ erDiagram
   }
   CONTACT {
     string id PK
-    string name "PII"
+    string name "PII — channel-facing display name"
+    string legalName "PII — natural-person legal name (individual owner)"
     string email UK "PII"
     string phone UK "PII"
     LeadStage stage
     string assignedSalespersonId FK
+    string mergedIntoId FK "set when merged (ADR D-21)"
     datetime deletedAt "soft delete"
+  }
+  COMPANY {
+    string id PK
+    string name "display"
+    string legalName "registered — business-confidential"
+    string registrationNo "统一社会信用代码 — business-confidential"
+    string jurisdiction
+    string companyType
+    string parentCompanyId FK "group/subsidiary self-relation"
+    datetime deletedAt "soft delete"
+  }
+  CONTACT_COMPANY {
+    string id PK
+    string contactId FK
+    string companyId FK
+    CompanyRole role "LEGAL_REP|CONTACT|ATTORNEY|FINANCE|OTHER"
+    string title
+    datetime startedAt "temporal — job changes"
+    datetime endedAt "null = current"
+    bool isPrimary
+  }
+  CONTACT_MERGE_CANDIDATE {
+    string id PK
+    string primaryContactId FK
+    string matchedContactId FK
+    ContactMergeReason reason "WECOM_ID|EMAIL|PHONE|MANUAL"
+    float score
+    string status "PENDING|MERGED|DISMISSED"
+    string reviewedById FK
+    datetime reviewedAt
   }
   LEAD {
     string id PK
@@ -118,7 +154,8 @@ erDiagram
 
 ```mermaid
 erDiagram
-  CONTACT ||--o{ TRADEMARK : "owns"
+  CONTACT ||--o{ TRADEMARK : "owns (individual; XOR company)"
+  COMPANY ||--o{ TRADEMARK : "owns (corporate; XOR contact)"
   TRADEMARK ||--o{ TRADEMARK_ASSESSMENT : "scored_by (append-only)"
   TRADEMARK ||--o{ APPLICATION : "filed_as"
   TRADEMARK ||--o{ DOCUMENT : "supports"
@@ -139,6 +176,8 @@ erDiagram
     int niceClass
     string goodsServices
     TrademarkStatus status
+    string contactId FK "owner when an individual (XOR companyId)"
+    string companyId FK "owner when a company (XOR contactId)"
     string serialNumber UK "set at filing"
     string registrationNumber UK
     float probabilityScore "denormalised latest"
@@ -301,6 +340,11 @@ erDiagram
 | `Order → InvoiceLineItem` | 1 : many | `Cascade` | draft order line items are ephemeral |
 | `Order → Invoice` | 1 : 1 | `Restrict` | issued invoices are immutable legal records |
 | `Order/Invoice/Payment → Contact` | many : 1 | `Restrict` | retention obligation (5 years) outranks deletion |
+| `Contact ↔ Company` (via `ContactCompany`) | many : many | `Cascade` from `Contact`; `Restrict` from `Company` | link rows are the person's role history; a company is never deleted for a person's departure |
+| `Company → Company` (`parentCompanyId`) | self, many : 1 | `SetNull` | a dissolved group must not cascade-delete its subsidiaries |
+| `Trademark → Contact` / `Trademark → Company` | many : 1 each, **XOR** | `Restrict` | a mark owner is exactly one of an individual or a company; never cascaded |
+| `ContactMergeCandidate → Contact` (both FKs) | many : 1 each | `Restrict` | merge evidence survives; never cascades |
+| `Contact.mergedIntoId → Contact` | self, many : 1 | `SetNull` | loser points at the survivor; do not chain-delete |
 | `TmSimilarity` cache rows | many : 1 | `Cascade` from `TrademarkAssessment` | derived data, recomputable |
 | `OutboxEvent` | append-only | row-level `DELETE` after 7 days | never cascades |
 
@@ -317,7 +361,7 @@ erDiagram
 | Q3 | conversation list for rep, open first (`crm`) | `conversation (assigned_salesperson_id, status, last_message_at DESC)` |
 | Q4 | message history paging (`crm`) | `message (conversation_id, created_at)` **+ unique `(conversation_id, wecom_msgid)`** |
 | Q5 | duplicate WeCom identity lookup (`integrations`) | `unique wecom_link (external_user_id)` |
-| Q6 | trademark search by owner (`trademarks`) | `trademark (contact_id)`, `trademark (nice_class, status)` |
+| Q6 | trademark search by owner (`trademarks`) | `trademark (contact_id)`, `trademark (company_id)`, `trademark (nice_class, status)` |
 | Q7 | corpus similarity search, **P5 critical** | `pg_trgm` GIN on `tm_corpus_mark.normalized_text` (`gin_trgm_ops`) + B-tree on `(nice_class, status_code)`; candidate narrowing by class first, then trigram similarity ≤ 100 rows per page |
 | Q8 | applications by status, due-soon (`filings`) | `application (status)`, `application (next_reminder_at)`, `application (expert_assigned_id, status)` |
 | Q9 | OA deadline sweep (`filings`) | `office_action (response_deadline)` **+ unique `(application_id, uspto_action_code, response_deadline)`** (idempotent upsert) |
@@ -330,6 +374,9 @@ erDiagram
 | Q16 | outbox relay poll (`worker`) | `outbox_event (published_at, id) WHERE published_at IS NULL` partial index |
 | Q17 | vault read audit (`audit`) | `audit_log (action, created_at DESC) WHERE action LIKE 'VAULT_%'` partial |
 | Q18 | corpus freshness (`admin`) | `tm_ingest_run (run_date DESC)` |
+| Q19 | companies for a person, current first (`crm`) | `contact_company (contact_id, ended_at NULLS FIRST)`, `contact_company (company_id, is_primary DESC)` |
+| Q20 | group tree + subsidiaries for cross-sell (`crm`) | `company (parent_company_id)`, `company (normalised legal_name)` for dedup hints |
+| Q21 | open duplicate candidates for review (`crm`) | `contact_merge_candidate (status, created_at DESC) WHERE status = 'PENDING'` partial |
 
 ### 4.2 Rules
 
@@ -488,6 +535,78 @@ model FeatureFlag {
   note            String?
   updatedAt       DateTime @updatedAt @db.Timestamptz(3)
 }
+
+// --- Identity model (D-20) ------------------------------------------------
+enum CompanyRole {
+  LEGAL_REP
+  CONTACT
+  ATTORNEY
+  FINANCE
+  OTHER
+}
+
+model Company {
+  id             String    @id @default(cuid())
+  name           String            // display name
+  legalName      String            // registered legal name (business-confidential)
+  registrationNo String?           // 统一社会信用代码 / company registration
+  jurisdiction   String?
+  companyType    String?
+  parentCompanyId String?
+  parentCompany  Company?  @relation("CompanyHierarchy", fields: [parentCompanyId], references: [id], onDelete: SetNull)
+  subsidiaries   Company[] @relation("CompanyHierarchy")
+
+  deletedAt      DateTime? @db.Timestamptz(3)
+  deletedById    String?
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @db.Timestamptz(3)
+
+  trademarks     Trademark[]
+  contacts       ContactCompany[]
+
+  @@index([parentCompanyId])
+  @@index([legalName])
+}
+
+model ContactCompany {
+  id        String      @id @default(cuid())
+  contactId String
+  contact   Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  companyId String
+  company   Company     @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  role      CompanyRole @default(CONTACT)
+  title     String?
+  startedAt DateTime?   @db.Timestamptz(3)
+  endedAt   DateTime?   @db.Timestamptz(3)   // null = current
+  isPrimary Boolean     @default(false)
+  createdAt DateTime    @default(now()) @db.Timestamptz(3)
+
+  @@index([contactId, endedAt])
+  @@index([companyId, isPrimary])
+}
+
+enum ContactMergeReason {
+  WECOM_ID
+  EMAIL
+  PHONE
+  MANUAL
+}
+
+model ContactMergeCandidate {
+  id               String              @id @default(cuid())
+  primaryContactId String
+  primaryContact   Contact             @relation("MergePrimary", fields: [primaryContactId], references: [id], onDelete: Restrict)
+  matchedContactId String
+  matchedContact   Contact             @relation("MergeMatched", fields: [matchedContactId], references: [id], onDelete: Restrict)
+  reason           ContactMergeReason
+  score            Float?
+  status           String              @default("PENDING")  // PENDING | MERGED | DISMISSED
+  reviewedById     String?
+  reviewedAt       DateTime?           @db.Timestamptz(3)
+  createdAt        DateTime            @default(now()) @db.Timestamptz(3)
+
+  @@index([status, createdAt])
+}
 ```
 
 ### 5.2 Column additions to existing models
@@ -495,8 +614,8 @@ model FeatureFlag {
 | Model | Addition | Reason |
 | --- | --- | --- |
 | `StaffUser` | `disabledAt timestamptz`, `totpSecretCipher bytes?`, `totpEnabledAt timestamptz`, `lastAssignedAt timestamptz`, `vaultStepUpAt timestamptz`, `vaultRotatedAt timestamptz` | MFA (Mandate 8), 5-min step-up before vault reveal, 90-day rotation (D-01) |
-| `Contact` | `deletedAt timestamptz`, `deletedById string?` | soft delete + PIPL erasure workflow |
-| `Trademark` | `deletedAt timestamptz`, `consentForCorpusAt timestamptz?` | mark text may only be sent to the LLM with recorded consent (§1.1) |
+| `Contact` | `legalName string?`, `mergedIntoId string?` (self-FK), `deletedAt timestamptz`, `deletedById string?` | person identity (D-20); merged loser points at survivor (D-21); soft delete + PIPL erasure workflow |
+| `Trademark` | `contactId` → nullable, `companyId string?`, `deletedAt timestamptz`, `consentForCorpusAt timestamptz?` | polymorphic owner: individual **XOR** company (D-20); mark text may only be sent to the LLM with recorded consent (§1.1) |
 | `Application` | `filingMethod string @default("ATTENDED")`, `filingSessionId string? @unique`, `filingStartedAt`, `filedById string?`, `receiptKey string?`, `filingChecklist json?` | attended-filing ceremony (§6.2 of `01`) |
 | `OfficeAction` | `responseDeadlineDate string?`, `rawActionKey string?` | calendar fidelity + dedupe |
 | `Order` | `expiresAt timestamptz`, `cancelReason string?`, `displayRateCny decimal? @db.Decimal(12,6)`, `displayRateAsOf timestamptz?` | D-05 CNY display must be reproducible server-side |
@@ -528,6 +647,12 @@ ALTER TABLE "TrademarkAssessment" ADD CONSTRAINT ck_score_range CHECK ("pRegistr
 -- Public number sequences
 CREATE SEQUENCE seq_order_number   START 1;
 CREATE SEQUENCE seq_invoice_number START 1;
+-- A mark owner is exactly one of an individual contact OR a company (D-20)
+ALTER TABLE "Trademark" ADD CONSTRAINT ck_trademark_owner_xor
+  CHECK (("contactId" IS NOT NULL) <> ("companyId" IS NOT NULL));
+-- One live current-link per (contact, company, role); history rows carry endedAt (D-20)
+CREATE UNIQUE INDEX ux_contact_company_current
+  ON "ContactCompany" ("contactId","companyId","role") WHERE "endedAt" IS NULL;
 ```
 
 ### 5.4 Timezone conversion migration (`timestamp(3)` → `timestamptz(3)`) **[ADR D-17 — superseded]**
@@ -563,6 +688,9 @@ Then, in `schema.prisma`, annotate **every** instant field with `@db.Timestamptz
 | `TrademarkAssessment` | none | **permanent** (append-only) | model accountability; required to explain any historical score |
 | `Invoice`, `Payment`, `Order`, `Application`, `OfficeAction`, `Document` | none | **5 years minimum**, then legal hold review | trademark record retention obligations |
 | `Contact` | none | 5 years after last activity; PIPL erasure request → hard-delete PII columns, keep FK stubs with pseudonymous ids | PIPL Arts. 47 + D-04 |
+| `Company` | none | business record: retained while any mark/order exists, then 5 years; **not** a data subject, so not touched by a person's erasure | D-20, trademark retention obligations |
+| `ContactCompany` | none | kept as history (points at the `Contact` stub); the erased person's rows remain part of the company's record | D-20 |
+| `ContactMergeCandidate` | none | retained as merge evidence (min 24 months) after `MERGED`/`DISMISSED` | D-21 |
 
 **PIPL Art. 47 erasure matrix (M12.7; DQ-012 ANSWERED 2026-10-11).** On a verifiable request for a
 data subject: the columns below are scrubbed; the `Contact.id` (cuid, not reversible to identity)
@@ -573,13 +701,14 @@ report must state basis per column.
 
 | Table.column | Class | Art. 47 action | Retained in place |
 | --- | --- | --- | --- |
-| `Contact.name` · `email` · `phone` · `wechatAlias` | PII | `SET NULL` | `id` stub, `createdAt`, status/stage history, FK edges |
-| `Contact.deletedAt` / `deletedById` | metadata | set (soft-delete marker) | — |
+| `Contact.name` · `legalName` · `email` · `phone` · `wechatAlias` | PII | `SET NULL` | `id` stub, `createdAt`, status/stage history, FK edges |
+| `Contact.deletedAt` / `deletedById` / `mergedIntoId` | metadata | set (soft-delete marker) | — |
 | `Message.content` | PII | overwrite `[redacted]` + set `redactedAt` | conversation link, timestamps |
 | `WeComLink` row | PII (re-identifies via WeCom) | row delete | — |
 | `Document` / `DocumentVersion` metadata | PII/business | set `Document.deletedAt` (soft) | — |
 | R2 object (client docs, invoice PDFs) | PII/business | async object delete (≤ 7 days) | — |
-| `Conversation`, `Lead` | graph | keep — the `Contact.id` stub carries the link | — |
+| `ContactCompany` rows | graph | keep — the `Contact.id` stub carries the link | — |
+| `Company`, `Conversation`, `Lead` | graph/business | keep — company is a legal entity, not a data subject | — |
 | `Invoice` / `Payment` / `Order` / `Application` / `OfficeAction` | statutory | **none — outranks erasure** (5-yr floor) | full |
 | `TrademarkAssessment` / `AuditLog` / `ConsentRecord` | accountability | **none — append-only / audit evidence** | full |
 

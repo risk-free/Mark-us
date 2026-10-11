@@ -283,13 +283,17 @@ never silently dropped.
 
 ### M4.2 — WeCom as primary intake (GATE)
 **Statement:** Inbound WeCom messages create or link a `Contact` and a `Lead` and a `Conversation`,
-deduplicated on `(wechatOpenId, msgId)`. The callback handshake and message signature verification
-follow the vendor specification. Deduplication is enforced by a unique constraint, not by
+deduplicated on `(wechatOpenId, msgId)`. When the sender represents a company, the link is made
+through `Company`/`ContactCompany` (ADR D-20); a suspected duplicate person is **flagged** as a
+`ContactMergeCandidate` and never auto-merged (ADR D-21). The callback handshake and message signature
+verification follow the vendor specification. Deduplication is enforced by a unique constraint, not by
 application-level checks alone.
 **Owner:** DEV · **Phase:** P3 · **Depends on:** M3.4
 **Verification:** Replay test delivering the same vendor payload 10 times and asserting exactly one
 `Message`, one `Conversation` and no duplicate `Lead`; signature-negative tests; test asserting the
-XML is parsed defensively (unknown element types are ignored, not fatal).
+XML is parsed defensively (unknown element types are ignored, not fatal); test that a second WeCom
+identity matching an existing contact by email/phone yields a `ContactMergeCandidate`, not a second
+`Contact`.
 **Halt:** WeCom API credential provisioning is a business dependency; without it, P3 intake cannot
 be signed off even if the code is complete.
 
@@ -316,6 +320,26 @@ edited directly.
 **Owner:** DEV · **Phase:** P3 · **Depends on:** M4.1
 **Verification:** Table-driven test over all legal and illegal transitions, asserting the timeline
 event count and ordering after a randomised transition sequence.
+
+### M4.6 — Contact identity and audited merge (MAJOR)
+**Statement:** A person (`Contact`) and an organization (`Company`) are distinct entities; the
+temporal many-to-many `ContactCompany` (role + `startedAt`/`endedAt`) models a person representing
+more than one company over time, and `Company.parentCompanyId` models group/subsidiary. A
+`Trademark` owner is **exactly one** of one `Contact` (individual) or one `Company` (enforced by
+`ck_trademark_owner_xor`). Duplicate detection **never mutates**: it writes a `ContactMergeCandidate`
+(match order `WeComLink` → normalised email → normalised phone). Merge is **`MASTER_ADMIN`-only and
+audited**: every FK edge is reassigned to the surviving `Contact` via each owning module's port in
+one transaction, the loser gets `mergedIntoId` + `deletedAt`, and an `AuditLog` row is written; the
+loser is **never hard-deleted** (ADR D-20, D-21).
+**Owner:** DEV + QA · **Phase:** P3 · **Depends on:** M3.4
+**Verification:** (a) XOR test asserting a mark with both or neither owner is rejected; (b) temporal
+test that ending a `ContactCompany` link and starting a new one preserves the history; (c) merge test
+seeding a loser `Contact` bearing an order, an invoice, a document and a trademark, asserting every
+edge now points at the survivor, no orphan FK remains, the loser is soft-deleted with `mergedIntoId`
+set, and exactly one `AuditLog` merge entry exists; (d) RBAC test that a non-`MASTER_ADMIN` merge is
+`403`; (e) test that replaying the same WeCom payload creates a `ContactMergeCandidate`, not a merge.
+**Halt:** The identity tables must be in the schema **before** P3 (`M4.2`) starts creating links — a
+later backfill would re-link history incorrectly.
 
 ---
 
@@ -865,7 +889,7 @@ flowchart TD
 | Cross-cutting rules | §7, §15 | §1 | all | G1–G10 |
 | Identity and sessions | §5, §11 | §2.1 | `/auth/*` | M2.1–M2.7 |
 | Credential vault | §5.1, §11.1 | §2.1 | `/staff/{id}/vault*` | M2.5, M12.4 |
-| CRM and intake | §6.4 | §2.1, §2.3 | `/contacts`, `/leads`, `/conversations` | M4.1–M4.5 |
+| CRM and intake | §6.4 | §2.1, §2.3 | `/contacts`, `/companies*`, `/leads`, `/conversations` | M4.1–M4.6 |
 | Marks and documents | §2, §6.1 | §2.2, §2.3 | `/trademarks`, `/documents*` | M5.1–M5.4 |
 | Assessment and probability | §6.1 | §2.2, §5.1 | `/trademarks/{id}/assessments` | M6.1–M6.5 |
 | Corpus and search | §2, §6.2 | §2.2, §5.1 | `/tm/search`, `/tm/ingest/runs` | M7.1–M7.4 |
@@ -907,6 +931,7 @@ flowchart LR
 | OPEN-07 | Refund approval threshold value | M10.3 | Business |
 | OPEN-08 | Model minimum sample size for release | M6.5 | Architect |
 | OPEN-09 | Retention basis per PII column for PIPL erasure | M12.7 | Legal — engineering baseline recorded 2026-10-11 (`ARCH-02` §6 erasure matrix, DQ-012 ANSWERED); legal basis per class still PENDING PRC counsel |
+| OPEN-10 | `Company` resources + contact↔company link + merge endpoints in `03-api-contract.yaml` | M4.2, M4.6 | Architect + DEV — schema/ADR recorded (D-20, D-21); the OpenAPI surface is a follow-up before P3 |
 
 ---
 
