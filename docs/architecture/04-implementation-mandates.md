@@ -906,7 +906,7 @@ flowchart LR
 | OPEN-06 | **RESOLVED** — Node 22 LTS pinned everywhere (`engines >= 22`, CI `node-version: 22`, `node:22-alpine`), no mismatch | M1.6, M14.1 | Architect |
 | OPEN-07 | Refund approval threshold value | M10.3 | Business |
 | OPEN-08 | Model minimum sample size for release | M6.5 | Architect |
-| OPEN-09 | Retention basis per PII column for PIPL erasure | M12.7 | Legal |
+| OPEN-09 | Retention basis per PII column for PIPL erasure | M12.7 | Legal — engineering baseline recorded 2026-10-11 (`ARCH-02` §6 erasure matrix, DQ-012 ANSWERED); legal basis per class still PENDING PRC counsel |
 
 ---
 

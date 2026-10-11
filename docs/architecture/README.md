@@ -99,7 +99,7 @@ positions are:
 | OPEN-06 | **RESOLVED** — Node 22 LTS pinned everywhere (mandate `M1.6`) | done |
 | OPEN-07 | Refund approval threshold | Configuration value, required before P4 sign-off |
 | OPEN-08 | Model minimum sample size for release | Release pipeline stays blocked for P6 |
-| OPEN-09 | PIPL retention basis per PII column | Erasure cannot be declared complete |
+| OPEN-09 | PIPL retention basis per PII column | Engineering baseline recorded 2026-10-11 (`ARCH-02` §6 erasure matrix, DQ-012 ANSWERED); legal basis per class PENDING PRC counsel (P2) — erasure not yet legally declarable |
 
 ## Handoff
 

@@ -44,7 +44,7 @@ This document is the **single, living register of open product/design questions*
 | DQ-009 | Refund authority & per-line-item refundability | Medium | P4.2, P4.3 | AWAITING ANSWER |
 | DQ-010 | What the assessment surface shows before M5 | High | P1, P2, P5 | ANSWERED — R-010 |
 | DQ-011 | Feature-flag mechanism & who may flip in prod | Medium | P0.3 | ANSWERED — R-011 |
-| DQ-012 | Retention schedule & PIPL erasure workflow | High | P2, P3, P8.1 | OPEN — business (OPEN-09) |
+| DQ-012 | Retention schedule & PIPL erasure workflow | High | P2, P3, P8.1 | ANSWERED — R (2026-10-11): pseudonymise; retention outranks erasure; matrix in ARCH-02 §6; legal basis PENDING PRC counsel (OPEN-09) |
 | DQ-013 | Staff auth method for Phase 1 (password vs. staff magic link) | Medium | P2.1 | ANSWERED — R-013 |
 | DQ-014 | 会话存档 consent capture & non-consented staff | High | P3.4, M3 | ANSWERED — R-014 |
 | DQ-015 | Round-robin definition: timezone, holidays, no-staff fallback | Medium | P3.5, M3 | ANSWERED — R-015 |
@@ -333,10 +333,10 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-27 16:57 CST |
 | Severity | **High** |
 | Blocks | P2 (storage), P3 (archive), P8.1 security review |
-| Status | AWAITING ANSWER |
-| Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Status | **ANSWERED** |
+| Discussion | Answer below (2026-10-11, owner/MD; recommended defaults accepted) |
+| Answered by | **Architect (business posture recorded)** |
+| Answered at | 2026-10-11 — see Answer below |
 
 **Issue.** PRD §6.2/§6.3 and D-04 commit us to PIPL (consent-based collection, minimisation, no client PII to third parties), but no retention schedule exists anywhere in PRD, ARCHITECTURE or the schema. Open items: retention per data class (client documents and OCR text, archived WeChat messages, anonymous assessment submissions, audit logs, invoices, raw USPTO archives — 7 days is stated for the latter only); how a PIPL Art. 47 erasure request is fulfilled given that invoices, payments and audit logs must be retained for accounting/legal reasons; and whether erasure is deletion, anonymisation, or soft-delete.
 
@@ -345,6 +345,8 @@ This document is the **single, living register of open product/design questions*
 **Options.** **A** Documented retention matrix + scheduled purge worker (BullMQ), with `deletedAt` soft-delete on `Contact` and hard deletion of dependent content. **B** Manual-only, by policy. **C** Per-record TTL columns.
 
 **Engineering view.** A: a `retention` config module + a `purge` queue, and a written matrix (data class × retention × deletion mode) that QA can test against. Requesting the matrix is the ask — the retention periods themselves are a business/legal decision I should not invent.
+
+**Answer (2026-10-11, owner/MD; recorded by Architect).** Option **A** confirmed, with the schedule already in `ARCH-02` §6 stood as the **interim engineering baseline** and a per-column matrix added for M12.7. **Art. 47 erasure = pseudonymisation, not hard delete:** on a verifiable request, `Contact` PII columns (`name`, `email`, `phone`, `wechatAlias`) are nulled while the `id` (cuid, not reversible to identity) remains as a pseudonymous stub so FK edges to statutory records stay intact; `Message.content` is tombstoned `[redacted]` + `redactedAt`; `WeComLink` rows are deleted (external id re-identifies via WeCom); client document R2 objects are async-deleted ≤ 7 days with `Document.deletedAt` soft-delete on metadata. **Statutory retention outranks erasure:** `Invoice/Payment/Order/Application/OfficeAction` (5-yr floor) and `TrademarkAssessment`/`AuditLog`/`ConsentRecord` (append-only / audit evidence) are never deleted on a request. Anonymous assessment submissions (R-001/R-010) persist nothing → out of scope. **Legal basis per class remains PENDING PRC counsel (OPEN-09, P2)** — the engineering periods stand as the interim baseline until legal sign-off; the erasure report (M12.7) must state the basis per column.
 
 ---
 
@@ -615,6 +617,7 @@ This document is the **single, living register of open product/design questions*
 | 2026-10-11 (Architect) | CI triage on `fdc2369`/`8f614ed`: root-caused the P1012 `Refund.payment` missing back-reference (fixed by Developer at `8f614ed`), the P1003 shadow-DB ordering in the `migrations` job, and the compose-smoke "worker stays up" phase mismatch. HO2: diagnostics only. | Architect |
 | 2026-10-11 (Architect) | CI rulings on the Developer's three inbound items: (1) deploy-staging trigger stays **manual until FA-002** (staging credentials), not PD-02 — retraction accepted; (2a) `COPY --chown` **prohibited repo-wide** (BUG-041, RULED — use `COPY` + `RUN chown -R node:node /app`); (2b) runtime smoke **declared Linux-only** (BUG-041); (3) R-021 condition `v`-keyed jsonb now enforced with CHECKs on `subSignals`/`featureSnapshot` (separate from the `--chown` change), compose-smoke content assertions get marker + byte-size floor immediately. Drift gate re-run after the CHECK fragments. | Architect |
 | 2026-10-11 (Architect) | **DQ-017 ANSWERED (PD-03)** — transactional-email vendor = **AliCloud DirectMail (国际站, Singapore endpoint `smtpdm-ap-southeast-1.aliyuncs.com`)**; sending identity `mail.<domain>` with SPF/DKIM/DMARC mandatory; email treated as **mandatory**. Tech-matrix SES placeholder superseded; CN-site (Hangzhou) variant explicitly not the default (D-04/PIPL). Remaining: domain purchase at P1 (Ops) + 微信客服 proactive-cap confirmation. | Architect |
+| 2026-10-11 (Architect) | **DQ-012 ANSWERED (PD-04)** — Art. 47 erasure = **pseudonymisation, not hard delete**: `Contact` PII columns nulled (pseudonymous `id` stub + FK edges kept), `Message.content` → `[redacted]` tombstone, `WeComLink` rows deleted, R2 doc objects async-deleted ≤ 7 days. Statutory financial/filing + append-only keys (Invoice/Payment/Order/Application/OfficeAction/TrademarkAssessment/AuditLog/ConsentRecord) **outrank erasure**. Interim matrix added to `02-data-model.md` §6 for M12.7; legal basis per class remains **OPEN-09** (PRC counsel, P2). | Architect |
 
 ---
 
@@ -856,7 +859,7 @@ credentials are provisioned (FA-002).
 | Item | Status | What it actually waits for |
 | --- | --- | --- |
 | DQ-003, DQ-006, DQ-009 | untouched | Not raised as blockers; DQ-006 must land before P3.3 dedup, DQ-009 before P4.2 refunds |
-| DQ-012 | **business** | OPEN-09 — PRC counsel sets per-column retention + legal basis. Blocks M12.7 sign-off only; no P1/P2 handler |
+| DQ-012 | RESOLVED (interim) | Option A confirmed: schedule per `ARCH-02` §6 as interim baseline; Art. 47 erasure = pseudonymisation (PII columns nulled, `id` stub + FK edges kept; `Message.content` → `[redacted]` tombstone; `WeComLink` rows deleted; R2 objects deleted); statutory financial/filing + append-only records outrank erasure. Legal basis per class still PENDING PRC counsel (OPEN-09, P2) |
 | DQ-017 | RESOLVED | Vendor = AliCloud DirectMail (intl, SG endpoint), `mail.<domain>`, SPF/DKIM/DMARC before first send, email mandatory. Remaining: domain purchase (P1, Ops) + 微信客服 cap confirmation (Tencent) |
 | DQ-018 | RESOLVED | ECS region = HK, ICP deferred (`.com`), staging credentials pending (FA-002) |
 | OPEN-01…OPEN-04, OPEN-07…OPEN-09 | unchanged | Payment accounts, USPTO licensing, PIPL posture, etc. |

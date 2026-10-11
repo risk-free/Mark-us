@@ -564,6 +564,25 @@ Then, in `schema.prisma`, annotate **every** instant field with `@db.Timestamptz
 | `Invoice`, `Payment`, `Order`, `Application`, `OfficeAction`, `Document` | none | **5 years minimum**, then legal hold review | trademark record retention obligations |
 | `Contact` | none | 5 years after last activity; PIPL erasure request → hard-delete PII columns, keep FK stubs with pseudonymous ids | PIPL Arts. 47 + D-04 |
 
+**PIPL Art. 47 erasure matrix (M12.7; DQ-012 ANSWERED 2026-10-11).** On a verifiable request for a
+data subject: the columns below are scrubbed; the `Contact.id` (cuid, not reversible to identity)
+remains as a **pseudonymous stub** so FK edges into statutory records stay intact. **Erasure =
+pseudonymisation, not hard delete.** Periods in this section stand as the **interim engineering
+baseline** — the legal basis per class is **PENDING PRC counsel** (OPEN-09, P2); the M12.7 erasure
+report must state basis per column.
+
+| Table.column | Class | Art. 47 action | Retained in place |
+| --- | --- | --- | --- |
+| `Contact.name` · `email` · `phone` · `wechatAlias` | PII | `SET NULL` | `id` stub, `createdAt`, status/stage history, FK edges |
+| `Contact.deletedAt` / `deletedById` | metadata | set (soft-delete marker) | — |
+| `Message.content` | PII | overwrite `[redacted]` + set `redactedAt` | conversation link, timestamps |
+| `WeComLink` row | PII (re-identifies via WeCom) | row delete | — |
+| `Document` / `DocumentVersion` metadata | PII/business | set `Document.deletedAt` (soft) | — |
+| R2 object (client docs, invoice PDFs) | PII/business | async object delete (≤ 7 days) | — |
+| `Conversation`, `Lead` | graph | keep — the `Contact.id` stub carries the link | — |
+| `Invoice` / `Payment` / `Order` / `Application` / `OfficeAction` | statutory | **none — outranks erasure** (5-yr floor) | full |
+| `TrademarkAssessment` / `AuditLog` / `ConsentRecord` | accountability | **none — append-only / audit evidence** | full |
+
 **Partition maintenance job (monthly, `worker`):** archive all partitions/months older than the hot
 retention window to R2 (Parquet) with a row-count + checksum manifest, verify manifest against
 counts, delete in 1 000-row batches (never TRUNCATE/COPY-in-place that creates an
