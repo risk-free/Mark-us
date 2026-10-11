@@ -378,6 +378,10 @@ erDiagram
 | Q20 | group tree + subsidiaries for cross-sell (`crm`) | `company (parent_company_id)`, `company (normalised legal_name)` for dedup hints |
 | Q21 | open duplicate candidates for review (`crm`) | `contact_merge_candidate (status, created_at DESC) WHERE status = 'PENDING'` partial |
 
+> **Reserved — Q22 (P7).** The `SalesMetrics` rollup read (`period`, `salesperson_id`) registers here
+> when the aggregate table lands in P7.3 (ADR D-23). Stage distribution is **not** a new entry: it is
+> served by the existing Q2 `contact (stage)` index.
+
 ### 4.2 Rules
 
 1. **No index without a query.** An index proposed in a PR without a Q-number in this table is rejected.

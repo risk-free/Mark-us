@@ -395,6 +395,46 @@ Same fragments as D-20: a client arriving on one channel and continuing on anoth
 
 ---
 
+## D-23: Pipeline and sales metrics — derive stage distribution, materialise period metrics
+**ID:** D-23
+**Status:** ACCEPTED
+**Date:** 2026-10-11
+**Owner:** ARCH
+**Impact:** P7.3/P7.6 (`M11.2`), `ARCH-02` §4, PRD §5.11, `Campaign`
+**Source:** DQ-003 (owner confirmed Option C, 2026-10-11)
+
+### Context
+PRD §5.11 promises `PipelineStage` and `SalesMetrics` entities, but the schema has only `Campaign`;
+`LeadStage` + `Contact.stage` already exist, so pipeline data is derivable. No schema commitment was
+made, and `M11.2` already requires `/crm/pipeline` and `/crm/funnel-metrics` to read from
+pre-computed rollups rather than ad-hoc aggregation.
+
+### Decision (owner chose Option C — hybrid)
+1. **`PipelineStage` is not a table.** The stages are the existing `LeadStage` enum; stage
+   distribution is a **derived** query (`GROUP BY stage` over `Contact`), served by the existing
+   `contact (stage)` index (`ARCH-02` Q2). Always fresh, no ETL.
+2. **`SalesMetrics` is materialised** as a period aggregate keyed by **(`period`, `salespersonId`)**
+   (with an org-level roll-up via a null/flag salesperson), populated by a scheduled backfill job,
+   carrying a `generatedAt` stamp and a **staleness alert**. The period grain (day vs month) is fixed
+   at P7.3 kickoff.
+3. **Budget tracking** (P7.2) reads `Campaign` + order lines; no new budget entity.
+4. **Ownership of the aggregate table and the read index** (`period`, `salesperson_id`) are decided
+   when the table lands in P7.3 — the index registers as a Q-row in `ARCH-02` §4.1 (reserved Q22) at
+   that point, per the "no index without a query" rule.
+
+### Alternatives rejected
+- **A — derive everything.** Funnel/period metrics over the transactional tables would fail the
+  `M11.2` p95 posture at production volume.
+- **B — materialise everything.** A single indexed `GROUP BY` on `Contact.stage` gains nothing from
+  materialisation and would add staleness risk to a value that must be exact.
+
+### Consequences
+- P7.3 is a pipeline-plus-backfill task, not a pure reporting query.
+- `M11.2` amended: `/crm/pipeline` (stage distribution) derived and indexed; `/crm/funnel-metrics`
+  and salesperson/period metrics served from rollups.
+
+---
+
 ## Business-side prerequisites (non-code, start immediately)
 
 | Item | Owner | Blocks |

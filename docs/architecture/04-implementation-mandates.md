@@ -650,13 +650,16 @@ configuration with stub providers.
 behaviour per kind; assertion that preference writes cannot set a protected kind to disabled.
 
 ### M11.2 — Dashboards read from rollups (MAJOR)
-**Statement:** `/crm/pipeline` and `/crm/funnel-metrics` are served from pre-computed rollups, never
-from ad-hoc aggregation over transactional tables. Every metric has a documented definition matching
-D-07 and a `generatedAt` stamp.
+**Statement:** `/crm/pipeline` (stage distribution) is a **derived** `GROUP BY stage` over `Contact`
+served by the existing `contact (stage)` index (never a join/scan across transactional tables);
+`/crm/funnel-metrics` and every salesperson/period metric are served from **pre-computed rollups**
+keyed by (`period`, `salespersonId`), never from ad-hoc aggregation. Every metric has a documented
+definition matching D-07 and a `generatedAt` stamp, and the rollups carry a staleness alert (ADR D-23).
 **Owner:** DEV + SRE · **Phase:** P7 · **Depends on:** M3.1
 **Verification:** Test asserting the endpoint's p95 against a production-sized dataset and asserting
-the query plan does not scan the transactional tables; test asserting `generatedAt` advances with the
-rollup job.
+the pipeline query plan uses the `contact (stage)` index (no sequential scan, no cross-table join);
+test asserting the funnel/period query plan reads only the rollup table; test asserting `generatedAt`
+advances with the rollup job and that the staleness alert fires when it does not.
 
 ### M11.3 — Audit trail completeness (BLOCKER)
 **Statement:** Every state-changing operation and every privileged read writes an `AuditEntry` in the

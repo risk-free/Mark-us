@@ -35,7 +35,7 @@ This document is the **single, living register of open product/design questions*
 |---|---|---|---|---|
 | DQ-001 | Anonymous assessment vs. mandatory `Trademark.contactId` | High | P0.1, P5.6 | ANSWERED — R-001 |
 | DQ-002 | Expert read scope: assigned cases only vs. all | High | P2.1, P7.1, P8.1 | ANSWERED — R-002 |
-| DQ-003 | `PipelineStage` / `SalesMetrics`: modelled or derived | Medium | P7.3, P7.6 | AWAITING ANSWER |
+| DQ-003 | `PipelineStage` / `SalesMetrics`: modelled or derived | Medium | P7.3, P7.6 | ANSWERED — R (2026-10-11): Option C hybrid — stage derived, period metrics materialised (D-23) |
 | DQ-004 | Lint standard & CI parity (`turbo run lint` covers only web) | Low | P0.2, P0.3 | ANSWERED — CLEARED |
 | DQ-005 | Magic-link scope model, TTL, delivery channel | High | P2.1, P4.2 | ANSWERED — R-005 |
 | DQ-006 | Contact identity: dedup / merge policy across channels | Medium | P3.3, P7.1 | ANSWERED — R (2026-10-11): Person/Company split (D-20), never auto-merge, MASTER_ADMIN audited merge (D-21) |
@@ -120,10 +120,10 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-27 16:57 CST |
 | Severity | **Medium** |
 | Blocks | P7.3 pipeline & metrics, P7.6 reporting/exports |
-| Status | AWAITING ANSWER |
-| Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Status | **ANSWERED** |
+| Discussion | Answer below (2026-10-11, owner/MD; engineering recommendation confirmed) |
+| Answered by | **Architect (ADR D-23)** |
+| Answered at | 2026-10-11 — see Answer below |
 
 **Issue.** PRD §5.11 promises `Budget/Campaign, PipelineStage, SalesMetrics` entities. The schema has `Campaign` only. `Contact.stage` (a `LeadStage` enum column) and `Lead.status` exist, so pipeline data *could* be derived, but salesperson performance metrics (PRD §3.4.4) and budget tracking (P7.2) have no defined source of truth.
 
@@ -132,6 +132,12 @@ This document is the **single, living register of open product/design questions*
 **Options.** **A** Derive everything at query time (fresh, no ETL, slower on large volumes). **B** Daily materialised aggregates (fast dashboards, backfill job + staleness alert). **C** Hybrid: stage distribution derived, monthly/period metrics materialised.
 
 **Engineering view.** C, decided before P7.3 starts (not blocking now). No schema commitment until then — but the aggregate tables, if chosen, must be designed with a `period` + `salespersonId` key and a backfill job from day one.
+
+**Answer (2026-10-11, owner/MD; recorded by Architect as ADR D-23).** **Option C (hybrid)** confirmed.
+- **`PipelineStage` is not a table** — the stages are the existing `LeadStage` enum; stage distribution is a **derived** `GROUP BY stage` over `Contact`, served by the existing `contact (stage)` index (`ARCH-02` Q2). Always fresh, no ETL.
+- **`SalesMetrics` is materialised** as a period aggregate keyed by **(`period`, `salespersonId`)** (with an org-level roll-up), populated by a scheduled backfill job, carrying `generatedAt` and a **staleness alert**; the period grain is fixed at P7.3 kickoff. The read index registers as a Q-row (reserved **Q22**) when the table lands.
+- **Budget** (P7.2) reads `Campaign` + order lines; no new entity.
+- `M11.2` amended: `/crm/pipeline` derived and indexed; `/crm/funnel-metrics` + salesperson/period metrics from rollups. No schema commitment until P7.3 (per the issue); this ADR fixes the approach and its design constraints.
 
 ---
 
@@ -637,6 +643,7 @@ This document is the **single, living register of open product/design questions*
 | 2026-10-11 (Architect) | **DQ-012 ANSWERED (PD-04)** — Art. 47 erasure = **pseudonymisation, not hard delete**: `Contact` PII columns nulled (pseudonymous `id` stub + FK edges kept), `Message.content` → `[redacted]` tombstone, `WeComLink` rows deleted, R2 doc objects async-deleted ≤ 7 days. Statutory financial/filing + append-only keys (Invoice/Payment/Order/Application/OfficeAction/TrademarkAssessment/AuditLog/ConsentRecord) **outrank erasure**. Interim matrix added to `02-data-model.md` §6 for M12.7; legal basis per class remains **OPEN-09** (PRC counsel, P2). | Architect |
 | 2026-10-11 (Architect) | **DQ-006 ANSWERED (PD-05)** — owner ruled Option A + expanded identity model. **ADR D-20**: `Contact` = natural person (`+legalName`), new `Company` (self-relation `parentCompanyId` = group/subsidiary), new `ContactCompany` temporal M:N (role + `startedAt`/`endedAt`, history kept), `Trademark` owner **polymorphic** (`contactId` XOR `companyId`, `ck_trademark_owner_xor`); cross-sell via person *and* company/group. **ADR D-21**: never auto-merge — detection writes `ContactMergeCandidate`, merge is `MASTER_ADMIN`-only and audited, loser soft-deleted with `mergedIntoId`, never hard-deleted. `ARCH-02` §1/§2/§3/§4/§5/§6, `ARCH-01` §2.2 (+merge orchestration footnote), `ARCH-04` new mandate **M4.6** + `M4.2` updated + OPEN-10 opened (API surface). | Architect |
 | 2026-10-11 (Architect) | **DQ-009 ANSWERED (PD-06)** — **ADR D-22**: policy-driven refundability (`USPTO_FEE` refundable only until the filing is recorded, `SERVICE_FEE` until filing, `OTHER` discretionary), encoded in a `refundPolicy` module; **two-step** authority (`order.refund.request` → `order.refund` = MASTER_ADMIN, both audited); above-threshold needs a second distinct Master Admin. **OPEN-07 RESOLVED** (initial threshold USD 200, config). `M10.3` amended, `ARCH-01` §2.2/§6.3 updated, contract refund semantics updated; contract/schema delta (Refund.status/requestedById, request/approve endpoints) = OPEN-11. | Architect |
+| 2026-10-11 (Architect) | **DQ-003 ANSWERED (PD-07)** — **ADR D-23**: Option C hybrid. No `PipelineStage` table (stages = existing `LeadStage` enum; distribution derived via `contact (stage)` index, ARCH-02 Q2); `SalesMetrics` materialised keyed by (`period`, `salespersonId`) with backfill job + `generatedAt` + staleness alert (period grain fixed at P7.3); budget = `Campaign` + order lines. `M11.2` amended (pipeline derived, funnel/period metrics from rollups); rollup read index reserved as Q22. | Architect |
 
 ---
 
@@ -879,7 +886,7 @@ credentials are provisioned (FA-002).
 
 | Item | Status | What it actually waits for |
 | --- | --- | --- |
-| DQ-003 | untouched | Not raised as blockers |
+| DQ-003 | RESOLVED | Option C hybrid: stage distribution derived from `LeadStage` (indexed `contact (stage)`); `SalesMetrics` materialised by (`period`, `salespersonId`) with backfill + staleness alert; no `PipelineStage` table; budget = `Campaign` + order lines (D-23). `M11.2` amended |
 | DQ-009 | RESOLVED | Policy-driven refund cut-offs (`USPTO_FEE` until filed-recording, `SERVICE_FEE` until filing), two-step `order.refund.request` → `order.refund` (Master Admin), second approver above **USD 200** (D-22). Closes OPEN-07; contract/schema delta = OPEN-11 |
 | DQ-006 | RESOLVED | Person/Company split + temporal M:N + polymorphic mark owner (D-20); never auto-merge, MASTER_ADMIN audited merge (D-21). Schema + mandates `M4.6`/updated `M4.2` recorded; API endpoints = OPEN-10 |
 | DQ-012 | RESOLVED (interim) | Option A confirmed: schedule per `ARCH-02` §6 as interim baseline; Art. 47 erasure = pseudonymisation (PII columns nulled, `id` stub + FK edges kept; `Message.content` → `[redacted]` tombstone; `WeComLink` rows deleted; R2 objects deleted); statutory financial/filing + append-only records outrank erasure. Legal basis per class still PENDING PRC counsel (OPEN-09, P2) |
