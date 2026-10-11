@@ -50,7 +50,7 @@ This document is the **single, living register of open product/design questions*
 | DQ-015 | Round-robin definition: timezone, holidays, no-staff fallback | Medium | P3.5, M3 | ANSWERED — R-015 |
 | DQ-016 | Anonymous assessment endpoint: abuse & scraping controls | Medium | P5.6 | ANSWERED — R-016 |
 | DQ-017 | Notification delivery: no transactional-email provider chosen | Medium | P2.5, P3.1 | OPEN — business (vendor choice) |
-| DQ-018 | Staging target & IaC: managed cloud vs. Docker-on-VM | High | P0.3, M0 | ANSWERED — R-018 (region pending) |
+| DQ-018 | Staging target & IaC: managed cloud vs. Docker-on-VM | High | P0.3, M0 | ANSWERED — R-018 (region: HK, no ICP for now) |
 | DQ-019 | Money precision: `Decimal(12,2)` (ARCH-02 §1) vs `Decimal(14,2)` (M3.3) | High | P4, M3.3 | ANSWERED — R-019 |
 | DQ-020 | `AuditLog` partitioning conflicts with Prisma's single-field `@id` | High | P7, M11.3 | ANSWERED — R-020 |
 | DQ-021 | M3.2 names `TrademarkAssessmentFactors`; ARCH-02 §5.1 does not model it | Medium | P6, M6.1 | ANSWERED — R-021 |
@@ -593,7 +593,7 @@ This document is the **single, living register of open product/design questions*
 | FA-006 | DQ-004 | Revisit type-aware ESLint rules once the codebase has substantive types; measure the runtime cost first | Developer | P2 | OPEN |
 | FA-007 | DQ-005, DQ-013 | `SESSION_SECRET`: shipped placeholders are now rejected outside development, but a *low-entropy* 32-character string still passes. Decide the rule (base64 ≥32 bytes vs. passphrase policy) with the auth design | Developer → Architect | P2.1 | OPEN |
 | FA-008 | — | Dependency floors resolve to versions with published advisories; `pnpm audit --audit-level=high` is now a CI gate, so the next run is the work list | Developer | before M0 | OPEN |
-| FA-009 | DQ-018 | Confirm the HK region's Node runtime and base image — Node 22 LTS is adopted everywhere (`node:22-alpine`); remainder is the HK region itself (OPEN-05, DQ-018) | Architect | P8.1 | OPEN |
+| FA-009 | DQ-018 | Confirm the HK region's Node runtime and base image — Node 22 LTS is adopted everywhere (`node:22-alpine`); remainder is the HK region itself (OPEN-05, DQ-018) | Architect | P8.1 | RESOLVED — region confirmed HK (`fdc2369`+1) |
 | FA-010 | — | **RESOLVED at `bd1cb58`** — `schema.prisma`, `migration_lock.toml`, `ci.yml`, `packages/db/package.json`, `pnpm-lock.yaml` and `migrations/0P3__p0_3_backlog/` are now committed together, so a clean clone reproduces the baseline and `pnpm db:drift` can pass. Confirm on the `bd1cb58` CI run | Developer | before M3.2 sign-off | RESOLVED |
 
 *New actions are appended here when an answer creates follow-up work (schema change, doc update, migration note).*
@@ -610,6 +610,7 @@ This document is the **single, living register of open product/design questions*
 | 2026-09-29 (Architect) | Rulings R-001…R-022 issued in §5. DQ-019/020/021/022 and DQ-001/002/005/007/008/010/011/013/014/015/016/018 answered; DQ-012 and DQ-017 narrowed to business decisions; DQ-003/006/009 untouched. ADRs D-16, D-17, D-18 opened. M3.2, M3.3 and M11.4 corrected; `ARCH-02` §4.1/§5/§5.4/§6/§8 amended. FA-010 opened (split P0.3 commit). | Architect |
 | 2026-10-11 (Architect) | Baseline pointers refreshed to `bd1cb58` after the Developer committed and pushed the P0.5 working tree + P0.3 schema/baseline (`git status` clean). FA-010 RESOLVED. `docs/DECISIONS.md` renumbered (audit ADR D-16; D-15 heading restored; D-17/D-18 written). `ARCH-01` §11/`ARCH-02` §7/`ARCH-04` baseline rows/`ARCH` README updated. CI status pending. | Architect |
 | 2026-10-11 (Architect) | OPEN-06 **RESOLVED** — Node 22 LTS is pinned everywhere (CI `node-version: 22`, `engines >= 22`, `node:22-alpine`, `check:node` gate); stale "Node 20" text corrected in `ARCH-01` §1 runtime components / §4 tech matrix / §15 open decisions, M1.6, `ARCH-04` open-issues, `ARCH` README. `TmSimilarity.method` vocabulary aligned to the contract authority `trigram|bge|hybrid` in `ARCH-02` §5.1/§5.5 and `schema.prisma` (comment only, no migration). | Architect |
+| 2026-10-11 (Architect) | CI triage on `fdc2369`/`8f614ed`: root-caused the P1012 `Refund.payment` missing back-reference (fixed by Developer at `8f614ed`), the P1003 shadow-DB ordering in the `migrations` job, and the compose-smoke "worker stays up" phase mismatch. HO2: diagnostics only. | Architect |
 
 ---
 
@@ -809,7 +810,7 @@ the endpoint is added at P6** — the contract is the authority for limits, so t
 to invent now. The failure mode this DQ exists to prevent is a bare route appearing without
 schema, limit and disclaimer: do not add the endpoint until all three land together.
 
-**R-018 — Topology ruled; the region is still yours to answer (OPEN-05).**
+**R-018 — Topology ruled; region answered (HK), ICP deferred (`.com`).**
 Topology: staging is the existing ECS running **only** the three application artifacts from
 `infra/compose.staging.yml` (`migrate`, `api`, `web`, `worker`), TLS/WAF/CDN terminated at
 Cloudflare, `DATABASE_URL` / `REDIS_URL` pointing at **managed** instances — the compose file
@@ -817,10 +818,12 @@ already declares no db/redis services, which is deliberate: it is what keeps D-1
 an ADR. No new always-on daemon, and no Terraform for a single VM: IaC is the compose file plus
 a documented, idempotent bootstrap script, with secrets from the provider store. Image
 provenance and the SSH-key pinning work stay as FA-004 / FA-005 / FA-009.
-**What I need from you before M0 can be evidenced: the ECS region.** If it is not Hong Kong,
-staging traffic and data residency diverge from `ARCH-01` §3, and the mainland-ICP question
-(OPEN-05) has to be settled before anything is exposed on a `.cn` hostname. Region first,
-hostname second.
+**Decision (2026-10-11, owner/MD):** staging ECS region = **Hong Kong** (matches `ARCH-01` §3
+data residency; no divergence); **ICP not required for now** — unknown for the future, proceed
+under the documented default "no ICP-dependent features" and nothing exposed on a `.cn`
+hostname; staging hostname = **`.com`**. Region, ICP posture and hostname are recorded in
+`ARCH-01` §15 OPEN-05 → RESOLVED and `DQ-018` row. This unblocks M0 evidence once the staging
+credentials are provisioned (FA-002).
 
 ### 5.3 Judgment calls J-01…J-04 — accepted as shipped
 
@@ -851,5 +854,5 @@ hostname second.
 | DQ-003, DQ-006, DQ-009 | untouched | Not raised as blockers; DQ-006 must land before P3.3 dedup, DQ-009 before P4.2 refunds |
 | DQ-012 | **business** | OPEN-09 — PRC counsel sets per-column retention + legal basis. Blocks M12.7 sign-off only; no P1/P2 handler |
 | DQ-017 | **business** | Transactional-email vendor purchase (domain + SPF/DKIM/DMARC, deliverability to QQ/163/Gmail proven). Blocks magic-link delivery at P1 |
-| DQ-018 | **yours** | The ECS region — see R-018. OPEN-05 (ICP) follows from it |
-| OPEN-01…OPEN-09 | unchanged | Payment accounts, USPTO licensing, hosting region, PIPL posture, etc. |
+| DQ-018 | RESOLVED | ECS region = HK, ICP deferred (`.com`), staging credentials pending (FA-002) |
+| OPEN-01…OPEN-04, OPEN-07…OPEN-09 | unchanged | Payment accounts, USPTO licensing, PIPL posture, etc. |

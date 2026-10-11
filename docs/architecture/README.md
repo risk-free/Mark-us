@@ -95,7 +95,7 @@ positions are:
 | OPEN-02 | USPTO bulk-data licensing and attended-filing legal review | Corpus ingest and filing ceremony cannot be signed off |
 | OPEN-03 | Probability cohort and label horizon | Field labelled `PENDING-P6`, no calibration claim |
 | OPEN-04 | Attorney roster, bar numbers, capacity | Filing preconditions cannot be validated end to end |
-| OPEN-05 | Hong Kong hosting and ICP path | Staging topology stays provisional |
+| OPEN-05 | Hong Kong hosting and ICP path | RESOLVED (region = HK, no ICP for now, `.com`) |
 | OPEN-06 | **RESOLVED** — Node 22 LTS pinned everywhere (mandate `M1.6`) | done |
 | OPEN-07 | Refund approval threshold | Configuration value, required before P4 sign-off |
 | OPEN-08 | Model minimum sample size for release | Release pipeline stays blocked for P6 |

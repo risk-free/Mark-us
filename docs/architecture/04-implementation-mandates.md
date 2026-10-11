@@ -902,7 +902,7 @@ flowchart LR
 | OPEN-02 | Legal review of USPTO bulk-data indexing and of the attended-filing workflow | M7.1, M9.2 | Legal |
 | OPEN-03 | Exact probability cohort and label horizon | M6.1, M6.5 | Architect + Legal |
 | OPEN-04 | Attorney roster, bar numbers and capacity | M9.1, M9.2 | Business |
-| OPEN-05 | Hong Kong hosting provider and ICP path | M14.2 | Business |
+| OPEN-05 | Hong Kong hosting provider and ICP path | M14.2 | RESOLVED — region = HK, ICP deferred (`.com`, no-ICP default) |
 | OPEN-06 | **RESOLVED** — Node 22 LTS pinned everywhere (`engines >= 22`, CI `node-version: 22`, `node:22-alpine`), no mismatch | M1.6, M14.1 | Architect |
 | OPEN-07 | Refund approval threshold value | M10.3 | Business |
 | OPEN-08 | Model minimum sample size for release | M6.5 | Architect |
