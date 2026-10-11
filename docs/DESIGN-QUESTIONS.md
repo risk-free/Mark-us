@@ -49,7 +49,7 @@ This document is the **single, living register of open product/design questions*
 | DQ-014 | 会话存档 consent capture & non-consented staff | High | P3.4, M3 | ANSWERED — R-014 |
 | DQ-015 | Round-robin definition: timezone, holidays, no-staff fallback | Medium | P3.5, M3 | ANSWERED — R-015 |
 | DQ-016 | Anonymous assessment endpoint: abuse & scraping controls | Medium | P5.6 | ANSWERED — R-016 |
-| DQ-017 | Notification delivery: no transactional-email provider chosen | Medium | P2.5, P3.1 | OPEN — business (vendor choice) |
+| DQ-017 | Notification delivery: transactional-email provider | Medium | P2.5, P3.1, P4.2 | ANSWERED — R (2026-10-11): AliCloud DirectMail (intl, SG), `mail.<domain>`, email mandatory |
 | DQ-018 | Staging target & IaC: managed cloud vs. Docker-on-VM | High | P0.3, M0 | ANSWERED — R-018 (region: HK, no ICP for now) |
 | DQ-019 | Money precision: `Decimal(12,2)` (ARCH-02 §1) vs `Decimal(14,2)` (M3.3) | High | P4, M3.3 | ANSWERED — R-019 |
 | DQ-020 | `AuditLog` partitioning conflicts with Prisma's single-field `@id` | High | P7, M11.3 | ANSWERED — R-020 |
@@ -436,7 +436,7 @@ This document is the **single, living register of open product/design questions*
 
 ---
 
-### DQ-017 — Notification delivery: no transactional-email provider chosen
+### DQ-017 — Notification delivery: transactional-email provider
 
 | Field | Value |
 |---|---|
@@ -444,10 +444,10 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-27 16:57 CST |
 | Severity | **Medium** |
 | Blocks | P2.5, P3.1, P4.2 (payment links) |
-| Status | AWAITING ANSWER |
-| Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Status | **ANSWERED** |
+| Discussion | Answer below (2026-10-11, owner/MD) |
+| Answered by | **Architect (vendor ruling recorded)** |
+| Answered at | 2026-10-11 — see Answer below |
 
 **Issue.** ARCHITECTURE §4.3 assumes magic links are delivered "via WeCom message or email", PRD §2/§3.2.5 assume status notifications, and `NotificationChannel` is `WECHAT | EMAIL | PORTAL` — but no mail provider appears in `.env.example` and no decision was recorded. Related open point: the current documented limits on proactive outbound messages through 微信客服 (believed to be time-boxed relative to the customer's last inbound message) need confirming with Tencent, because invoice/payment reminders depend on being able to message a client who has not spoken to us that day.
 
@@ -456,6 +456,8 @@ This document is the **single, living register of open product/design questions*
 **Options.** **A** WeCom message as primary, email as fallback (requires a provider decision). **B** Portal-only notifications, staff notified in-app. **C** Add an SMS/WeCom-app channel for deadlines.
 
 **Engineering view.** A, with the provider and sending domain decided as a business-side prerequisite alongside the WeCom certification (DECISIONS.md business prerequisites table). Please confirm who owns the vendor decision, and whether a self-hosted relay (e.g. an existing HK SMTP/transactional service) is acceptable under D-04's sub-processor rules.
+
+**Answer (2026-10-11, owner/MD; recorded by Architect).** Option **A** with email treated as **mandatory** (independent of the yet-unconfirmed WeCom proactive cap). Vendor = **AliCloud Direct Mail (国际站, Singapore endpoint `smtpdm-ap-southeast-1.aliyuncs.com`)**, chosen over the tech-matrix's earlier SES placeholder for cost effectiveness (`¥2/1000` ≈ `$0.29/1000`, resource packs cheaper; free 200/day) and mainland-China deliverability (QQ/163/Gmail — the seller base). The **Singapore region is deliberate**: D-04/ARCH-01 §3 lock data to a single HK-flow region, and the international site keeps payloads out of mainland-region processing; the CN-site (Hangzhou) variant would be a separate PIPL/legal call and is **not** the recorded default. Sending identity = **`mail.<domain>`** subdomain with **SPF/DKIM/DMARC mandatory before first send**. Domain purchase is already scheduled at P1 (Ops). No self-hosted relay: managed API/SMTP only, D-15 stands. CSP sub-processor to be documented (PIPL §6).
 
 ---
 
@@ -612,6 +614,7 @@ This document is the **single, living register of open product/design questions*
 | 2026-10-11 (Architect) | OPEN-06 **RESOLVED** — Node 22 LTS is pinned everywhere (CI `node-version: 22`, `engines >= 22`, `node:22-alpine`, `check:node` gate); stale "Node 20" text corrected in `ARCH-01` §1 runtime components / §4 tech matrix / §15 open decisions, M1.6, `ARCH-04` open-issues, `ARCH` README. `TmSimilarity.method` vocabulary aligned to the contract authority `trigram|bge|hybrid` in `ARCH-02` §5.1/§5.5 and `schema.prisma` (comment only, no migration). | Architect |
 | 2026-10-11 (Architect) | CI triage on `fdc2369`/`8f614ed`: root-caused the P1012 `Refund.payment` missing back-reference (fixed by Developer at `8f614ed`), the P1003 shadow-DB ordering in the `migrations` job, and the compose-smoke "worker stays up" phase mismatch. HO2: diagnostics only. | Architect |
 | 2026-10-11 (Architect) | CI rulings on the Developer's three inbound items: (1) deploy-staging trigger stays **manual until FA-002** (staging credentials), not PD-02 — retraction accepted; (2a) `COPY --chown` **prohibited repo-wide** (BUG-041, RULED — use `COPY` + `RUN chown -R node:node /app`); (2b) runtime smoke **declared Linux-only** (BUG-041); (3) R-021 condition `v`-keyed jsonb now enforced with CHECKs on `subSignals`/`featureSnapshot` (separate from the `--chown` change), compose-smoke content assertions get marker + byte-size floor immediately. Drift gate re-run after the CHECK fragments. | Architect |
+| 2026-10-11 (Architect) | **DQ-017 ANSWERED (PD-03)** — transactional-email vendor = **AliCloud DirectMail (国际站, Singapore endpoint `smtpdm-ap-southeast-1.aliyuncs.com`)**; sending identity `mail.<domain>` with SPF/DKIM/DMARC mandatory; email treated as **mandatory**. Tech-matrix SES placeholder superseded; CN-site (Hangzhou) variant explicitly not the default (D-04/PIPL). Remaining: domain purchase at P1 (Ops) + 微信客服 proactive-cap confirmation. | Architect |
 
 ---
 
@@ -854,6 +857,6 @@ credentials are provisioned (FA-002).
 | --- | --- | --- |
 | DQ-003, DQ-006, DQ-009 | untouched | Not raised as blockers; DQ-006 must land before P3.3 dedup, DQ-009 before P4.2 refunds |
 | DQ-012 | **business** | OPEN-09 — PRC counsel sets per-column retention + legal basis. Blocks M12.7 sign-off only; no P1/P2 handler |
-| DQ-017 | **business** | Transactional-email vendor purchase (domain + SPF/DKIM/DMARC, deliverability to QQ/163/Gmail proven). Blocks magic-link delivery at P1 |
+| DQ-017 | RESOLVED | Vendor = AliCloud DirectMail (intl, SG endpoint), `mail.<domain>`, SPF/DKIM/DMARC before first send, email mandatory. Remaining: domain purchase (P1, Ops) + 微信客服 cap confirmation (Tencent) |
 | DQ-018 | RESOLVED | ECS region = HK, ICP deferred (`.com`), staging credentials pending (FA-002) |
 | OPEN-01…OPEN-04, OPEN-07…OPEN-09 | unchanged | Payment accounts, USPTO licensing, PIPL posture, etc. |
