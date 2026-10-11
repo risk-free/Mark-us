@@ -71,16 +71,26 @@ if (!process.env.DATABASE_URL) {
 }
 
 const shadowUrl = process.env.SHADOW_DATABASE_URL ?? process.env.DATABASE_URL;
-const diff = prisma([
-  "migrate",
-  "diff",
-  "--from-migrations",
-  "prisma/migrations",
-  "--to-schema-datamodel",
-  "prisma/schema.prisma",
-  "--shadow-database-url",
-  shadowUrl,
-  "--exit-code",
-]);
+let diff;
+try {
+  diff = prisma([
+    "migrate",
+    "diff",
+    "--from-migrations",
+    "prisma/migrations",
+    "--to-schema-datamodel",
+    "prisma/schema.prisma",
+    "--shadow-database-url",
+    shadowUrl,
+    "--exit-code",
+  ]);
+} catch (error) {
+  const details = String(error?.stderr ?? error?.message ?? "").split("\n").slice(0, 3).join(" ");
+  process.stderr.write(
+    `[db] could not run the shadow-database comparison against ${shadowUrl}\n[db] ${details}\n` +
+      "[db] a reachable Postgres is required to prove zero drift (docker compose up -d, or CI's service container)\n",
+  );
+  process.exit(1);
+}
 
 process.exit(diff === null || diff === undefined ? 0 : 1);

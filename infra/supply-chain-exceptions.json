@@ -1,0 +1,47 @@
+{
+  "$comment": [
+    "Every dependency advisory this project knowingly accepts. Enforced by",
+    "scripts/check-supply-chain.mjs (pnpm check:supply-chain) and recorded in",
+    "docs/DECISIONS.md as D-19.",
+    "",
+    "Rules the gate enforces:",
+    "  - any advisory NOT listed here fails the build, at any severity",
+    "  - every entry needs ghsa, package, owner and reviewBy",
+    "  - reviewBy in the past fails the build (the exception has expired)",
+    "  - an entry whose advisory has been fixed upstream is reported so it can be deleted",
+    "",
+    "pnpm 9.15 cannot express these exclusions itself: auditConfig.ignoreCves",
+    "matches on CVE ids and both advisories below are GHSA-only with no CVE.",
+    "This file is the reviewable, expiring record instead of a silent --ignore flag."
+  ],
+  "exceptions": [
+    {
+      "ghsa": "GHSA-vfj7-8cjw-p6xm",
+      "package": "braces",
+      "severity": "high",
+      "title": "stack-exhaustion denial of service through deeply nested patterns",
+      "fixedUpstream": false,
+      "chain": "eslint-config-next@15.5.27 > @next/eslint-plugin-next@15.5.27 > fast-glob@3.3.1 > micromatch@4.0.8 > braces@3.0.3",
+      "runtimeExposure": "none - build-time only. braces is reachable only from the ESLint layer (pnpm lint). It is not in apps/web's standalone output, not in the api or worker images' runtime graph, and never executes on a request path.",
+      "reason": "No fixed release exists: braces 3.0.3 is both the latest version and the vulnerable one (advisory reports patched_versions '<0.0.0'). micromatch 4.0.8 is the latest micromatch and depends on braces ^3.0.2, and fast-glob - at any version - depends on micromatch. The only way to remove the package is to drop eslint-config-next entirely, which removes the Next lint layer agreed in DQ-004.",
+      "exploitability": "An attacker would need to control the glob patterns passed to the linter on a developer machine or in CI. No user input reaches this code path.",
+      "owner": "Developer (removal) / Architect (renewal)",
+      "reviewBy": "2026-12-29",
+      "revisitWhen": "braces or micromatch ships a fixed release, or Next 16's eslint plugin drops fast-glob"
+    },
+    {
+      "ghsa": "GHSA-hp3w-g68c-fv3c",
+      "package": "sprintf-js",
+      "severity": "moderate",
+      "title": "denial of service through unbounded precision specifiers",
+      "fixedUpstream": false,
+      "chain": "jest@29.7.0 > @jest/reporters > babel-plugin-istanbul@6.1.1 > @istanbuljs/load-nyc-config@1.1.0 > js-yaml@3.15.2 > argparse@1.0.10 > sprintf-js@1.1.3",
+      "runtimeExposure": "none - test-time only, and only when coverage reporting is enabled. Not shipped in any runtime image.",
+      "reason": "sprintf-js 1.1.3 is the latest release and is the vulnerable version (advisory reports patched_versions '<0.0.0'). js-yaml 3.x pins argparse ^1.0.7, which pins sprintf-js ^1.0.3; js-yaml 4 would be a major change to Jest's own coverage tooling.",
+      "exploitability": "Requires an attacker to control a coverage config file's precision specifier on a developer machine or CI runner.",
+      "owner": "Developer (removal) / Architect (renewal)",
+      "reviewBy": "2026-12-29",
+      "revisitWhen": "sprintf-js ships a fixed release, or Jest drops the js-yaml 3 / argparse 1 chain"
+    }
+  ]
+}

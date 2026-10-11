@@ -258,6 +258,43 @@ after 5 wrong attempts, and expires at `now + 15 min`. `scope` is `portal` only 
 
 ---
 
+## D-19: Accepted-risk register for two unpatchable dev-only advisories
+**ID:** D-19
+**Status:** PROPOSED — awaiting Architect ratification
+**Date:** 2026-09-29
+**Owner:** ARCH + DEV
+**Impact:** P0.3 supply-chain gate (M12.3, G9)
+
+### Context
+The remediation pass for FA-008 cleared 12 of 14 advisories (2 critical → 0, 6 high → 1, 6 moderate → 1). Two remain and **neither has a fixed release upstream** — `pnpm audit` reports `patched_versions: "<0.0.0"` for both, and both are GHSA-only with no CVE:
+
+| Advisory | Package | Severity | Chain | Fixed? |
+|---|---|---|---|---|
+| GHSA-vfj7-8cjw-p6xm | `braces@3.0.3` | high | `eslint-config-next > @next/eslint-plugin-next > fast-glob > micromatch > braces` | no — 3.0.3 is both latest and vulnerable |
+| GHSA-hp3w-g68c-fv3c | `sprintf-js@1.1.3` | moderate | `jest > @jest/reporters > babel-plugin-istanbul > @istanbuljs/load-nyc-config > js-yaml@3 > argparse@1 > sprintf-js` | no — 1.1.3 is both latest and vulnerable |
+
+`micromatch@4.0.8` is the latest micromatch and depends on `braces ^3.0.2`; every `fast-glob` version depends on `micromatch`. The only way to delete `braces` from the tree is to drop `eslint-config-next`, which removes the Next lint layer agreed in DQ-004. Neither advisory is reachable from a runtime path: `braces` executes only inside `pnpm lint`, `sprintf-js` only inside Jest's coverage loader, and neither ships in the web standalone output, the api image or the worker image.
+
+### Decision
+1. Fix everything fixable now — done: `next` → `15.5.27`, `eslint-config-next` → `15.5.27`, lockfile refresh, and `pnpm.overrides` for `postcss@^8.5.29` (Next 15.5.27 still pins the vulnerable `8.4.31`), `deepmerge-ts@^8.0.0` (Prisma pins the vulnerable `7.1.5`) and `sprintf-js@^1.1.3`.
+2. Accept the two residual advisories through a **committed, diffable, expiring registry** — `infra/supply-chain-exceptions.json` — enforced by `pnpm check:supply-chain`, not by a CI `--ignore` flag.
+3. Do not downgrade the severity threshold. The gate is *stricter* than `pnpm audit --audit-level=high`: any advisory not in the registry fails the build at **any** severity, an expired `reviewBy` fails the build, and a stale entry that no longer reproduces prints a notice for removal.
+
+**Why a registry file and not pnpm config.** pnpm 9.15 expresses exclusions through `auditConfig.ignoreCves`, which matches on **CVE ids**; both accepted advisories are GHSA-only, so the setting silently does nothing (verified: adding it left the audit reporting both). A JSON registry with a named owner and a review date is the reviewable form of the same decision, and it survives a pnpm major upgrade.
+
+### Alternatives rejected
+- `pnpm audit --audit-level=critical` — narrows the gate instead of fixing or explaining the residue.
+- `--ignore` on the CI command — hides the finding from the audit output; invisible to review.
+- Drop `eslint-config-next` — removes a lint layer for a build-time DoS in a dependency with no fix; disproportionate.
+- Upgrade to Next 16 to reach a plugin that may drop `fast-glob` — a framework major for a dev-only advisory; D-20 territory when Next 16 is planned on its own merits.
+
+### Consequences
+- CI's `supply-chain` job runs `pnpm check:supply-chain`; the registry is explicit in the job env because a mirror without an audit endpoint reports zero vulnerabilities and would produce a false green.
+- Both entries expire **2026-12-29**; the gate fails from that date until they are renewed or removed.
+- Revisit when `braces`/`micromatch` or `sprintf-js` ships a fix, or when Jest drops the `js-yaml@3` / `argparse@1` chain.
+
+---
+
 ## Business-side prerequisites (non-code, start immediately)
 
 | Item | Owner | Blocks |

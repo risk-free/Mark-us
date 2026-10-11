@@ -19,11 +19,11 @@
     "db:validate": "prisma validate"
   },
   "dependencies": {
-    "@prisma/client": "^6.3.1"
+    "@prisma/client": "^6.19.3"
   },
   "devDependencies": {
-    "prisma": "^6.3.1",
-    "typescript": "^5.7.3"
+    "prisma": "^6.19.3",
+    "typescript": "^5.9.3"
   },
   "engines": {
     "node": ">=22"

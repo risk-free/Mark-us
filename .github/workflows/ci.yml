@@ -121,8 +121,10 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: pnpm audit
-        run: pnpm audit --audit-level=high
+      - name: Dependency audit against the registry exception registry
+        run: pnpm check:supply-chain
+        env:
+          AUDIT_REGISTRY: https://registry.npmjs.org
 
   images:
     name: image · ${{ matrix.image }}
