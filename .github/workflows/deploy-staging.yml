@@ -1,8 +1,9 @@
 name: Deploy staging
 
+# Manual only until staging is provisioned (PD-02): the STAGING_* secrets and the
+# `staging` environment do not exist yet, so a push trigger fails in 0s on every
+# merge. Restore `push: branches: [main]` in the same change that provisions them.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       ref:
