@@ -639,6 +639,10 @@ sequenceDiagram
 
 **Environments:** `local` → `staging` → `prod`, identical image tags, env-var-only differences. **No environment-specific code branches.** Test credentials for Stripe/PayPal in staging; TSDR read-only firm key; LLM keys scoped per environment; prod LLM prompt audit enabled.
 
+**Image-ownership rule (BUG-041):** `COPY --chown` is **prohibited repo-wide**. On Docker Desktop/Windows it can write **0-byte files** into a runtime stage from a build stage; CI cannot distinguish a 200 from an empty shell. Runtime copies use plain `COPY` plus an explicit `RUN chown -R node:node /app` (verified at `616ad7d` to yield identical contents and ownership).
+
+**Runtime-smoke scope (BUG-041):** the runtime smoke, compose-smoke, and production-gate assertions are **declared Linux-container behavior only**. The GitHub-hosted `ubuntu-latest` runner is the sole authority for "runs in production posture"; Docker Desktop/Windows artifacts are out of scope for the CI gates and are not grounds for changing gate expectations. The compose-smoke web/api content assertions carry an **expected marker + byte-size floor** so a 200 from an empty shell can never pass.
+
 ---
 
 ## 13. Quality strategy

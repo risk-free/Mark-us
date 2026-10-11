@@ -1338,7 +1338,7 @@ Minor: `COPY tsconfig.base.json ./` appears twice (lines 7 and 12) — a harmles
 
 **Impact.** Individually low; collectively they mean the image is a larger attack surface than it needs to be and cannot be reproduced or audited. Given BUG-004 already invalidates the install step, this is the natural moment to rewrite the file rather than patch it.
 
-**Recommended fix.** Rewrite alongside BUG-003/BUG-004: add a `.dockerignore`, a `--prod` install stage, a non-root `USER`, `COPY --chown`, a `HEALTHCHECK` hitting `/health`, `tini` as PID 1, BuildKit cache mounts (`RUN --mount=type=cache,id=pnpm,target=/pnpm/store`), a required lockfile, and removal of the `||` fallback. Pin `node:22-alpine` by digest (BUG-034).
+**Recommended fix.** Rewrite alongside BUG-003/BUG-004: add a `.dockerignore`, a `--prod` install stage, a non-root `USER`, a `HEALTHCHECK` hitting `/health`, `tini` as PID 1, BuildKit cache mounts (`RUN --mount=type=cache,id=pnpm,target=/pnpm/store`), a required lockfile, and removal of the `||` fallback. Pin `node:22-alpine` by digest (BUG-034). **Do not use `COPY --chown`: prohibited repo-wide (BUG-041, `ARCH-01` §12) — use plain `COPY` + `RUN chown -R node:node /app`.**
 
 ---
 
@@ -1408,6 +1408,34 @@ Two smaller issues in the same file: `typecheck` and `test` declare no `outputs`
 
 ---
 
+### BUG-041 — `COPY --chown` writes 0-byte files into the runtime image (Linux-only smoke declared)
+
+| Field | Value |
+|---|---|
+| **Raised by** | Developer (reproduced live on `web`; ratified by Architect ruling) |
+| **Raised at** | 2026-10-11 |
+| **Severity** | High — silent image corruption that a 200-response smoke cannot detect |
+| **Evidence** | REPRODUCED (Docker Desktop/Windows): `COPY --from=build --chown=node:node /app /app` wrote **empty** files into the runtime image — every `.next/static` chunk, the CSS, and `next/package.json` landed at 0 bytes; the web container crash-looped with `ERR_INVALID_PACKAGE_CONFIG`. The build stage was healthy, isolating the fault to the `--chown` copy. Verified at `616ad7d` that plain `COPY` + `RUN chown -R node:node /app` yields identical contents **and** node ownership, and the full stack then passes the production-gate. |
+| **Location** | `infra/Dockerfile.api:25`, `infra/Dockerfile.worker:24` (identical pattern — still latent); `infra/Dockerfile.web` (fixed at `616ad7d`) |
+| **Blocks** | — (fixed in `web`; `api`/`worker` in progress under Architect ruling 2a) |
+| **Status** | OPEN (api/worker); `web` variant CLOSED at `616ad7d` |
+| **Discussion** | — |
+| **Answered by / Answered at** | ARCH 2026-10-11 — rulings in `ARCH-01` §12 |
+| **Verified by / Verified at** | `616ad7d` runtime verification: API health ok, web 200 with 6301 B real HTML, worker logs the designed P0 scaffold state, D-01 gate exits 1 |
+
+**Issue.** `COPY --from=build --chown=node:node` is a silent corruption vector on Docker Desktop/Windows: it can write empty files into the runtime stage. The base failure is a **platform divergence** — the same filesystem-ownership operation behaves differently on Windows-hosted Docker than on Linux hosted runners, and CI cannot distinguish a healthy 200 from an empty shell.
+
+**Impact.** A broken image can ship because the smoke gate asserts only "200" and "container up". This is exactly the false-green class BUG-034 warned about: delivery posture approved on evidence that cannot see the image contents.
+
+**Architect rulings (recorded in `ARCH-01` §12):**
+1. `COPY --chown` is **prohibited repo-wide**. Use plain `COPY` + explicit `RUN chown -R node:node /app` (proven at `616ad7d`). `Dockerfile.api` and `Dockerfile.worker` must adopt it.
+2. The runtime smoke, compose-smoke, and production-gate assertions are **declared Linux-container behavior only**; the GitHub-hosted `ubuntu-latest` runner is the sole authority for "runs in production posture". Docker Desktop/Windows artifacts are out of scope for the CI gates and are not grounds for changing gate expectations.
+3. As a corollary, the compose-smoke web/api content assertions must carry an **expected marker + byte-size floor**, so a 200 from an empty shell can never pass again.
+
+**Recommended fix.** (a) Remove `--chown` from `Dockerfile.api` and `Dockerfile.worker` (2 lines each), replacing with `RUN chown -R node:node /app`. (b) Add marker + byte-size-floor assertions to the integration job. (c) Keep the D-01 production-gate and compose smoke as Linux-only, per ruling 2.
+
+---
+
 ## 3. Patterns worth watching
 
 Not bugs today — recurring shapes that will produce bugs if the pattern is copied. Recorded so the next reviewer recognises them.
@@ -1473,6 +1501,7 @@ pnpm build       # not run by the Debugger (see note)
 | Date (CST) | Change | By |
 |---|---|---|
 | 2026-09-27 17:44 | Register created. 40 findings (BUG-001…BUG-040) from a full sweep of `apps/`, `packages/`, `workers/`, `infra/`, `.github/`, and the root config. 2 `REPRODUCED` (BUG-001 lint, BUG-002 test), 38 `STATIC`. Baseline captured: `lint` exit 2, `typecheck` exit 0, `test` exit 1. `build` and `docker build` not executed (Docker daemon unavailable) — BUG-003/004 expected to reproduce. 10 patterns recorded (§3) and a fix order set (§4). | Debugger |
+| 2026-10-11 (Architect) | BUG-034 CLEARED (Node 22 LTS pinned everywhere). BUG-041 opened — `COPY --chown` 0-byte runtime-image corruption, reproduced on `web` and fixed at `616ad7d`; `api`/`worker` still latent under Architect rulings: `COPY --chown` prohibited repo-wide, runtime smoke declared Linux-only, compose-smoke content assertions must floor the byte size. BUG-038 recommended fix (line 1341) superseded to a non-`--chown` rewrite. | Architect |
 | | | |
 | | | |
 
