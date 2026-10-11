@@ -11,10 +11,6 @@ COPY packages ./packages
 COPY workers ./workers
 RUN pnpm install --frozen-lockfile
 
-# Continue from `deps` rather than `COPY --from=deps /app /app`: copying a
-# stage's tree back onto its own path leaves /app/apps read-only on Docker
-# Desktop, and `next build` then dies with EROFS writing .next. The api and
-# worker images inherit the stage for the same reason.
 FROM deps AS build
 ENV NEXT_TELEMETRY_DISABLED=1 \
     NEXT_STANDALONE=1
@@ -26,11 +22,10 @@ WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000
-# outputFileTracingRoot is the monorepo root, so the standalone bundle keeps the
-# apps/web prefix and the entrypoint is apps/web/server.js.
-COPY --from=build --chown=node:node /app/apps/web/.next/standalone ./
-COPY --from=build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=build --chown=node:node /app/apps/web/public ./apps/web/public
+COPY --from=build /app/apps/web/.next/standalone ./
+COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=build /app/apps/web/public ./apps/web/public
+RUN chown -R node:node /app
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 \
