@@ -92,7 +92,10 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
-    restart: unless-stopped
+    # P0 scaffold: the worker opens the queues, reports it has no processors, and
+    # exits 0. `unless-stopped` would restart it forever; the policy returns to
+    # `unless-stopped` in P2, when processors keep the process alive.
+    restart: "no"
 
   # Editor / CLI workspace for .devcontainer/devcontainer.json.
   # Shares the compose network, so DATABASE_URL and REDIS_URL resolve the

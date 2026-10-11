@@ -1,19 +1,25 @@
 /**
  * Migration drift gate (ARCH-02 §7.6, mandate M3.1).
  *
- * Two independent checks:
+ * Two INDEPENDENT checks, because their prerequisites differ:
  *
- *  1. Always: rebuild 0P3__p0_3_backlog/migration.sql from schema.prisma +
- *     fragments/ and fail if the committed file differs. This catches "schema
- *     edited, migration not regenerated" without needing a database.
+ *  1. Rebuild 0P3__p0_3_backlog/migration.sql from schema.prisma + fragments/ and
+ *     fail if the committed file differs. Needs no database. Catches "schema
+ *     edited, migration not regenerated" everywhere, including on a laptop.
  *
- *  2. When DATABASE_URL points at a reachable Postgres: apply the migrations to a
- *     shadow database and assert `prisma migrate diff --from-migrations
- *     --to-schema-datamodel` is empty, i.e. the physical database and the
- *     Prisma schema can never disagree. Skipped (with a notice) when no database
- *     is configured, so local `pnpm test` never depends on one.
+ *  2. Apply the migrations to an empty shadow database and assert
+ *     `prisma migrate diff --from-migrations --to-schema-datamodel` is empty, i.e.
+ *     the physical database and the Prisma schema cannot disagree. Runs only when
+ *     SHADOW_DATABASE_URL points at an EMPTY database, because
+ *     `prisma migrate diff --from-migrations` *applies* the migrations into it.
+ *     A populated shadow database fails this check for the wrong reason.
  *
- * Exit code 0 = in sync. Non-zero = drift; the committed file is left untouched.
+ * The two are gated on different variables on purpose: conflating them on
+ * DATABASE_URL meant a job with a migration target also tried to run the
+ * comparison against a database that did not exist yet.
+ *
+ * Exit code 0 = in sync. Non-zero = drift (or an unusable shadow database, which
+ * is reported as such rather than as drift).
  */
 
 import { execFileSync } from "node:child_process";
@@ -65,12 +71,12 @@ if (before !== after) {
 
 process.stdout.write("[db] migration.sql matches schema.prisma + fragments\n");
 
-if (!process.env.DATABASE_URL) {
-  process.stdout.write("[db] schema-diff check skipped (no DATABASE_URL)\n");
+const shadowUrl = process.env.SHADOW_DATABASE_URL;
+if (!shadowUrl) {
+  process.stdout.write("[db] shadow-database comparison skipped (no SHADOW_DATABASE_URL)\n");
   process.exit(0);
 }
 
-const shadowUrl = process.env.SHADOW_DATABASE_URL ?? process.env.DATABASE_URL;
 let diff;
 try {
   diff = prisma([
@@ -87,8 +93,9 @@ try {
 } catch (error) {
   const details = String(error?.stderr ?? error?.message ?? "").split("\n").slice(0, 3).join(" ");
   process.stderr.write(
-    `[db] could not run the shadow-database comparison against ${shadowUrl}\n[db] ${details}\n` +
-      "[db] a reachable Postgres is required to prove zero drift (docker compose up -d, or CI's service container)\n",
+    `[db] the shadow-database comparison could not run against ${shadowUrl}\n[db] ${details}\n` +
+      "[db] this database must exist and be EMPTY: prisma migrate diff --from-migrations\n" +
+      "[db] applies the migrations into it. Recreate it (DROP + CREATE) before running this check.\n",
   );
   process.exit(1);
 }

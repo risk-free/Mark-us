@@ -58,5 +58,7 @@ services:
     environment:
       <<: *app-env
       RUN_WORKER: "1"
-    restart: unless-stopped
+    # P0 scaffold: the worker has no processors yet and exits 0 by design, so
+    # `unless-stopped` would crash-loop. Restored to `unless-stopped` in P2.
+    restart: "no"
     logging: *logging

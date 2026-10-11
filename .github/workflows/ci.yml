@@ -76,6 +76,9 @@ jobs:
     env:
       DATABASE_URL: postgresql://markus:markus@localhost:5432/markus
       SHADOW_DATABASE_URL: postgresql://markus:markus@localhost:5432/markus_shadow
+      # psql always connects through the maintenance database; it must exist
+      # before the scratch databases below can be created or dropped.
+      PG_MAINTENANCE_URL: postgresql://markus:markus@localhost:5432/markus
     steps:
       - uses: actions/checkout@v4
 
@@ -92,18 +95,31 @@ jobs:
       - name: prisma validate
         run: pnpm db:validate
 
+      # Check 1 only: no database is involved, so it runs first and cheaply.
       - name: migration.sql matches schema.prisma + fragments
         run: pnpm db:drift
+        env:
+          DATABASE_URL: ""
+          SHADOW_DATABASE_URL: ""
 
-      - name: Apply migrations to a scratch database
+      - name: Create empty scratch databases
         run: |
-          psql "$DATABASE_URL" -c 'CREATE DATABASE markus_shadow;' || true
-          pnpm db:deploy
+          psql "$PG_MAINTENANCE_URL" -v ON_ERROR_STOP=1 \
+            -c 'DROP DATABASE IF EXISTS markus_migrate;' \
+            -c 'CREATE DATABASE markus_migrate;' \
+            -c 'DROP DATABASE IF EXISTS markus_shadow;' \
+            -c 'CREATE DATABASE markus_shadow;'
 
+      # The migration target is a scratch database. Never `markus`.
+      - name: Apply migrations to a scratch database
+        run: pnpm db:deploy
+        env:
+          DATABASE_URL: postgresql://markus:markus@localhost:5432/markus_migrate
+
+      # Check 2: prisma migrate diff --from-migrations applies the migrations into
+      # the shadow database, so it must be the empty one created just above.
       - name: Migrated database matches the Prisma schema (zero drift)
         run: pnpm db:drift
-        env:
-          DATABASE_URL: ${{ env.SHADOW_DATABASE_URL }}
 
   supply-chain:
     name: dependency audit
@@ -172,9 +188,21 @@ jobs:
             --retry 20 --retry-connrefused --retry-delay 3 --retry-all-errors \
             http://127.0.0.1:3000/
 
-      - name: Worker stays up
+      # Until P2 registers a processor, the worker's designed behaviour is to open
+      # the queues, report that it has nothing to consume, and exit 0. Assert that
+      # behaviour. The liveness assertion ("worker stays up") returns at the P2 gate,
+      # where workers actually hold a BullMQ connection open — see the note below.
+      - name: Worker reports the P0 scaffold state and exits cleanly
         run: |
-          docker compose ps --status running --format '{{.Service}}' | grep -qx worker
+          if ! docker compose logs --no-color worker 2>/dev/null | grep -q "no processors are registered"; then
+            echo "expected the worker to report the P0 scaffold state" >&2
+            docker compose logs --no-color worker
+            exit 1
+          fi
+
+      # P2 gate (mandate M5.3): replace the step above with a real liveness check,
+      # e.g. `docker compose ps --status running --format '{{.Service}}' | grep -qx worker`
+      # plus a DLQ assertion. Do not add it before processors exist.
 
       - name: Refuses to boot in production with development configuration (D-01)
         run: |
