@@ -135,7 +135,7 @@ contract does not declare.
 | `case.read`, `case.file` | `case.read`, `case.file`, `case.respond` | keep, **add** `case.respond` |
 | `contact.read.assigned`, `contact.read.all` | `contact.read`, `contact.write`, `contact.create`, `contact.delete` | **replace** with scope-based names plus `x-scope` |
 | `lead.read.assigned`, `lead.read.all` | `lead.read`, `lead.create`, `lead.assign` | **replace** with scope-based names |
-| `order.create` | `order.create`, `order.read`, `order.pay`, `order.invoice`, `order.refund` | **split** |
+| `order.create` | `order.create`, `order.read`, `order.pay`, `order.invoice`, `order.refund`, `order.refund.request` | **split** (`order.refund.request` added by D-22; contract must declare it — OPEN-11) |
 | `erp.pipeline`, `erp.budget`, `erp.tickets` | `crm.pipeline.read`, `crm.metrics.read`, `erp.budget.read`, `erp.budget.write`, `ticket.read`, `ticket.create` | **split** |
 | `audit.read` | `audit.read` | keep |
 | — | `trademark.read`, `trademark.write`, `trademark.assess`, `document.read`, `document.create`, `document.proofread`, `conversation.read`, `conversation.write`, `notification.read`, `notification.write`, `tm.search`, `tm.ingest.read`, `admin.jobs.read`, `admin.jobs.replay` | **add** |
@@ -596,15 +596,21 @@ idempotent on `providerEventId`.
 signature tests; assertion that no request schema accepts a PAN or CVC field.
 
 ### M10.3 — Refunds are governed (BLOCKER)
-**Statement:** Refunds are `MASTER_ADMIN`-only, allocated across lines in delivery order, capped by
-the refundable remainder, and above the configured threshold require a second approver recorded in
-the audit trail.
+**Statement:** Refundability is **policy-driven** (ADR D-22): `USPTO_FEE` lines are refundable only
+until the filing is recorded (`Application.serialNumber` set), `SERVICE_FEE` lines until the
+application is filed (then Master-Admin discretionary with a reason), `OTHER` discretionary. Refunds
+are **two-step** — a request by `order.refund.request` creates a `PENDING` `Refund`, and `order.refund`
+(`MASTER_ADMIN`) approves and executes — allocated across lines in delivery order, capped by the
+refundable remainder, and above the configured threshold (initial **USD 200**) require a **second,
+distinct** `MASTER_ADMIN` approver recorded in the audit trail. History is never mutated.
 **Owner:** DEV + QA + ARCH · **Phase:** P4 · **Depends on:** M10.1
 **Verification:** Test over refund amounts (partial, full, over-refund, threshold) asserting
-acceptance or the exact rejection code, and asserting the audit entry contains both approver ids
-where required.
-**Halt:** The threshold value is a business decision and must be set in configuration before P4
-sign-off.
+acceptance or the exact rejection code; a table-driven `refundPolicy` test asserting per-`kind`
+refundability at each filing state (before/after `serialNumber` set); and an audit assertion that both
+approver ids are present where required and that the executing admin differs from the requester.
+**Halt:** The schema/contract delta (`Refund.status`, `Refund.requestedById`, `order.refund.request`
+vocabulary, request/approve endpoints) must land **before** P4 sign-off — tracked as OPEN-11. The
+threshold value is business config (USD 200 initial) and must be set before P4 sign-off.
 
 ### M10.4 — Invoices are immutable snapshots (GATE)
 **Statement:** Issuing an invoice freezes its lines, totals and currency into the invoice row and
@@ -928,10 +934,11 @@ flowchart LR
 | OPEN-04 | Attorney roster, bar numbers and capacity | M9.1, M9.2 | Business |
 | OPEN-05 | Hong Kong hosting provider and ICP path | M14.2 | RESOLVED — region = HK, ICP deferred (`.com`, no-ICP default) |
 | OPEN-06 | **RESOLVED** — Node 22 LTS pinned everywhere (`engines >= 22`, CI `node-version: 22`, `node:22-alpine`), no mismatch | M1.6, M14.1 | Architect |
-| OPEN-07 | Refund approval threshold value | M10.3 | Business |
+| OPEN-07 | Refund approval threshold value | M10.3 | **RESOLVED** — initial value **USD 200** in configuration (ADR D-22); changeable without migration |
 | OPEN-08 | Model minimum sample size for release | M6.5 | Architect |
 | OPEN-09 | Retention basis per PII column for PIPL erasure | M12.7 | Legal — engineering baseline recorded 2026-10-11 (`ARCH-02` §6 erasure matrix, DQ-012 ANSWERED); legal basis per class still PENDING PRC counsel |
 | OPEN-10 | `Company` resources + contact↔company link + merge endpoints in `03-api-contract.yaml` | M4.2, M4.6 | Architect + DEV — schema/ADR recorded (D-20, D-21); the OpenAPI surface is a follow-up before P3 |
+| OPEN-11 | Refund request/approve delta: `Refund.status`, `Refund.requestedById`, `order.refund.request` vocabulary, request/approve endpoints | M10.3 | Architect + DEV — policy recorded (D-22); schema/contract delta must land before P4 sign-off |
 
 ---
 

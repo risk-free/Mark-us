@@ -653,6 +653,9 @@ ALTER TABLE "Trademark" ADD CONSTRAINT ck_trademark_owner_xor
 -- One live current-link per (contact, company, role); history rows carry endedAt (D-20)
 CREATE UNIQUE INDEX ux_contact_company_current
   ON "ContactCompany" ("contactId","companyId","role") WHERE "endedAt" IS NULL;
+-- Refund allocations never exceed the line's charged amount (upper bound needs app validation
+-- because the bound is unitAmount*quantity, which Prisma CHECKs cannot express — DQ-008, D-22)
+ALTER TABLE "InvoiceLineItem" ADD CONSTRAINT ck_line_refunded_nonneg CHECK ("refundedAmount" >= 0);
 ```
 
 ### 5.4 Timezone conversion migration (`timestamp(3)` → `timestamptz(3)`) **[ADR D-17 — superseded]**
@@ -686,7 +689,7 @@ Then, in `schema.prisma`, annotate **every** instant field with `@db.Timestamptz
 | `TmCorpusMark` | none; `ingestedAt` index + `VACUUM` | LIVE corpus only (600+700) | dead records are deleted on ingest (`statusCode` ∉ {600,700} → delete) |
 | `TmSimilarity` | none | 180 days, then recompute | derived cache |
 | `TrademarkAssessment` | none | **permanent** (append-only) | model accountability; required to explain any historical score |
-| `Invoice`, `Payment`, `Order`, `Application`, `OfficeAction`, `Document` | none | **5 years minimum**, then legal hold review | trademark record retention obligations |
+| `Invoice`, `Payment`, `Refund`, `RefundAllocation`, `Order`, `Application`, `OfficeAction`, `Document` | none | **5 years minimum**, then legal hold review | trademark record retention obligations |
 | `Contact` | none | 5 years after last activity; PIPL erasure request → hard-delete PII columns, keep FK stubs with pseudonymous ids | PIPL Arts. 47 + D-04 |
 | `Company` | none | business record: retained while any mark/order exists, then 5 years; **not** a data subject, so not touched by a person's erasure | D-20, trademark retention obligations |
 | `ContactCompany` | none | kept as history (points at the `Contact` stub); the erased person's rows remain part of the company's record | D-20 |

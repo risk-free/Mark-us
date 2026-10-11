@@ -147,7 +147,7 @@ flowchart TB
 | `trademarks` | `Trademark`, `TrademarkAssessment`*, `ProbabilityRun`* | `createTrademark`, `requestAssessment`, `getAssessment`, `acceptAssessment` | corpus search port, LLM gateway port (analysis copy only) | `Application`, `Payment` |
 | `filings` | `Application`, `OfficeAction` | `openFiling`, `recordFilingReceipt`, `syncTsdr`, `ingestOfficeAction`, `fileResponse` | TSDR client, ODP/OCR result reader, document writer | `Order`, `Contact` |
 | `documents` | `Document`, `DocumentVersion` | `requestUpload`, `commitVersion`, `runOcr`, `proofread`, `approveVersion`, `issueDownloadUrl` | R2, OCR adapter (PaddleOCR/cloud), LanguageTool | other modules' tables |
-| `commerce` | `Order`, `InvoiceLineItem`, `Invoice`, `Payment`, `Campaign` | `createOrder`, `quoteOrder`, `startPayment`, `capturePayment`, `refund`, `renderInvoice`, `reconcile` | Stripe, PayPal, PDF renderer, notify | `Trademark` (read via service) |
+| `commerce` | `Order`, `InvoiceLineItem`, `Invoice`, `Payment`, `Refund`, `RefundAllocation`, `Campaign` | `createOrder`, `quoteOrder`, `startPayment`, `capturePayment`, `requestRefund`, `approveRefund` (**MASTER_ADMIN**, ADR D-22), `renderInvoice`, `reconcile` | Stripe, PayPal, PDF renderer, notify | `Trademark` (read via service) |
 | `notifications` | `Notification` | `enqueue`, `dispatch`, `markRead`, `getPreferences` | WeCom message, SMTP, portal inbox | — |
 | `audit` | `AuditLog` | `record`, `query` | — (append-only; no hot-table range partitioning — see ADR D-16) | all writes except through `record` |
 | `integrations` | — | `receiveWecomCallback`, `receivePaymentWebhook` | WeCom, Stripe, PayPal | — |
@@ -414,7 +414,7 @@ sequenceDiagram
   A->>D: outbox(OrderReconcile)
 ```
 
-**Invariants:** totals are computed **server-side only** from line items (client-sent amounts are ignored); `providerEventId` uniqueness makes webhook replay a no-op; refund is a new `Payment` row (negative-direction) + `Order.status` transition, never a mutation of history; invoice PDF is an immutable snapshot including billing name/email/currency at issue time.
+**Invariants:** totals are computed **server-side only** from line items (client-sent amounts are ignored); `providerEventId` uniqueness makes webhook replay a no-op; refund is a new `Payment` row (negative-direction) + `Order.status` transition, never a mutation of history; invoice PDF is an immutable snapshot including billing name/email/currency at issue time. **Refunds (ADR D-22):** governed by a policy derived from `LineKind` + filing state — `USPTO_FEE` non-refundable once the filing is recorded (`Application.serialNumber` set), `SERVICE_FEE` non-refundable once filed; two-step (`order.refund.request` requests a `PENDING` refund, `order.refund` Master-Admin approves and executes); above the configured threshold (USD 200 initial) a second, distinct Master Admin is required.
 
 ### 6.4 WeCom intake and ≤ 5-minute assignment (D-07)
 

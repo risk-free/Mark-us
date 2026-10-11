@@ -41,7 +41,7 @@ This document is the **single, living register of open product/design questions*
 | DQ-006 | Contact identity: dedup / merge policy across channels | Medium | P3.3, P7.1 | ANSWERED — R (2026-10-11): Person/Company split (D-20), never auto-merge, MASTER_ADMIN audited merge (D-21) |
 | DQ-007 | Invoice currency, FX source and FX lock moment | High | P4.1, P4.3 | ANSWERED — R-007 |
 | DQ-008 | Order shape for multi-class filings & fee line items | High | P0.1, P4.1 | ANSWERED — R-008 |
-| DQ-009 | Refund authority & per-line-item refundability | Medium | P4.2, P4.3 | AWAITING ANSWER |
+| DQ-009 | Refund authority & per-line-item refundability | Medium | P4.2, P4.3 | ANSWERED — R (2026-10-11): policy-driven cut-offs, two-step (request/approve), threshold USD 200 (D-22) |
 | DQ-010 | What the assessment surface shows before M5 | High | P1, P2, P5 | ANSWERED — R-010 |
 | DQ-011 | Feature-flag mechanism & who may flip in prod | Medium | P0.3 | ANSWERED — R-011 |
 | DQ-012 | Retention schedule & PIPL erasure workflow | High | P2, P3, P8.1 | ANSWERED — R (2026-10-11): pseudonymise; retention outranks erasure; matrix in ARCH-02 §6; legal basis PENDING PRC counsel (OPEN-09) |
@@ -275,16 +275,23 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-27 16:57 CST |
 | Severity | **Medium** |
 | Blocks | P4.2, P4.3 |
-| Status | AWAITING ANSWER |
-| Discussion | — |
-| Answered by | — |
-| Answered at | — |
+| Status | **ANSWERED** |
+| Discussion | Answer below (2026-10-11, owner/MD; recommended defaults confirmed) |
+| Answered by | **Architect (ADR D-22)** |
+| Answered at | 2026-10-11 — see Answer below |
 
 **Issue.** `order.refund` is Master Admin only; `InvoiceLineItem.refundable` defaults to `true` for every kind. There is no written refund policy, and no `Refund` entity — while `Payment.status` already anticipates `PARTIALLY_REFUNDED`. Stripe/PayPal refunds are issued against a *charge*, not a line item, so per-line refunds inherently produce multiple provider-side refund objects that our ledger must represent.
 
 **Options.** **A** Policy-driven: refundability derived from `kind` + order status (`USPTO_FEE` non-refundable once filed), request/approve two-step, Master Admin executes, every step audited. **B** Fully manual via provider dashboard, reconciled manually. **C** Automatic on cancellation.
 
 **Engineering view.** A, and I recommend adding a `Refund` table (provider refund id, amount, currency, line item link, actor, reason) so the daily reconciliation job has something to match against — otherwise M4's "webhook/reconciliation success 100%" cannot be evidenced for partial refunds. This is a schema addition; please confirm the policy wording (who may authorise, and the USPTO-fee cut-off) so the rules can be encoded and unit-tested.
+
+**Answer (2026-10-11, owner/MD; recorded by Architect as ADR D-22).** **Option A** confirmed. The `Refund` + `RefundAllocation` tables the engineering view asked for already shipped in P0.3, so this is policy-only. Recorded rules:
+- **Refundability by line** (encoded in a `refundPolicy` module with tests; `InvoiceLineItem.refundable` becomes a snapshot flag, recomputed at refund time): `USPTO_FEE` refundable **only until the filing is recorded** (`Application.serialNumber` set), non-refundable after; `SERVICE_FEE` refundable **until the application is filed**, then Master-Admin discretionary with a reason; `OTHER` discretionary, default refundable.
+- **Two-step authority**: any staff holding **`order.refund.request`** requests (creates a `PENDING` `Refund`); **`order.refund`** (= `MASTER_ADMIN`) approves and executes.
+- **Threshold**: above the configured value a **second, distinct** Master Admin is required — **initial value USD 200** (config, not code). This **closes OPEN-07**.
+- Refunds are rows + `RefundAllocation` per line + an `Order.status` transition, never mutations; `providerRefundId` is the `M10.5` reconciliation key.
+- Follow-up OPEN-11: contract + schema delta (`Refund.status`, `Refund.requestedById`, the `order.refund.request` vocabulary, request/approve endpoints).
 
 ---
 
@@ -629,6 +636,7 @@ This document is the **single, living register of open product/design questions*
 | 2026-10-11 (Architect) | **DQ-017 ANSWERED (PD-03)** — transactional-email vendor = **AliCloud DirectMail (国际站, Singapore endpoint `smtpdm-ap-southeast-1.aliyuncs.com`)**; sending identity `mail.<domain>` with SPF/DKIM/DMARC mandatory; email treated as **mandatory**. Tech-matrix SES placeholder superseded; CN-site (Hangzhou) variant explicitly not the default (D-04/PIPL). Remaining: domain purchase at P1 (Ops) + 微信客服 proactive-cap confirmation. | Architect |
 | 2026-10-11 (Architect) | **DQ-012 ANSWERED (PD-04)** — Art. 47 erasure = **pseudonymisation, not hard delete**: `Contact` PII columns nulled (pseudonymous `id` stub + FK edges kept), `Message.content` → `[redacted]` tombstone, `WeComLink` rows deleted, R2 doc objects async-deleted ≤ 7 days. Statutory financial/filing + append-only keys (Invoice/Payment/Order/Application/OfficeAction/TrademarkAssessment/AuditLog/ConsentRecord) **outrank erasure**. Interim matrix added to `02-data-model.md` §6 for M12.7; legal basis per class remains **OPEN-09** (PRC counsel, P2). | Architect |
 | 2026-10-11 (Architect) | **DQ-006 ANSWERED (PD-05)** — owner ruled Option A + expanded identity model. **ADR D-20**: `Contact` = natural person (`+legalName`), new `Company` (self-relation `parentCompanyId` = group/subsidiary), new `ContactCompany` temporal M:N (role + `startedAt`/`endedAt`, history kept), `Trademark` owner **polymorphic** (`contactId` XOR `companyId`, `ck_trademark_owner_xor`); cross-sell via person *and* company/group. **ADR D-21**: never auto-merge — detection writes `ContactMergeCandidate`, merge is `MASTER_ADMIN`-only and audited, loser soft-deleted with `mergedIntoId`, never hard-deleted. `ARCH-02` §1/§2/§3/§4/§5/§6, `ARCH-01` §2.2 (+merge orchestration footnote), `ARCH-04` new mandate **M4.6** + `M4.2` updated + OPEN-10 opened (API surface). | Architect |
+| 2026-10-11 (Architect) | **DQ-009 ANSWERED (PD-06)** — **ADR D-22**: policy-driven refundability (`USPTO_FEE` refundable only until the filing is recorded, `SERVICE_FEE` until filing, `OTHER` discretionary), encoded in a `refundPolicy` module; **two-step** authority (`order.refund.request` → `order.refund` = MASTER_ADMIN, both audited); above-threshold needs a second distinct Master Admin. **OPEN-07 RESOLVED** (initial threshold USD 200, config). `M10.3` amended, `ARCH-01` §2.2/§6.3 updated, contract refund semantics updated; contract/schema delta (Refund.status/requestedById, request/approve endpoints) = OPEN-11. | Architect |
 
 ---
 
@@ -871,7 +879,8 @@ credentials are provisioned (FA-002).
 
 | Item | Status | What it actually waits for |
 | --- | --- | --- |
-| DQ-003, DQ-009 | untouched | Not raised as blockers; DQ-009 must land before P4.2 refunds |
+| DQ-003 | untouched | Not raised as blockers |
+| DQ-009 | RESOLVED | Policy-driven refund cut-offs (`USPTO_FEE` until filed-recording, `SERVICE_FEE` until filing), two-step `order.refund.request` → `order.refund` (Master Admin), second approver above **USD 200** (D-22). Closes OPEN-07; contract/schema delta = OPEN-11 |
 | DQ-006 | RESOLVED | Person/Company split + temporal M:N + polymorphic mark owner (D-20); never auto-merge, MASTER_ADMIN audited merge (D-21). Schema + mandates `M4.6`/updated `M4.2` recorded; API endpoints = OPEN-10 |
 | DQ-012 | RESOLVED (interim) | Option A confirmed: schedule per `ARCH-02` §6 as interim baseline; Art. 47 erasure = pseudonymisation (PII columns nulled, `id` stub + FK edges kept; `Message.content` → `[redacted]` tombstone; `WeComLink` rows deleted; R2 objects deleted); statutory financial/filing + append-only records outrank erasure. Legal basis per class still PENDING PRC counsel (OPEN-09, P2) |
 | DQ-017 | RESOLVED | Vendor = AliCloud DirectMail (intl, SG endpoint), `mail.<domain>`, SPF/DKIM/DMARC before first send, email mandatory. Remaining: domain purchase (P1, Ops) + 微信客服 cap confirmation (Tencent) |

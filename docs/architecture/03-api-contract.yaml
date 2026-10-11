@@ -1875,10 +1875,17 @@ paths:
     post:
       operationId: refundOrder
       tags: [commerce]
-      summary: Refund all or part of a paid order (Master Admin)
+      summary: Approve and execute a full or partial refund of a paid order (Master Admin)
       description: |
-        Partial refunds are allocated across invoice lines in order of service delivery. Refunds above
-        the configured threshold require a second Master Admin approval, recorded in the audit trail.
+        Refundability is policy-driven (ADR D-22): USPTO_FEE lines are refundable only until the
+        filing is recorded (`Application.serialNumber` set); SERVICE_FEE lines until the application
+        is filed (then discretionary with a reason); OTHER lines are discretionary. Partial refunds
+        are allocated across invoice lines in order of service delivery and are capped by each line's
+        refundable remainder. In this contract revision the endpoint performs approval and execution
+        (`order.refund`, MASTER_ADMIN); amounts above the configured threshold (USD 200 initial)
+        require a second, distinct MASTER_ADMIN approver. The requester step (`order.refund.request`),
+        the PENDING state, and the `Refund.status` / `Refund.requestedById` fields are the P4 delta
+        tracked as OPEN-11.
       x-contract-status: final
       x-phase: P4
       x-permission: order.refund

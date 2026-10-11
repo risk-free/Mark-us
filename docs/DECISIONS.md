@@ -362,6 +362,39 @@ Same fragments as D-20: a client arriving on one channel and continuing on anoth
 
 ---
 
+## D-22: Refund policy — filing-stage cut-offs, two-step authority, approval threshold
+**ID:** D-22
+**Status:** ACCEPTED
+**Date:** 2026-10-11
+**Owner:** ARCH (+ Business)
+**Impact:** P4 commerce (`M10.3`), `Refund`/`RefundAllocation`, RBAC (`order.refund.request`), `03-api-contract.yaml`, OPEN-07
+**Source:** DQ-009 (owner ruling 2026-10-11)
+
+### Context
+`order.refund` is `MASTER_ADMIN`-only and `InvoiceLineItem.refundable` defaults `true` for every `kind`, but there was no written refund policy and no decision on the USPTO-fee cut-off. Stripe/PayPal refunds are issued against a *charge*, not a line item, so per-line refunds produce multiple provider refund objects the ledger must represent.
+
+### Decision (owner chose Option A)
+1. **Policy-driven refundability**, derived from `LineKind` + order/filing state and encoded in a `refundPolicy` module (mirrors the `retention` module) with unit tests. `InvoiceLineItem.refundable` is a **snapshot flag**; the authoritative decision is recomputed at refund time.
+   - **`USPTO_FEE`** — refundable **until the filing is recorded** (`Application.serialNumber` set / `recordFilingReceipt`); **non-refundable** after (the government fee is spent).
+   - **`SERVICE_FEE`** — refundable **until the application is filed**; after filing, `MASTER_ADMIN` discretionary with a recorded reason.
+   - **`OTHER`** — discretionary, default refundable.
+2. **Two-step authority** (segregation of duties): **request** by any staff holding **`order.refund.request`** (a `Refund` is created `PENDING` with `requestedById` + reason); **approve + execute** by **`order.refund`** (`MASTER_ADMIN`), which issues the provider refund and flips the row to `SUCCEEDED`. Every step is audited (`REFUND_REQUESTED`, `REFUND_ISSUED`).
+3. **Threshold.** Refunds above the configured threshold require a **second, distinct** `MASTER_ADMIN` approver (`approvedById ≠ requestedById` and `≠` the executing admin). **Initial value = USD 200**, held in configuration, not code; changing it needs no migration. **Closes OPEN-07.**
+4. Refunds are new `Refund` rows + one `RefundAllocation` per line + an `Order.status` transition; history is never mutated. The sum of allocations per line may not exceed the line's refundable remainder.
+5. `Refund.providerRefundId` is the reconciliation key for the daily job (`M10.5`).
+
+### Alternatives rejected
+- **B — manual via provider dashboard** — no ledger; `M10.5` ("reconciliation success 100%") cannot be evidenced for partial refunds.
+- **C — automatic on cancellation** — would auto-refund government fees already spent, and leaves no approval trail.
+
+### Consequences
+- New `refundPolicy` module + RBAC permission **`order.refund.request`** (contract vocabulary must declare it — see OPEN-11).
+- Schema delta: `Refund.status` (uses the contract `RefundStatus`) and `Refund.requestedById` — folded into the P4 contract/schema follow-up (OPEN-11).
+- `M10.3` amended with the cut-off rules and tests; `03-api-contract.yaml` `/orders/{orderId}/refund` semantics updated.
+- OPEN-07 **RESOLVED** (USD 200, configurable).
+
+---
+
 ## Business-side prerequisites (non-code, start immediately)
 
 | Item | Owner | Blocks |
