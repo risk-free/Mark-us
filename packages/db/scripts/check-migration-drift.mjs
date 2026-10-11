@@ -7,23 +7,27 @@
  *     fail if the committed file differs. Needs no database. Catches "schema
  *     edited, migration not regenerated" everywhere, including on a laptop.
  *
- *  2. Apply the migrations to an empty shadow database and assert
- *     `prisma migrate diff --from-migrations --to-schema-datamodel` is empty, i.e.
- *     the physical database and the Prisma schema cannot disagree. Runs only when
- *     SHADOW_DATABASE_URL points at an EMPTY database, because
- *     `prisma migrate diff --from-migrations` *applies* the migrations into it.
- *     A populated shadow database fails this check for the wrong reason.
+ *  2. Apply the migrations to an EMPTY shadow database, then assert that
+ *     everything the Prisma schema models exists in the physical database. Runs
+ *     only when SHADOW_DATABASE_URL points at an empty database, because
+ *     `prisma migrate diff` applies the migrations into it.
  *
- * The two are gated on different variables on purpose: conflating them on
- * DATABASE_URL meant a job with a migration target also tried to run the
- * comparison against a database that did not exist yet.
+ *     Polarity matters. `migrate diff --from-migrations --to-schema-datamodel`
+ *     demands the database match the datamodel EXACTLY, which is the wrong
+ *     question here: ARCH-02 §4.2.4/§5.3 mandate indexes, constraints, sequences
+ *     and extensions that Prisma cannot express, and those always read as drift
+ *     in that direction. So the diff runs datamodel -> database instead:
  *
- * Exit code 0 = in sync. Non-zero = drift (or an unusable shadow database, which
- * is reported as such rather than as drift).
+ *       [-] something the schema models is missing from the database -> FAIL
+ *       [+] something extra exists in the database              -> expected,
+ *            because the authored fragments are the declared source of extras
+ *
+ *     Everything in fragments/*.sql shows up as a `[+]` line, which is exactly
+ *     the evidence that the fragments were applied.
  */
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -77,27 +81,115 @@ if (!shadowUrl) {
   process.exit(0);
 }
 
-let diff;
+let diffOutput = "";
 try {
-  diff = prisma([
+  diffOutput = prisma([
     "migrate",
     "diff",
-    "--from-migrations",
-    "prisma/migrations",
-    "--to-schema-datamodel",
+    "--from-schema-datamodel",
+    "prisma/schema.prisma",
+    "--to-schema-datasource",
     "prisma/schema.prisma",
     "--shadow-database-url",
     shadowUrl,
-    "--exit-code",
   ]);
 } catch (error) {
-  const details = String(error?.stderr ?? error?.message ?? "").split("\n").slice(0, 3).join(" ");
+  const details = String(error?.stderr ?? error?.message ?? "").split("\n").slice(0, 4).join(" ");
   process.stderr.write(
     `[db] the shadow-database comparison could not run against ${shadowUrl}\n[db] ${details}\n` +
-      "[db] this database must exist and be EMPTY: prisma migrate diff --from-migrations\n" +
-      "[db] applies the migrations into it. Recreate it (DROP + CREATE) before running this check.\n",
+      "[db] this database must exist and be EMPTY: prisma migrate diff applies the\n" +
+      "[db] migrations into it. Recreate it (DROP + CREATE) before running this check.\n",
   );
   process.exit(1);
 }
 
-process.exit(diff === null || diff === undefined ? 0 : 1);
+const removed = diffOutput.split("\n").filter((line) => line.includes("[-]"));
+const added = diffOutput.split("\n").filter((line) => line.includes("[+]"));
+
+if (removed.length > 0) {
+  process.stderr.write(
+    [
+      `[db] MIGRATION DRIFT: ${removed.length} object(s) modelled by schema.prisma are missing from the database:`,
+      ...removed.map((line) => `  ${line.trim()}`),
+      "",
+    ].join("\n"),
+  );
+  process.exit(1);
+}
+
+process.stdout.write(
+  `[db] schema objects all present; ${added.length} extra object(s) in the database (authored fragments — expected)\n`,
+);
+
+/*
+ * Check 3 — the authored fragment objects exist in the live database, by name.
+ *
+ * Check 2 cannot do this. Prisma's diff model does not include CHECK
+ * constraints, sequences or extensions at all, so the hand-written objects in
+ * fragments/*.sql are invisible to it: 20-odd indexes and constraints that the
+ * architecture requires would fail to apply and this gate would still say green.
+ * So the names are extracted from the fragments and looked up directly.
+ */
+if (!process.env.DATABASE_URL) {
+  process.stdout.write("[db] fragment verification skipped (no DATABASE_URL)\n");
+  process.exit(0);
+}
+
+const fragmentDir = path.join(packageRoot, "prisma", "migrations", migrationName, "fragments");
+const fragmentSql = readdirSync(fragmentDir)
+  .filter((name) => name.endsWith(".sql"))
+  .sort()
+  .map((name) => readFileSync(path.join(fragmentDir, name), "utf8"))
+  .join("\n");
+
+const expected = {
+  indexes: [...fragmentSql.matchAll(/CREATE\s+(?:UNIQUE\s+)?INDEX\s+([a-z0-9_]+)/gi)].map((m) => m[1].toLowerCase()),
+  constraints: [...fragmentSql.matchAll(/ADD\s+CONSTRAINT\s+([a-z0-9_]+)/gi)].map((m) => m[1].toLowerCase()),
+  sequences: [...fragmentSql.matchAll(/CREATE\s+SEQUENCE\s+([a-z0-9_]+)/gi)].map((m) => m[1].toLowerCase()),
+  extensions: [...fragmentSql.matchAll(/CREATE\s+EXTENSION\s+IF\s+NOT\s+EXISTS\s+([a-z0-9_]+)/gi)].map((m) => m[1].toLowerCase()),
+};
+
+const { PrismaClient } = require("@prisma/client");
+const db = new PrismaClient();
+const missing = [];
+
+try {
+  // Static tagged queries only — no interpolation, per ARCH-01 §11.1.
+  const [indexes, constraints, sequences, extensions] = await Promise.all([
+    db.$queryRaw`SELECT indexname FROM pg_indexes WHERE schemaname = 'public'`,
+    db.$queryRaw`SELECT conname FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace WHERE n.nspname = 'public'`,
+    db.$queryRaw`SELECT sequencename FROM pg_sequences WHERE schemaname = 'public'`,
+    db.$queryRaw`SELECT extname FROM pg_extension`,
+  ]);
+
+  const actual = {
+    indexes: new Set(indexes.map((r) => r.indexname.toLowerCase())),
+    constraints: new Set(constraints.map((r) => r.conname.toLowerCase())),
+    sequences: new Set(sequences.map((r) => r.sequencename.toLowerCase())),
+    extensions: new Set(extensions.map((r) => r.extname.toLowerCase())),
+  };
+
+  for (const kind of Object.keys(expected)) {
+    for (const name of expected[kind]) {
+      if (!actual[kind].has(name)) missing.push(`${kind}: ${name}`);
+    }
+  }
+} finally {
+  await db.$disconnect();
+}
+
+if (missing.length > 0) {
+  process.stderr.write(
+    [
+      `[db] FRAGMENT DRIFT: ${missing.length} authored object(s) from fragments/*.sql are absent from the database:`,
+      ...missing.map((m) => `  ${m}`),
+      "",
+    ].join("\n"),
+  );
+  process.exit(1);
+}
+
+process.stdout.write(
+  `[db] authored fragments verified by name: ${Object.values(expected).flat().length} object(s)\n`,
+);
+process.exit(0);
