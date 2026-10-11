@@ -690,6 +690,9 @@ model Payment {
   contactId String
   contact   Contact  @relation(fields: [contactId], references: [id])
 
+  // Virtual back-reference: Refund.paymentId holds the FK. No column, no migration.
+  refunds Refund[]
+
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
