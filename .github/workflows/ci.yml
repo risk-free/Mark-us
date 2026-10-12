@@ -74,7 +74,11 @@ jobs:
           --health-timeout 3s
           --health-retries 10
     env:
-      DATABASE_URL: postgresql://markus:markus@localhost:5432/markus
+      # The drift gate's `prisma migrate diff` resolves the datasource side from
+      # DATABASE_URL, and the fragment check reads it too. Both must see the
+      # scratch database that the deploy step migrates, so the job default is
+      # markus_migrate, not the empty maintenance DB `markus`.
+      DATABASE_URL: postgresql://markus:markus@localhost:5432/markus_migrate
       SHADOW_DATABASE_URL: postgresql://markus:markus@localhost:5432/markus_shadow
       # psql always connects through the maintenance database; it must exist
       # before the scratch databases below can be created or dropped.
@@ -116,8 +120,9 @@ jobs:
         env:
           DATABASE_URL: postgresql://markus:markus@localhost:5432/markus_migrate
 
-      # Check 2: prisma migrate diff --from-migrations applies the migrations into
-      # the shadow database, so it must be the empty one created just above.
+      # Check 2: prisma migrate diff runs datamodel -> datasource. The datasource
+      # side resolves DATABASE_URL (the job default, markus_migrate). The shadow
+      # database must be the empty one created just above for --shadow-database-url.
       - name: Migrated database matches the Prisma schema (zero drift)
         run: pnpm db:drift
 
