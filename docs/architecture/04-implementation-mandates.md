@@ -546,7 +546,9 @@ the specific unmet condition named in the problem `detail`.
 ### M9.2 — The ceremony is a human act (GATE)
 **Statement:** `filing-session` produces a checklist and a pre-filled packet for manual TEAS entry.
 The system never submits to USPTO. Completion requires the attorney's receipt artefact, the serial
-number and the filing date. Session start requires step-up authentication.
+number and the filing date. Session start requires step-up authentication. The attending attorney's
+profile (bar registration number, jurisdiction, admission year, correspondence details) is available
+to populate the packet — see OPEN-12.
 **Owner:** DEV + ARCH · **Phase:** P5 · **Depends on:** M2.4, M9.1
 **Verification:** Test asserting `428` without step-up; test asserting the receipt is mandatory and
 that the serial number is unique; a code review gate asserting no outbound USPTO submission client
@@ -939,7 +941,7 @@ flowchart LR
 | OPEN-01 | Mainland Alipay and WeChat Pay merchant accounts — available? | M10.6 | **OPEN — onboarding not started** (owner, 2026-10-11): no merchant account or card gateway yet; planned, preferring a single multi-channel bundling gateway (D-05 = Stripe HK; alternatives Airwallex/Adyen). Payment implementation deferred; rails stay feature-flagged off (`503`) per M10.6 |
 | OPEN-02 | Legal review of USPTO bulk-data indexing and of the attended-filing workflow | M7.1, M9.2 | **RESOLVED** (owner, 2026-10-11) — no external legal opinion required; internal baseline stands (derived fields only: mark text, class, status, dates; attended human-in-loop filing); M7.1 halt lifted |
 | OPEN-03 | Exact probability cohort and label horizon | M6.1, M6.5 | **RESOLVED** — cohort = whole LIVE USPTO corpus (600/700), no origin filter; label = eventual registration; horizon configurable, initial +6 months from `filingDate` (ADR D-24) |
-| OPEN-04 | Attorney roster, bar numbers and capacity | M9.1, M9.2 | Business |
+| OPEN-04 | Attorney roster, bar numbers and capacity | M9.1, M9.2 | **PARTIALLY RESOLVED** (owner, 2026-10-11): 1 attorney now (California bar, admitted 2025; Shenzhen-based), capacity ≈100 applications/month; roster may grow. Support N filing attorneys; top-up before P5 if volume requires |
 | OPEN-05 | Hong Kong hosting provider and ICP path | M14.2 | RESOLVED — region = HK, ICP deferred (`.com`, no-ICP default) |
 | OPEN-06 | **RESOLVED** — Node 22 LTS pinned everywhere (`engines >= 22`, CI `node-version: 22`, `node:22-alpine`), no mismatch | M1.6, M14.1 | Architect |
 | OPEN-07 | Refund approval threshold value | M10.3 | **RESOLVED** — initial value **USD 200** in configuration (ADR D-22); changeable without migration |
@@ -947,6 +949,7 @@ flowchart LR
 | OPEN-09 | Retention basis per PII column for PIPL erasure | M12.7 | Legal — engineering baseline recorded 2026-10-11 (`ARCH-02` §6 erasure matrix, DQ-012 ANSWERED); legal basis per class still PENDING PRC counsel |
 | OPEN-10 | `Company` resources + contact↔company link + merge endpoints in `03-api-contract.yaml` | M4.2, M4.6 | Architect + DEV — schema/ADR recorded (D-20, D-21); the OpenAPI surface is a follow-up before P3 |
 | OPEN-11 | Refund request/approve delta: `Refund.status`, `Refund.requestedById`, `order.refund.request` vocabulary, request/approve endpoints | M10.3 | Architect + DEV — policy recorded (D-22); schema/contract delta must land before P4 sign-off |
+| OPEN-12 | Attorney profile fields for the filing ceremony (bar registration number, state/jurisdiction, admission year, correspondence details) needed to pre-fill the TEAS packet | M9.2 | Architect + DEV — no such fields exist on `StaffUser`/vault today (the vault holds only USPTO *secrets*, M2.5); add if the packet pre-fill requires the attorney section |
 
 ---
 
