@@ -184,17 +184,31 @@ jobs:
       - name: Boot the full stack
         run: docker compose --profile app up -d --build
 
-      - name: API health
+      # ARCH-01 §12 ruling 3 (BUG-041): every content assertion must carry an
+      # expected marker + byte-size floor so a 200 from an empty shell can
+      # never pass. Floors sized against the real placeholder (web ≈ 6 KB,
+      # api /health ≈ 88 B) on a Linux ubuntu-latest authority, per ruling 2.
+      - name: API health (ok marker + byte-size floor)
         run: |
-          curl --fail --silent --show-error \
+          body=$(curl --fail --silent --show-error \
             --retry 20 --retry-connrefused --retry-delay 3 --retry-all-errors \
-            http://127.0.0.1:3001/health | tee /dev/stderr | grep -q '"ok":true'
+            http://127.0.0.1:3001/health)
+          printf '%s\n' "$body" | tee /dev/stderr | grep -q '"ok":true' \
+            || { echo "missing \"ok\":true marker (empty shell?)" >&2; exit 1; }
+          [ "${#body}" -ge 40 ] \
+            || { echo "health payload too small: ${#body} B < 40" >&2; exit 1; }
 
-      - name: Web responds
+      - name: Web responds (markers + 3000-byte floor)
         run: |
-          curl --fail --silent --show-error --output /dev/null \
+          body=$(curl --fail --silent --show-error \
             --retry 20 --retry-connrefused --retry-delay 3 --retry-all-errors \
-            http://127.0.0.1:3000/
+            http://127.0.0.1:3000/)
+          printf '%s' "$body" | grep -q '<!DOCTYPE html>' \
+            || { echo "missing DOCTYPE marker (empty shell?)" >&2; exit 1; }
+          printf '%s' "$body" | grep -q 'MarkUS' \
+            || { echo "missing page marker (empty shell?)" >&2; exit 1; }
+          [ "${#body}" -ge 3000 ] \
+            || { echo "page too small: ${#body} B < 3000" >&2; exit 1; }
 
       # Until P2 registers a processor, the worker's designed behaviour is to open
       # the queues, report that it has nothing to consume, and exit 0. Assert that
