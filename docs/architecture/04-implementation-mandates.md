@@ -395,8 +395,10 @@ version reproduces the same score within the recorded tolerance.
 **Owner:** DEV + QA · **Phase:** P6 · **Depends on:** M3.2, M3.4
 **Verification:** Replay test over a golden fixture set (≥ 50 marks with human-labelled outcomes)
 asserting score reproducibility and asserting row count growth with zero mutation of prior rows.
-**Halt:** OPEN-03 (cohort and label horizon) must be closed by the Architect before the model can be
-described as `P(eventual registration)`. Until then the field is labelled `PENDING-P6`.
+**Halt:** The cohort and label horizon are fixed by ADR D-24 (whole LIVE corpus, label = eventual
+registration, configurable horizon, initial +6 months from `filingDate`) — the field may be described
+as `P(eventual registration)` from P6. The horizon parameter must be set in configuration before the
+model is released.
 
 ### M6.2 — Probability disclosure is non-negotiable (BLOCKER)
 **Statement:** Every payload and every rendered view that contains a probability, a similarity score
@@ -433,8 +435,10 @@ is `200` with `method: trigram`; latency assertion per stage.
 
 ### M6.5 — Calibration reporting (MAJOR)
 **Statement:** A calibration report (reliability curve, sample size, confidence interval) is
-generated per model version and is required before the model is released to clients. Model
-promotion is a two-person approval recorded in the audit trail.
+generated per model version and is required before the model is released to clients. The report's
+labelled set is assembled per ADR D-24 (whole LIVE corpus; label = eventual registration; marks still
+`600` at the configured horizon are censored, not negatives). Model promotion is a two-person approval
+recorded in the audit trail.
 **Owner:** DEV + QA · **Phase:** P6 · **Depends on:** M6.1, M6.2
 **Verification:** Test asserting the release pipeline refuses to mark a model `RELEASED` without a
 stored report whose sample size meets the configured minimum, and without two distinct approver ids.
@@ -932,8 +936,8 @@ flowchart LR
 | ID | Question | Blocks | Owner |
 | --- | --- | --- | --- |
 | OPEN-01 | Mainland Alipay and WeChat Pay merchant accounts — available? | M10.6 | Business |
-| OPEN-02 | Legal review of USPTO bulk-data indexing and of the attended-filing workflow | M7.1, M9.2 | Legal |
-| OPEN-03 | Exact probability cohort and label horizon | M6.1, M6.5 | Architect + Legal |
+| OPEN-02 | Legal review of USPTO bulk-data indexing and of the attended-filing workflow | M7.1, M9.2 | **No legal opinion required** — internal baseline covers PRD §5.11 indexing and attended-filing workflow as built; records are the source of truth |
+| OPEN-03 | Exact probability cohort and label horizon | M6.1, M6.5 | **RESOLVED** — cohort = whole LIVE USPTO corpus (600/700), no origin filter; label = eventual registration; horizon configurable, initial +6 months from `filingDate` (ADR D-24) |
 | OPEN-04 | Attorney roster, bar numbers and capacity | M9.1, M9.2 | Business |
 | OPEN-05 | Hong Kong hosting provider and ICP path | M14.2 | RESOLVED — region = HK, ICP deferred (`.com`, no-ICP default) |
 | OPEN-06 | **RESOLVED** — Node 22 LTS pinned everywhere (`engines >= 22`, CI `node-version: 22`, `node:22-alpine`), no mismatch | M1.6, M14.1 | Architect |

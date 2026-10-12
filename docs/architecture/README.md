@@ -92,8 +92,8 @@ positions are:
 | ID | Decision | Posture while open |
 | --- | --- | --- |
 | OPEN-01 | Mainland Alipay / WeChat Pay merchant accounts | Routes exist in the contract, disabled by feature flag, `503` when off |
-| OPEN-02 | USPTO bulk-data licensing and attended-filing legal review | Corpus ingest and filing ceremony cannot be signed off |
-| OPEN-03 | Probability cohort and label horizon | Field labelled `PENDING-P6`, no calibration claim |
+| OPEN-02 | USPTO bulk-data licensing and attended-filing legal review | **RESOLVED** — no legal opinion required; internal baseline covers PRD §5.11 indexing + attended-filing workflow |
+| OPEN-03 | Probability cohort and label horizon | **RESOLVED** — whole LIVE corpus (600/700), no origin filter; label = eventual registration; horizon configurable, initial +6 months (ADR D-24) |
 | OPEN-04 | Attorney roster, bar numbers, capacity | Filing preconditions cannot be validated end to end |
 | OPEN-05 | Hong Kong hosting and ICP path | RESOLVED (region = HK, no ICP for now, `.com`) |
 | OPEN-06 | **RESOLVED** — Node 22 LTS pinned everywhere (mandate `M1.6`) | done |

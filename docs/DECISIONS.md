@@ -435,6 +435,48 @@ pre-computed rollups rather than ad-hoc aggregation.
 
 ---
 
+## D-24: Probability cohort and label horizon
+**ID:** D-24
+**Status:** ACCEPTED
+**Date:** 2026-10-11
+**Owner:** ARCH (+ Business)
+**Impact:** P6 (`M6.1`, `M6.5`), `TmCorpusMark`, `pRegistration`, OPEN-03
+**Source:** OPEN-03 (owner ruling 2026-10-11)
+
+### Context
+`M6.1` requires the headline `pRegistration` to mean `P(eventual registration)`, and `M6.5` requires a
+calibration report per model version. Both need a defined **cohort** (which marks are in scope) and a
+**label horizon** (how long we wait for the outcome before trusting it as a label). Until both are
+fixed, `M6.1`'s halt keeps the field `PENDING-P6`.
+
+### Decision (owner chose cohort B)
+1. **Cohort = the whole LIVE USPTO corpus** (`TmCorpusMark`, `statusCode` 600 pending + 700
+   registered). **No applicant-origin / nationality filter** — a USPTO mark is in scope regardless of
+   the owner's residence or nationality, so origin is not a relevant discriminator.
+2. **Label = eventual registration.** Positive = registered (`registrationDate` set / `statusCode`
+   `700`); negative = abandoned (`abandonDate` set). Marks still `600` at the horizon are
+   **censored** — excluded from the labelled set, not counted as negatives.
+3. **Label horizon = configurable, initial `+6 months` from `filingDate`**, held in configuration, not
+   code; extendable to `+9` or `+12` months as the corpus matures. Changing it needs no migration and
+   no model-version bump by itself (it changes only cohort assembly).
+
+### Rationale
+USPTO pendency commonly runs 8–14 months, so a short horizon yields a small and positively-biased
+labelled set; a longer horizon buys more resolved outcomes at the cost of excluding recent filings and
+slowing the retraining cadence. Because that trade-off will move as the corpus grows, the value must be
+tunable without a deploy. Origin is irrelevant to registrability, so filtering by it would only shrink
+the cohort without improving label quality.
+
+### Consequences
+- `M6.1` halt lifted for the `P(eventual registration)` description; the golden fixture set (≥ 50
+  human-labelled marks) is drawn from the labelled cohort. Cohort/label assembly and the horizon
+  parameter are owned by `M6.5`.
+- No schema change: the corpus already carries `statusCode`, `filingDate`, `registrationDate`,
+  `abandonDate`. Cohort assembly is a curation query, not a new table.
+- OPEN-03 **RESOLVED**.
+
+---
+
 ## Business-side prerequisites (non-code, start immediately)
 
 | Item | Owner | Blocks |
