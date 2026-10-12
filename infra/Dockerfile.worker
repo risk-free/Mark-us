@@ -21,6 +21,7 @@ RUN corepack enable
 WORKDIR /app
 ENV NODE_ENV=production \
     RUN_WORKER=1
-COPY --from=build --chown=node:node /app /app
+COPY --from=build /app /app
+RUN chown -R node:node /app
 USER node
 CMD ["node", "workers/dist/index.js"]
