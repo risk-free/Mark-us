@@ -477,6 +477,44 @@ the cohort without improving label quality.
 
 ---
 
+## D-25: Model release — minimum sample size and calibration confidence
+**ID:** D-25
+**Status:** ACCEPTED
+**Date:** 2026-10-11
+**Owner:** ARCH
+**Impact:** P6 (`M6.5`, `M6.1`), `TmCorpusMark`, OPEN-08
+**Source:** OPEN-08 (owner ruling 2026-10-11)
+
+### Context
+`M6.5` requires a per-model-version calibration report (reliability curve, sample size, confidence
+interval) before the model may be released, and its verification refuses `RELEASED` without a report
+"whose sample size meets the configured minimum" — but that minimum was never set. The labelled set is
+now defined by ADR D-24 (whole LIVE corpus; label = eventual registration; resolved within the
+configurable horizon; pending marks censored).
+
+### Decision
+A model may be released only when the calibration report, computed on the **temporally held-out
+split**, satisfies **both**:
+1. **≥ 500 resolved labels** in the calibration set; and
+2. **95% CI half-width on overall accuracy ≤ 5 pp**.
+
+Both thresholds are held in **configuration**, not code, and are re-checked at every promotion.
+
+### Rationale
+A bare count can still yield a wide confidence interval, so a sample-size floor alone does not make a
+calibration defensible; pairing the count with a CI half-width gives a floor that tightens naturally as
+the corpus grows and keeps the promotion gate meaningful. A temporal split (rather than random) mirrors
+the M5a evaluation discipline and approximates the production condition where the model scores marks
+filed after its training window.
+
+### Consequences
+- `M6.5` promotion gate enforces both conditions; `M6.1` reproducibility/replay set is unaffected.
+- If the corpus cannot supply 500 resolved labels at the initial +6-month horizon, either the horizon is
+  widened (D-24) or the model stays unreleased — the gate is not lowered to fit the data.
+- OPEN-08 **RESOLVED**.
+
+---
+
 ## Business-side prerequisites (non-code, start immediately)
 
 | Item | Owner | Blocks |

@@ -98,7 +98,7 @@ positions are:
 | OPEN-05 | Hong Kong hosting and ICP path | RESOLVED (region = HK, no ICP for now, `.com`) |
 | OPEN-06 | **RESOLVED** — Node 22 LTS pinned everywhere (mandate `M1.6`) | done |
 | OPEN-07 | Refund approval threshold | **RESOLVED** — initial USD 200 in config (ADR D-22) |
-| OPEN-08 | Model minimum sample size for release | Release pipeline stays blocked for P6 |
+| OPEN-08 | Model minimum sample size for release | **RESOLVED** — ≥ 500 resolved labels on the temporal holdout **and** accuracy 95% CI half-width ≤ 5 pp (both configurable; ADR D-25) |
 | OPEN-09 | PIPL retention basis per PII column | Engineering baseline recorded 2026-10-11 (`ARCH-02` §6 erasure matrix, DQ-012 ANSWERED); legal basis per class PENDING PRC counsel (P2) — erasure not yet legally declarable |
 | OPEN-10 | `Company` / contact-link / merge API surface | Schema + ADR recorded (D-20, D-21); OpenAPI endpoints pending before P3 (`M4.2`, `M4.6`) |
 | OPEN-11 | Refund request/approve schema + contract delta | Policy recorded (D-22); `Refund.status`/`requestedById` + `order.refund.request` + endpoints pending before P4 (`M10.3`) |

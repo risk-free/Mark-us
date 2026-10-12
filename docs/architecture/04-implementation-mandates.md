@@ -437,11 +437,14 @@ is `200` with `method: trigram`; latency assertion per stage.
 **Statement:** A calibration report (reliability curve, sample size, confidence interval) is
 generated per model version and is required before the model is released to clients. The report's
 labelled set is assembled per ADR D-24 (whole LIVE corpus; label = eventual registration; marks still
-`600` at the configured horizon are censored, not negatives). Model promotion is a two-person approval
-recorded in the audit trail.
+`600` at the configured horizon are censored, not negatives) and, per ADR D-25, promotion additionally
+requires **≥ 500 resolved labels** on the temporally held-out split **and a 95% CI half-width on
+overall accuracy ≤ 5 pp** (both configurable). Model promotion is a two-person approval recorded in the
+audit trail.
 **Owner:** DEV + QA · **Phase:** P6 · **Depends on:** M6.1, M6.2
 **Verification:** Test asserting the release pipeline refuses to mark a model `RELEASED` without a
-stored report whose sample size meets the configured minimum, and without two distinct approver ids.
+stored report whose sample size meets the configured minimum and whose CI half-width meets the
+configured bound, and without two distinct approver ids.
 
 ---
 
@@ -945,7 +948,7 @@ flowchart LR
 | OPEN-05 | Hong Kong hosting provider and ICP path | M14.2 | RESOLVED — region = HK, ICP deferred (`.com`, no-ICP default) |
 | OPEN-06 | **RESOLVED** — Node 22 LTS pinned everywhere (`engines >= 22`, CI `node-version: 22`, `node:22-alpine`), no mismatch | M1.6, M14.1 | Architect |
 | OPEN-07 | Refund approval threshold value | M10.3 | **RESOLVED** — initial value **USD 200** in configuration (ADR D-22); changeable without migration |
-| OPEN-08 | Model minimum sample size for release | M6.5 | Architect |
+| OPEN-08 | Model minimum sample size for release | M6.5 | **RESOLVED** — ≥ 500 resolved labels on the temporal holdout **and** 95% CI half-width on accuracy ≤ 5 pp (both configurable), ADR D-25 |
 | OPEN-09 | Retention basis per PII column for PIPL erasure | M12.7 | Legal — engineering baseline recorded 2026-10-11 (`ARCH-02` §6 erasure matrix, DQ-012 ANSWERED); legal basis per class still PENDING PRC counsel |
 | OPEN-10 | `Company` resources + contact↔company link + merge endpoints in `03-api-contract.yaml` | M4.2, M4.6 | Architect + DEV — schema/ADR recorded (D-20, D-21); the OpenAPI surface is a follow-up before P3 |
 | OPEN-11 | Refund request/approve delta: `Refund.status`, `Refund.requestedById`, `order.refund.request` vocabulary, request/approve endpoints | M10.3 | Architect + DEV — policy recorded (D-22); schema/contract delta must land before P4 sign-off |
