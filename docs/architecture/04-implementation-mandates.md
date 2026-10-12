@@ -455,8 +455,9 @@ stored report whose sample size meets the configured minimum, and without two di
 **Verification:** Test ingesting a fixed archive twice, asserting idempotence and that the second run
 reports updates only; a deliberately malformed record asserting quarantine into the reject count
 rather than a failed run; freshness assertion that `/tm/search` reports `stale` beyond 26 hours.
-**Halt:** OPEN-02 (bulk-data licensing and indexing) must be closed before the first production
-ingest.
+**Halt:** OPEN-02 (bulk-data licensing and indexing) is **resolved** — no external legal opinion is
+required (owner, 2026-10-11); the derived-fields-only baseline is the operating posture. No block on
+the first production ingest.
 
 ### M7.2 — Search is a signal, not an opinion (BLOCKER)
 **Statement:** `/tm/search` returns ranked candidates with the method used (`trigram`, `bge`,
@@ -935,8 +936,8 @@ flowchart LR
 
 | ID | Question | Blocks | Owner |
 | --- | --- | --- | --- |
-| OPEN-01 | Mainland Alipay and WeChat Pay merchant accounts — available? | M10.6 | Business |
-| OPEN-02 | Legal review of USPTO bulk-data indexing and of the attended-filing workflow | M7.1, M9.2 | **No legal opinion required** — internal baseline covers PRD §5.11 indexing and attended-filing workflow as built; records are the source of truth |
+| OPEN-01 | Mainland Alipay and WeChat Pay merchant accounts — available? | M10.6 | **OPEN — onboarding not started** (owner, 2026-10-11): no merchant account or card gateway yet; planned, preferring a single multi-channel bundling gateway (D-05 = Stripe HK; alternatives Airwallex/Adyen). Payment implementation deferred; rails stay feature-flagged off (`503`) per M10.6 |
+| OPEN-02 | Legal review of USPTO bulk-data indexing and of the attended-filing workflow | M7.1, M9.2 | **RESOLVED** (owner, 2026-10-11) — no external legal opinion required; internal baseline stands (derived fields only: mark text, class, status, dates; attended human-in-loop filing); M7.1 halt lifted |
 | OPEN-03 | Exact probability cohort and label horizon | M6.1, M6.5 | **RESOLVED** — cohort = whole LIVE USPTO corpus (600/700), no origin filter; label = eventual registration; horizon configurable, initial +6 months from `filingDate` (ADR D-24) |
 | OPEN-04 | Attorney roster, bar numbers and capacity | M9.1, M9.2 | Business |
 | OPEN-05 | Hong Kong hosting provider and ICP path | M14.2 | RESOLVED — region = HK, ICP deferred (`.com`, no-ICP default) |

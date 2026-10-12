@@ -91,7 +91,7 @@ positions are:
 
 | ID | Decision | Posture while open |
 | --- | --- | --- |
-| OPEN-01 | Mainland Alipay / WeChat Pay merchant accounts | Routes exist in the contract, disabled by feature flag, `503` when off |
+| OPEN-01 | Mainland Alipay / WeChat Pay merchant accounts | **OPEN** — no account/gateway yet; planned, prefer one multi-channel bundling gateway (D-05 = Stripe HK). Routes exist in the contract, disabled by feature flag, `503` when off; payment implementation deferred |
 | OPEN-02 | USPTO bulk-data licensing and attended-filing legal review | **RESOLVED** — no legal opinion required; internal baseline covers PRD §5.11 indexing + attended-filing workflow |
 | OPEN-03 | Probability cohort and label horizon | **RESOLVED** — whole LIVE corpus (600/700), no origin filter; label = eventual registration; horizon configurable, initial +6 months (ADR D-24) |
 | OPEN-04 | Attorney roster, bar numbers, capacity | Filing preconditions cannot be validated end to end |
