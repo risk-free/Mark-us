@@ -396,9 +396,9 @@ version reproduces the same score within the recorded tolerance.
 **Verification:** Replay test over a golden fixture set (≥ 50 marks with human-labelled outcomes)
 asserting score reproducibility and asserting row count growth with zero mutation of prior rows.
 **Halt:** The cohort and label horizon are fixed by ADR D-24 (whole LIVE corpus, label = eventual
-registration, configurable horizon, initial +6 months from `filingDate`) — the field may be described
-as `P(eventual registration)` from P6. The horizon parameter must be set in configuration before the
-model is released.
+registration, configurable horizon, **+12 months primary / +24 months secondary per D-26**) — the
+field may be described as `P(eventual registration)` from P6. The horizon parameter must be set in
+configuration before the model is released.
 
 ### M6.2 — Probability disclosure is non-negotiable (BLOCKER)
 **Statement:** Every payload and every rendered view that contains a probability, a similarity score
@@ -436,7 +436,8 @@ is `200` with `method: trigram`; latency assertion per stage.
 ### M6.5 — Calibration reporting (MAJOR)
 **Statement:** A calibration report (reliability curve, sample size, confidence interval) is
 generated per model version and is required before the model is released to clients. The report's
-labelled set is assembled per ADR D-24 (whole LIVE corpus; label = eventual registration; marks still
+labelled set is assembled per ADR D-24 as amended by **D-26** (whole LIVE corpus; label = eventual
+registration; horizon **+12 months primary / +24 months secondary**; marks still
 `600` at the configured horizon are censored, not negatives) and, per ADR D-25, promotion additionally
 requires **≥ 500 resolved labels** on the temporally held-out split **and a 95% CI half-width on
 overall accuracy ≤ 5 pp** (both configurable). Model promotion is a two-person approval recorded in the
@@ -943,7 +944,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | OPEN-01 | Mainland Alipay and WeChat Pay merchant accounts — available? | M10.6 | **OPEN — onboarding not started** (owner, 2026-10-11): no merchant account or card gateway yet; planned, preferring a single multi-channel bundling gateway (D-05 = Stripe HK; alternatives Airwallex/Adyen). Payment implementation deferred; rails stay feature-flagged off (`503`) per M10.6 |
 | OPEN-02 | Legal review of USPTO bulk-data indexing and of the attended-filing workflow | M7.1, M9.2 | **RESOLVED** (owner, 2026-10-11) — no external legal opinion required; internal baseline stands (derived fields only: mark text, class, status, dates; attended human-in-loop filing); M7.1 halt lifted |
-| OPEN-03 | Exact probability cohort and label horizon | M6.1, M6.5 | **RESOLVED** — cohort = whole LIVE USPTO corpus (600/700), no origin filter; label = eventual registration; horizon configurable, initial +6 months from `filingDate` (ADR D-24) |
+| OPEN-03 | Exact probability cohort and label horizon | M6.1, M6.5 | **RESOLVED** — cohort = whole LIVE USPTO corpus (600/700), no origin filter; label = eventual registration; horizon configurable, **+12 months primary / +24 months secondary** (ADR D-24 as amended by D-26) |
 | OPEN-04 | Attorney roster, bar numbers and capacity | M9.1, M9.2 | **PARTIALLY RESOLVED** (owner, 2026-10-11): 1 attorney now (California bar, admitted 2025; Shenzhen-based), capacity ≈100 applications/month; roster may grow. Support N filing attorneys; top-up before P5 if volume requires |
 | OPEN-05 | Hong Kong hosting provider and ICP path | M14.2 | RESOLVED — region = HK, ICP deferred (`.com`, no-ICP default) |
 | OPEN-06 | **RESOLVED** — Node 22 LTS pinned everywhere (`engines >= 22`, CI `node-version: 22`, `node:22-alpine`), no mismatch | M1.6, M14.1 | Architect |

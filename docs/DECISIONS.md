@@ -458,7 +458,8 @@ fixed, `M6.1`'s halt keeps the field `PENDING-P6`.
    **censored** — excluded from the labelled set, not counted as negatives.
 3. **Label horizon = configurable, initial `+6 months` from `filingDate`**, held in configuration, not
    code; extendable to `+9` or `+12` months as the corpus matures. Changing it needs no migration and
-   no model-version bump by itself (it changes only cohort assembly).
+   no model-version bump by itself (it changes only cohort assembly). **Amended by ADR D-26
+   (2026-10-12): horizon is now `+12 months` (primary) / `+24 months` (secondary) — see D-26.**
 
 ### Rationale
 USPTO pendency commonly runs 8–14 months, so a short horizon yields a small and positively-biased
@@ -515,6 +516,48 @@ filed after its training window.
 
 ---
 
+## D-26: Label horizon — amend D-24 to +12 months (primary), +24 months (secondary)
+**ID:** D-26
+**Status:** ACCEPTED
+**Date:** 2026-10-12
+**Owner:** ARCH (owner-approved 2026-10-12)
+**Impact:** P5/P6 (`M6.1`, `M6.5`, `M7.1`), D-24 item 3, OPEN-03, P5.1
+**Source:** P5.1 spike (`docs/architecture/05-p51-spike.md`)
+
+### Context
+D-24 fixed a configurable label horizon, initial `+6 months` from `filingDate`. The P5.1 spike
+measured the actual resolution behaviour of the whole LIVE corpus (12,691,941 researcher case
+files, 1870–2024-03): time filing→registration is **median 13.3 months**, with ≈ 1.7 % resolved by
++6 months, ≈ 40 % by +12, ≈ 85 % by +24. A +6-month horizon therefore labels a negligible,
+positively biased slice (only the fastest registrations) and cannot support the D-25 gate.
+
+### Decision
+1. **Amends D-24 item 3.** The label horizon is **+12 months from `filingDate` (primary)** and
+   **+24 months (secondary)**, held in configuration as before; no migration, no model-version bump
+   by itself.
+2. Labels are assembled per D-24 semantics: positive = registered (`registrationDate` set /
+   `statusCode 700` within the horizon); negative = abandoned (verified abandon event within the
+   horizon); still `600` at the horizon = **censored**, never a negative.
+3. The abandonment signal for labels must come from the live TDXF event/status history (M7.1), not
+   the research case-file status codes — the research table has no abandon-date column and the
+   never-registered residue sits in stale `6xx` statuses (spike §3).
+
+### Rationale
+The measured curve: +12 gives ≈ 40 % resolved (enough mass around the median), +24 gives ≈ 85 %
+(near-complete) at the cost of a longer label wait; two horizons let `M6.5` report on the primary
+and audit on the secondary. The D-25 floor is easily met at +12: one month of word filings
+(≈ 40–50 K marks) yields ≈ 13–17 K resolved labels; CI half-width at n = 500, p ≈ 0.6 ≈ 4.3 pp ≤ 5 pp
+(spike §5).
+
+### Consequences
+- `M6.1` halt text, `M6.5` labelled-set text, `ARCH-01` §15 OPEN-03 and `ARCH` README OPEN-03 updated
+  to reference D-26.
+- `M7.1` ingest must retain event/status history so abandon labels can be resolved correctly
+  (FA-011 access + feed are the gate).
+- D-24 remains the authority for cohort and label semantics; D-26 supersedes only its horizon default.
+
+---
+
 ## Business-side prerequisites (non-code, start immediately)
 
 | Item | Owner | Blocks |
@@ -523,7 +566,7 @@ filed after its training window.
 | Stripe HK account + KYC (HK entity docs) | Finance | P4 |
 | PayPal business account | Finance | P4 |
 | Domain purchase (`.com`) | Ops | P1 |
-| Firm USPTO.gov account + TSDR API key | Attorneys | P5 |
+| Firm USPTO.gov account + ODP bulk access (TDXF daily feed: ODP profile 4 fields + API key) | Attorneys | P5 — M7.1 feed (FA-011) |
 | ODP profile fields complete (4 fields req. since 2026-08-18) | Attorneys | P5 |
 | Attorney availability for OA spot-checks (~8 md) | Legal | P5 |
 | zh/en marketing content authoring | Business | P1 |

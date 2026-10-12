@@ -23,6 +23,7 @@ query.
 | [02-data-model.md](./02-data-model.md) | Entity model with ER diagrams, index and query plan, P0.3 migration backlog, partitioning and retention, migration protocol | Developer, DBA/SRE |
 | [03-api-contract.yaml](./03-api-contract.yaml) | OpenAPI 3.1 contract: 65 paths, 83 operations, 106 schemas, with per-operation maturity, phase, permission and audit annotations | Developer, QA |
 | [04-implementation-mandates.md](./04-implementation-mandates.md) | 76 numbered mandates with owners, dependencies, automated verification and halt conditions, plus the definition of done and the halt-item log | Developer, QA, Architect |
+| [05-p51-spike.md](./05-p51-spike.md) | P5.1 spike evidence: TDXF corpus snapshot, cohort base rate, label plan; basis for ADR D-26 and FA-011 | Data/ML, Developer, Architect |
 
 ## How the documents fit together
 
@@ -93,7 +94,7 @@ positions are:
 | --- | --- | --- |
 | OPEN-01 | Mainland Alipay / WeChat Pay merchant accounts | **OPEN** — no account/gateway yet; planned, prefer one multi-channel bundling gateway (D-05 = Stripe HK). Routes exist in the contract, disabled by feature flag, `503` when off; payment implementation deferred |
 | OPEN-02 | USPTO bulk-data licensing and attended-filing legal review | **RESOLVED** — no legal opinion required; internal baseline covers PRD §5.11 indexing + attended-filing workflow |
-| OPEN-03 | Probability cohort and label horizon | **RESOLVED** — whole LIVE corpus (600/700), no origin filter; label = eventual registration; horizon configurable, initial +6 months (ADR D-24) |
+| OPEN-03 | Probability cohort and label horizon | **RESOLVED** — whole LIVE corpus (600/700), no origin filter; label = eventual registration; horizon configurable, **+12 months primary / +24 months secondary** (ADR D-24 as amended by D-26) |
 | OPEN-04 | Attorney roster, bar numbers, capacity | **PARTIALLY RESOLVED** — 1 attorney (California bar, admitted 2025), ≈100 applications/month; roster may grow. Support N attorneys; top-up before P5 if volume requires |
 | OPEN-05 | Hong Kong hosting and ICP path | RESOLVED (region = HK, no ICP for now, `.com`) |
 | OPEN-06 | **RESOLVED** — Node 22 LTS pinned everywhere (mandate `M1.6`) | done |

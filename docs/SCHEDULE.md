@@ -44,7 +44,7 @@
 | 4.3 | USD base + CNY display, reconciliation jobs | FX display + ledger match | 4 | Backend |
 | 4.4 | PayPal + per-rail runbook | **M4: real transaction per rail + invoice verified** | 3 | Backend |
 | **P5** | **AI Probability Tool** *(critical path — start 5.1 in Wave 1)* | **Gate M5a** | **45** | |
-| 5.1 | Spike: snapshot size, cohort base rate, label plan | Metrics pinned (D-03) | 3 | Data/ML |
+| 5.1 | Spike: snapshot size, cohort base rate, label plan | Metrics pinned (D-03) — **DONE 2026-10-12 → `ARCH-05`** (TDXF sole source; base rate ≈ 60 %; horizon +12/+24 per D-26) | 3 | Data/ML |
 | 5.2 | Daily XML ingest → Postgres live-only index (A1) + backfill | Freshness ≤24h, backfilled | 8 | Data/backend (ETL) |
 | 5.3 | Similarity engine v1: pg_trgm + phonetic + class adjacency | Top-N conflicts <1s | 8 | Backend (search) |
 | 5.4 | Scoring model + temporal holdout eval + attorney spot-check | **AUC ≥0.70, ≥+10pp over baseline** | 10 | **ML/eval** (calibration, AUC) + attorney |
