@@ -79,6 +79,8 @@ This document is the **single, living register of defects and latent production 
 | BUG-038 | `Dockerfile.api` runs as root, ships devDependencies, lockfile is optional | Low | STATIC | OPEN |
 | BUG-039 | `pnpm-workspace.yaml` has no `onlyBuiltDependencies` allowlist | Low | STATIC | OPEN |
 | BUG-040 | `turbo.json` declares no `env` allowlist → cache key ignores secrets | Low | STATIC | OPEN |
+| BUG-041 | `COPY --chown` writes 0-byte files into the runtime image (Linux-only smoke declared) | High | REPRODUCED | OPEN (api/worker) |
+| BUG-042 | `docker compose --profile app up` hangs on Docker Desktop/Windows — containers stuck `Created` | Medium | REPRODUCED | OPEN |
 
 ---
 
@@ -1436,6 +1438,39 @@ Two smaller issues in the same file: `typecheck` and `test` declare no `outputs`
 
 ---
 
+### BUG-042 - `docker compose --profile app up` hangs on Docker Desktop/Windows — containers stuck `Created`
+
+| Field | Value |
+|---|---|
+| **Raised by** | Architect (local M0 verification, 2026-10-12) |
+| **Raised at** | 2026-10-12 |
+| **Severity** | Medium — local/dev-environment only; CI `compose smoke` (ubuntu-latest) is green and unaffected |
+| **Evidence** | REPRODUCED — `docker compose -f docker-compose.yml -f <port override> --profile app up -d --build` twice created all six containers (`markus-postgres`, `markus-redis`, `markuslocal-migrate-1/-api-1/-worker-1/-web-1`) but never **started** them; each invocation hung >10 min in the start phase with zero container events while the daemon stayed responsive (`docker ps`/`docker events` worked throughout). Manual `docker start` of the same containers in dependency order booted the identical stack in seconds. |
+| **Location** | `docker-compose.yml` (repo root) + Docker Desktop on Windows (npipe `dockerDesktopLinuxEngine`) |
+| **Blocks** | - (workaround: manual sequential `docker start`, below) |
+| **Status** | OPEN |
+| **Discussion** | In the same session Docker Desktop's Windows service (`com.docker.service`) was found **STOPPED** with no fatal in `host/com.docker.backend.exe.log` (ends on a routine line), no crash dump, and an update (`4.95.0`, build 242831, dated 2026-10-12) staged "ready to install". The stop's cause is inconclusive; the start-phase hang **reproduced again after a clean relaunch**, so it is independent of that crash. |
+| **Answered by / Answered at** | --- |
+| **Verified by / Verified at** | - |
+
+**Issue.** `docker compose up` on this Windows/Docker-Desktop host reaches the point where every container is **created** (network + volumes up, images built) and then deadlocks in the start phase: no healthcheck, no container event, no error. Manual `docker start` of the very same containers boots the identical stack in seconds.
+
+**Impact.** The canonical local workflow (`docker compose --profile app up -d --build`, and the steps CI runs on Linux) fake-hangs on the developer's machine and looks indistinguishable from a long build — 10–15 minutes wasted per attempt. It also fed confusion with the concurrent Docker Desktop crash, which was initially blamed for it.
+
+**Workaround (use order from the compose `depends_on` graph).**
+```
+docker start markus-postgres markus-redis        # wait both healthy
+docker start markuslocal-migrate-1              # runs db:deploy, exits 0
+docker start markuslocal-api-1                  # wait healthy (healthcheck)
+docker start markuslocal-worker-1               # exits 0 by design (P0 scaffold)
+docker start markuslocal-web-1
+```
+Host ports locally remapped (Supabase owns 5432/3000): postgres 55433 · redis 56380 · api 3001 · web 3010.
+
+**Recommended fix / next check.** Reproduce with `docker compose up -d --verbose` to capture where the start orchestration blocks — candidate is a `depends_on` healthcheck condition that is never scheduled, or a Docker-Desktop start-serialization issue. If it is not product config, file upstream with Docker; otherwise adjust `depends_on`/healthcheck wiring. **Low priority** — CI ubuntu path is green; only our local workflow is affected.
+
+---
+
 ## 3. Patterns worth watching
 
 Not bugs today — recurring shapes that will produce bugs if the pattern is copied. Recorded so the next reviewer recognises them.
@@ -1502,6 +1537,7 @@ pnpm build       # not run by the Debugger (see note)
 |---|---|---|
 | 2026-09-27 17:44 | Register created. 40 findings (BUG-001…BUG-040) from a full sweep of `apps/`, `packages/`, `workers/`, `infra/`, `.github/`, and the root config. 2 `REPRODUCED` (BUG-001 lint, BUG-002 test), 38 `STATIC`. Baseline captured: `lint` exit 2, `typecheck` exit 0, `test` exit 1. `build` and `docker build` not executed (Docker daemon unavailable) — BUG-003/004 expected to reproduce. 10 patterns recorded (§3) and a fix order set (§4). | Debugger |
 | 2026-10-11 (Architect) | BUG-034 CLEARED (Node 22 LTS pinned everywhere). BUG-041 opened — `COPY --chown` 0-byte runtime-image corruption, reproduced on `web` and fixed at `616ad7d`; `api`/`worker` still latent under Architect rulings: `COPY --chown` prohibited repo-wide, runtime smoke declared Linux-only, compose-smoke content assertions must floor the byte size. BUG-038 recommended fix (line 1341) superseded to a non-`--chown` rewrite. | Architect |
+| 2026-10-12 (Architect) | BUG-042 opened — `docker compose --profile app up` hangs on Docker Desktop/Windows (containers `Created` but never started; REPRODUCED twice; manual sequential `docker start` works and the full repo stack verified healthy on postgres 55433 / redis 56380 / api 3001 / web 3010). Docker Desktop service also found `Stopped` during the same window — no fatal logged, 4.95.0 update staged; cause inconclusive, recorded in the entry. M0 progress: CI `migrations` job fixed (DATABASE_URL must target the migrated scratch DB + `prisma generate` added) and green at `afc1d0f`. | Architect |
 | | | |
 | | | |
 
