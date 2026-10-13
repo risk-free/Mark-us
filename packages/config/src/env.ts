@@ -106,6 +106,9 @@ export const envSchema = z.object({
   USPTO_BULK_BASE_URL: urlWithSchemes(["https:"]).default("https://data.uspto.gov"),
   USPTO_RESEARCHER_PRODUCT_ID: z.string().min(1).default("TRCFECO2"),
   TM_CORPUS_FRESHNESS_HOURS: z.coerce.number().int().min(1).max(168).default(26),
+  // Nightly corpora ingest job in the worker; off by default so dev never
+  // downloads the full researcher archive.
+  TM_CORPUS_INGEST_ENABLED: envBoolean("false"),
   USPTO_ASSISTED_LOGIN_ENABLED: envBoolean("false"),
 
   // LLM gateway (D-04)

@@ -35,6 +35,7 @@ describe("loadEnv", () => {
     expect(env.USPTO_BULK_BASE_URL).toBe("https://data.uspto.gov");
     expect(env.USPTO_RESEARCHER_PRODUCT_ID).toBe("TRCFECO2");
     expect(env.TM_CORPUS_FRESHNESS_HOURS).toBe(26);
+    expect(env.TM_CORPUS_INGEST_ENABLED).toBe(false);
     expect(env.USPTO_ASSISTED_LOGIN_ENABLED).toBe(false);
   });
 

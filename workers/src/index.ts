@@ -20,7 +20,12 @@
 
 import { loadEnv } from "@markus/config";
 import { OutboxRelay, PrismaOutboxStore, type RelaySink } from "@markus/outbox";
+import { PrismaCorpusStore } from "@markus/tm-data";
+import type { CorpusTransactionHost } from "@markus/tm-data";
 import { PrismaClient } from "@prisma/client";
+import type { Worker } from "bullmq";
+
+import { DAILY_CRON, runTmIngest, TM_INGEST_QUEUE, type TmIngestJobPayload } from "./tm-ingest.js";
 
 if (process.env.NODE_ENV !== "production") {
   await import("dotenv/config");
@@ -98,6 +103,36 @@ async function main(): Promise<void> {
       ),
   });
 
+  let tmIngestWorker: Worker<string, unknown> | undefined;
+  if (env.TM_CORPUS_INGEST_ENABLED) {
+    const { Worker } = await import("bullmq");
+    tmIngestWorker = new Worker<string, unknown>(
+      TM_INGEST_QUEUE,
+      async (job) => {
+        const report = await runTmIngest((job.data as TmIngestJobPayload) ?? {}, {
+          store: new PrismaCorpusStore(prisma as unknown as CorpusTransactionHost),
+          env,
+        });
+        console.log(
+          `[tm-ingest] run=${report.ingestRunId} imported=${report.marksImported} updated=${report.marksUpdated} skipped=${report.marksSkipped} rejected=${report.marksRejected}`,
+        );
+      },
+      { connection, concurrency: 1, lockDuration: 120_000 },
+    );
+    tmIngestWorker.on("error", (error: Error) =>
+      console.error("[tm-ingest] worker error:", error.message),
+    );
+    await queues
+      .get(TM_INGEST_QUEUE)!
+      .add("nightly", {} as TmIngestJobPayload, {
+        repeat: { pattern: DAILY_CRON },
+        removeOnComplete: 100,
+      });
+    console.log("[tm-ingest] nightly corpora job scheduled (" + DAILY_CRON + ")");
+  } else {
+    console.log("[tm-ingest] disabled (TM_CORPUS_INGEST_ENABLED)");
+  }
+
   console.log(
     `[workers] connected to redis ${redisEndpoint(env.REDIS_URL)}, queues opened: ${QUEUE_NAMES.join(", ")}`,
   );
@@ -127,6 +162,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string): Promise<void> => {
     console.log(`[workers] ${signal} received — shutting down`);
     clearInterval(timer);
+    await tmIngestWorker?.close();
     await Promise.all([...queues.values()].map((queue) => queue.close()));
     await connection.quit();
     await prisma.$disconnect();
