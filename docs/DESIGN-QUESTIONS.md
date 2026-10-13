@@ -622,9 +622,25 @@ This document is the **single, living register of open product/design questions*
 | FA-008 | — | Dependency floors resolve to versions with published advisories; `pnpm audit --audit-level=high` is now a CI gate, so the next run is the work list | Developer | before M0 | OPEN |
 | FA-009 | DQ-018 | Confirm the HK region's Node runtime and base image — Node 22 LTS is adopted everywhere (`node:22-alpine`); remainder is the HK region itself (OPEN-05, DQ-018) | Architect | P8.1 | RESOLVED — region confirmed HK (`fdc2369`+1) |
 | FA-010 | — | **RESOLVED at `bd1cb58`** — `schema.prisma`, `migration_lock.toml`, `ci.yml`, `packages/db/package.json`, `pnpm-lock.yaml` and `migrations/0P3__p0_3_backlog/` are now committed together, so a clean clone reproduces the baseline and `pnpm db:drift` can pass. Confirm on the `bd1cb58` CI run | Developer | before M3.2 sign-off | RESOLVED |
-| FA-011 | D-24, P5.1 | Provision USPTO **Open Data Portal** access — firm USPTO.gov account + ODP profile (4 fields req. since 2026-08-18) + API key — and evidence one **TDXF daily** (`trtdxfap`) download. Reed Tech + BDSS are retired; without ODP access the **M7.1 nightly feed is blocked at source**. The anonymous signed-URL path on the researcher product (`TRCFECO2`) unblocks backfill in the meantime (spike `ARCH-05` §1) | Attorneys | before P5.2 / M7.1 | OPEN |
+| FA-011 | D-24, P5.1 | Provision USPTO **Open Data Portal** access — firm USPTO.gov account + ODP profile (4 fields req. since 2026-08-18) + API key — and evidence one **TDXF daily** (`trtdxfap`) download. Reed Tech + BDSS are retired; without ODP access the **M7.1 nightly feed is blocked at source**. The anonymous signed-URL path on the researcher product (`TRCFECO2`) unblocks backfill in the meantime (spike `ARCH-05` §1). Full brief: **§3.1** | Attorneys | before P5.2 / M7.1 | OPEN |
 
 *New actions are appended here when an answer creates follow-up work (schema change, doc update, migration note).*
+
+### 3.1 FA-011 — USPTO Open Data Portal provisioning (Attorneys)
+
+**Why.** `data.uspto.gov` (ODP) is now the sole surviving USPTO bulk-XML source for the **TDXF daily** product `trtdxfap` — Reed Tech and Big Data Subscription Service are both retired (spike `ARCH-05` §1). Since **2026-06-18** ODP downloads require a signed-in USPTO.gov account; since **2026-08-18** the file download page additionally demands a completed ODP profile (**4 fields**) and an **API key**. Without it the **M7.1 nightly corpus feed is gated at source** and, once backfill runs its course, the corpus will read `stale` past the 26 h freshness SLA.
+
+**Owner / due.** Attorneys — **before P5.2** (corpus must be live for the D-24 cohort). This is a business/account provisioning task, not a code change.
+
+**Do.**
+1. **Firm USPTO.gov account** — a single firm account (name, PIN/TEAS, wallet login details); personal accounts are not acceptable as the corpus runs unattended on the firm's behalf.
+2. **ODP profile** — sign in at `data.uspto.gov`, open the developer/persona area, and complete the **4 required profile fields** (name, organization, email, purpose-of-use; count verified as of the 2026-08-18 gate).
+3. **API key** — generate the ODP API key under the profile; store it in the secrets manager (never a repo or an email).
+4. **Evidence one TDXF daily download** — on a working day, download the `trtdxfap` product (daily TDXF file, R/P1D cadence) and record: **timestamp, file name, byte size**, and the first `<markHeader>` **serial number + status** from the XML. One successful daily is sufficient for M7.1.
+
+**Return to Developer.** The API key via the secret channel **plus** the download-evidence record above. Once returned, DEV will (a) point `USPTO_BULK_BASE_URL` at ODP and add the product id to env, and (b) implement the `OdpTdxfSource` adapter — currently a stub that throws `FA-011` — as the nightly feed, keeping `Trcfeco2Source` (anonymous signed-URL researcher files) solely for backfill. MFA credentials are stored in the firm vault; tokens are never persisted (M2.5).
+
+**Acceptance.** The team can hit the authenticated ODP endpoint and fetch the *current* TDXF daily; M7.1 is no longer gated at source.
 
 ---
 
