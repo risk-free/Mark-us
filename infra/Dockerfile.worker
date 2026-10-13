@@ -13,8 +13,9 @@ RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
 RUN pnpm db:generate \
- && pnpm --filter @markus/config build \
- && pnpm --filter @markus/workers build
+  && pnpm --filter @markus/config build \
+  && pnpm --filter @markus/outbox build \
+  && pnpm --filter @markus/workers build
 
 FROM node:22-alpine AS runtime
 RUN corepack enable

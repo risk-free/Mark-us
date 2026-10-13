@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@markus/config": "workspace:*",
+    "@markus/outbox": "workspace:*",
+    "@prisma/client": "^6.19.3",
     "bullmq": "^5.81.5",
     "dotenv": "^16.6.1",
     "ioredis": "^5.11.1"
