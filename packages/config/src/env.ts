@@ -100,9 +100,12 @@ export const envSchema = z.object({
   WECOM_CALLBACK_TOKEN: optionalSecret,
   WECOM_CALLBACK_AES_KEY: optionalSecret,
 
-  // USPTO data (D-02)
+  // USPTO data (D-02). Legacy bulkdata.uspto.gov is DNS-dead; data.uspto.gov is
+  // the surviving portal and the base of the researcher signed-URL files.
   TSDR_API_KEY: optionalSecret,
-  USPTO_BULK_BASE_URL: urlWithSchemes(["https:"]).default("https://bulkdata.uspto.gov"),
+  USPTO_BULK_BASE_URL: urlWithSchemes(["https:"]).default("https://data.uspto.gov"),
+  USPTO_RESEARCHER_PRODUCT_ID: z.string().min(1).default("TRCFECO2"),
+  TM_CORPUS_FRESHNESS_HOURS: z.coerce.number().int().min(1).max(168).default(26),
   USPTO_ASSISTED_LOGIN_ENABLED: envBoolean("false"),
 
   // LLM gateway (D-04)

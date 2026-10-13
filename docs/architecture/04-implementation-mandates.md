@@ -462,6 +462,12 @@ rather than a failed run; freshness assertion that `/tm/search` reports `stale` 
 **Halt:** OPEN-02 (bulk-data licensing and indexing) is **resolved** — no external legal opinion is
 required (owner, 2026-10-11); the derived-fields-only baseline is the operating posture. No block on
 the first production ingest.
+**Status (2026-10-13):** `@markus/tm-data` ships the ingest core against the `TrademarkSource` seam —
+`Trcfeco2Source` (anonymous signed-URL backfill) implemented, `OdpTdxfSource` stubbed until FA-011
+provisions ODP access. Idempotence, reject-quarantine and the 26-hour freshness gate are verified
+against real PostgreSQL 16 (`tm-ingest-integration` CI job). `/tm/search` freshness wiring lands with
+M7.2/API. Env: `USPTO_BULK_BASE_URL` → `data.uspto.gov`, `USPTO_RESEARCHER_PRODUCT_ID`,
+`TM_CORPUS_FRESHNESS_HOURS`.
 
 ### M7.2 — Search is a signal, not an opinion (BLOCKER)
 **Statement:** `/tm/search` returns ranked candidates with the method used (`trigram`, `bge`,

@@ -32,7 +32,9 @@ describe("loadEnv", () => {
     expect(env.RUN_WORKER).toBe(false);
     expect(env.DATABASE_URL).toBe("postgresql://markus:markus@localhost:5432/markus");
     expect(env.REDIS_URL).toBe("redis://localhost:6379");
-    expect(env.USPTO_BULK_BASE_URL).toBe("https://bulkdata.uspto.gov");
+    expect(env.USPTO_BULK_BASE_URL).toBe("https://data.uspto.gov");
+    expect(env.USPTO_RESEARCHER_PRODUCT_ID).toBe("TRCFECO2");
+    expect(env.TM_CORPUS_FRESHNESS_HOURS).toBe(26);
     expect(env.USPTO_ASSISTED_LOGIN_ENABLED).toBe(false);
   });
 
