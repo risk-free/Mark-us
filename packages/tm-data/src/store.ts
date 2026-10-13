@@ -32,6 +32,20 @@ export interface FinishRunInput extends RunCounters {
   finishedAt: Date;
 }
 
+export interface CorpusRunSummary {
+  id: string;
+  runDate: Date;
+  status: string;
+  filesProcessed: number;
+  marksUpserted: number;
+  marksSkipped: number;
+  marksImported: number;
+  marksUpdated: number;
+  marksRejected: number;
+  startedAt: Date;
+  finishedAt: Date | null;
+}
+
 export interface CorpusStore {
   /** Find-or-create the run for `runDate` (unique) and mark it `running`. */
   startRun(runDate: Date): Promise<string>;
@@ -40,6 +54,8 @@ export interface CorpusStore {
   failRun(ingestRunId: string, errorLog: unknown): Promise<void>;
   /** `finishedAt` of the newest `complete` run, for freshness (null if none). */
   lastCompletedRunAt(): Promise<Date | null>;
+  /** Most recent runs, newest first — the `/tm/ingest/runs` ledger. */
+  recentRuns(limit?: number): Promise<CorpusRunSummary[]>;
 }
 
 interface MarkScalars {
@@ -80,6 +96,23 @@ export interface CorpusRawClient {
       orderBy: { finishedAt: "desc" };
       select: { finishedAt: true };
     }): Promise<{ finishedAt: Date | null } | null>;
+    findMany(args: {
+      orderBy: { startedAt: "desc" };
+      take?: number;
+      select: {
+        id: true;
+        runDate: true;
+        status: true;
+        filesProcessed: true;
+        marksUpserted: true;
+        marksSkipped: true;
+        marksImported: true;
+        marksUpdated: true;
+        marksRejected: true;
+        startedAt: true;
+        finishedAt: true;
+      };
+    }): Promise<CorpusRunSummary[]>;
   };
 }
 
@@ -184,5 +217,27 @@ export class PrismaCorpusStore implements CorpusStore {
       }),
     );
     return run?.finishedAt ?? null;
+  }
+
+  async recentRuns(limit = 20): Promise<CorpusRunSummary[]> {
+    return this.#host.$transaction((tx) =>
+      tx.tmIngestRun.findMany({
+        orderBy: { startedAt: "desc" },
+        take: limit,
+        select: {
+          id: true,
+          runDate: true,
+          status: true,
+          filesProcessed: true,
+          marksUpserted: true,
+          marksSkipped: true,
+          marksImported: true,
+          marksUpdated: true,
+          marksRejected: true,
+          startedAt: true,
+          finishedAt: true,
+        },
+      }),
+    );
   }
 }

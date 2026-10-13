@@ -35,6 +35,7 @@ export {
 export type { ArchiveDecoder, ResearcherHttpClient, TrademarkSource, Trcfeco2SourceOptions } from "./source.js";
 export { PrismaCorpusStore } from "./store.js";
 export type {
+  CorpusRunSummary,
   CorpusStore,
   CorpusTransactionHost,
   FinishRunInput,
@@ -42,6 +43,13 @@ export type {
   RunCounters,
   UpsertAction,
 } from "./store.js";
+export { PrismaCorpusSearcher, SEARCH_DISCLAIMER, SEARCH_METHOD, SEARCH_MIN_SCORE } from "./search.js";
+export type {
+  CorpusSearchCandidate,
+  CorpusSearchOptions,
+  CorpusSearchResult,
+  CorpusSqlClient,
+} from "./search.js";
 export type { CorpusMarkInput, ParseOutcome } from "./types.js";
 
 /** TSDR per-mark lookup (M7.3) — status only, daily T+1 batch. Lands in P5. */

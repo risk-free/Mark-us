@@ -179,6 +179,30 @@ jobs:
       - name: Corpus ingest against a real Postgres
         run: pnpm --filter @markus/tm-data test:integration
 
+  api-search-integration:
+    name: api search · PostgreSQL 16 (M7.2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client (the integration test drives @prisma/client)
+        run: pnpm db:generate
+
+      # ARCH-01 §13: /tm/search ranking + freshness gates are verified against a
+      # real PostgreSQL 16 container — no mock database.
+      - name: Corpus search + freshness gates against a real Postgres
+        run: pnpm --filter @markus/api test:integration
+
   supply-chain:
     name: dependency audit
     runs-on: ubuntu-latest

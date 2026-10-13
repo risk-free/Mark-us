@@ -60,6 +60,10 @@ class FakeStore implements CorpusStore {
   async lastCompletedRunAt(): Promise<Date | null> {
     return null;
   }
+
+  async recentRuns(): Promise<Awaited<ReturnType<CorpusStore["recentRuns"]>>> {
+    return [];
+  }
 }
 
 const sourceOf = (outcomes: ParseOutcome[]): TrademarkSource => ({
