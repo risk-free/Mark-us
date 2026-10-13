@@ -35,7 +35,9 @@ export function eventIdempotencyKey(
 export function isUniqueConstraintViolation(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   const candidate = error as { code?: unknown; meta?: { code?: unknown } };
-  return candidate.code === "P2002" || candidate.meta?.code === "23505";
+  const code = candidate.code;
+  const metaCode = candidate.meta?.code;
+  return code === "P2002" || code === "23505" || metaCode === "23505" || metaCode === "P2002";
 }
 
 /**
