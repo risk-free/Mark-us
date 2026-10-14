@@ -7,6 +7,8 @@ const row = {
   statusCode: "700",
   filingDate: new Date("2021-03-04T00:00:00.000Z"),
   registrationDate: new Date("2022-06-07T00:00:00.000Z"),
+  goodsSummary: "clothing, footwear",
+  classCodes: [25],
   score: 0.612,
 };
 

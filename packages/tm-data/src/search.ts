@@ -29,6 +29,9 @@ export interface CorpusSearchCandidate {
   statusCode: string;
   filingDate: Date | null;
   registrationDate: Date | null;
+  goodsSummary: string | null;
+  /** Nice class codes (1..45) the mark is filed in. */
+  classCodes: number[];
   score: number;
 }
 
@@ -58,6 +61,8 @@ interface CorpusSearchRow {
   statusCode: string;
   filingDate: Date | null;
   registrationDate: Date | null;
+  goodsSummary: string | null;
+  classCodes: number[];
   score: number;
 }
 
@@ -89,15 +94,24 @@ export class PrismaCorpusSearcher {
     const limit = Math.max(1, Math.min(options.limit ?? 20, 100));
     const rows = await this.#sql.$queryRaw<CorpusSearchRow[]>`
       SELECT
-        "serialNumber",
-        "registrationNumber",
-        "markText",
-        "statusCode",
-        "filingDate",
-        "registrationDate",
-        similarity("normalizedText", ${normalized}) AS score
-      FROM "TmCorpusMark"
-      WHERE "normalizedText" % ${normalized}
+        m."serialNumber",
+        m."registrationNumber",
+        m."markText",
+        m."statusCode",
+        m."filingDate",
+        m."registrationDate",
+        m."goodsSummary",
+        similarity(m."normalizedText", ${normalized}) AS score,
+        COALESCE(
+          (
+            SELECT array_agg(c."classId"::int ORDER BY c."classId")
+            FROM "TmCorpusMarkClass" c
+            WHERE c."markId" = m."id"
+          ),
+          '{}'
+        ) AS "classCodes"
+      FROM "TmCorpusMark" m
+      WHERE m."normalizedText" % ${normalized}
       ORDER BY score DESC
       LIMIT ${limit}
     `;

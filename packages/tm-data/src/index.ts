@@ -12,11 +12,41 @@
  */
 
 export { parseCsvText, rowsToRecords } from "./csv.js";
+export { areRelatedClasses, classAdjacency, closestClassDistance, NICE_RELATED_GROUPS, normalizeClass } from "./classes.js";
+export type { ClassAdjacency } from "./classes.js";
+export { extractFeatures } from "./features.js";
+export type { FeatureCandidate, FeatureVector, QueryMark } from "./features.js";
 export { corpusFreshness, DEFAULT_FRESHNESS_SLA_HOURS } from "./freshness.js";
 export type { CorpusFreshness, CorpusFreshnessStatus } from "./freshness.js";
+export { goodsSimilarity, normalizeGoods } from "./goods.js";
 export { runCorpusIngest, MAX_REJECT_LOG } from "./ingest.js";
 export type { IngestReport, RunCorpusIngestOptions } from "./ingest.js";
+export { addMonths, assembleLabelSet, labelFor, temporalSplit } from "./labels.js";
+export type { AssembledLabelSet, Label, OutcomeRow } from "./labels.js";
+export {
+  BASE_RATE,
+  BASELINE_MODEL,
+  BASELINE_MODEL_VERSION,
+  BOOTSTRAP_COEFFICIENTS,
+  BOOTSTRAP_MODEL,
+  BOOTSTRAP_MODEL_VERSION,
+  createLogisticScorer,
+  DISCLAIMER_VERSION,
+} from "./model.js";
+export type { LogisticCoefficients, ScoringModel } from "./model.js";
+export {
+  accuracyAtThreshold,
+  auc,
+  baselineAccuracy,
+  buildCalibrationReport,
+  calibrationBuckets,
+  ciHalfWidth95,
+  DEFAULT_RELEASE_THRESHOLDS,
+  evaluateRelease,
+} from "./eval.js";
+export type { CalibrationBucket, CalibrationReport, EvalSample, ReleaseThresholds } from "./eval.js";
 export { normalizeMarkText } from "./normalize.js";
+export { phoneticKey, phoneticSimilarity, phoneticTokens } from "./phonetic.js";
 export {
   isLiveStatus,
   isWordMark,
@@ -50,6 +80,14 @@ export type {
   CorpusSearchResult,
   CorpusSqlClient,
 } from "./search.js";
+export { CorpusAssessmentScorer, INSUFFICIENT_DATA, scoreCandidates } from "./score.js";
+export type {
+  AssessmentFeatureSnapshot,
+  AssessmentScore,
+  AssessmentSubSignals,
+  CorpusAssessmentScorerOptions,
+  CorpusSearchLike,
+} from "./score.js";
 export type { CorpusMarkInput, ParseOutcome } from "./types.js";
 
 /** TSDR per-mark lookup (M7.3) — status only, daily T+1 batch. Lands in P5. */
