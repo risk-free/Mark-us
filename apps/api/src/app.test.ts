@@ -2,7 +2,7 @@ import type { AssessmentScore, CorpusRunSummary, CorpusStore, CorpusSearchResult
 
 import { createApp, type AppServices } from "./app.js";
 
-const now = new Date("2026-10-13T12:00:00.000Z");
+const now = new Date();
 
 const assessment: AssessmentScore = {
   status: "scored",
