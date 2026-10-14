@@ -30,6 +30,11 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # generate first so @markus/api#typecheck can never race @markus/db#typecheck
+      # (api's script is bare `tsc`; it does not generate the client itself).
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
       - name: Lint
         run: pnpm lint
 
