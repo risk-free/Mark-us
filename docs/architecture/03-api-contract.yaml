@@ -1252,6 +1252,50 @@ paths:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
 
+  /tm/assess:
+    get:
+      operationId: assessTrademark
+      tags: [trademarks]
+      summary: Anonymous trademark screening assessment (P5)
+      description: |
+        Stateless screening result for an unauthenticated visitor, cached for 24 h keyed by the
+        normalised mark text, class and goods. The response always carries the 3-locale disclaimer,
+        the model and disclaimer versions, `isLegalAdvice: false`, and never any client identity,
+        `marginBps` or an internal score outside the disclosed set (M8.1).
+      security: []
+      servers:
+        - url: https://api.markus.hk
+        - url: https://staging.api.markus.hk
+        - url: http://localhost:3001
+      x-contract-status: PENDING-P5
+      x-phase: P5
+      x-ratelimit: "20 / 1h per IP; 5 / 1h per (normalised mark, class)"
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Mark text to assess
+          schema: { type: string, minLength: 1, maxLength: 255 }
+        - name: niceClass
+          in: query
+          schema: { type: string, pattern: "^[0-9]{3}$" }
+        - name: goods
+          in: query
+          schema: { type: string, maxLength: 500 }
+      responses:
+        "200":
+          description: Anonymous screening result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicAssessment" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: Corpus assessment exceeded the timeout
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
   /applications:
     get:
       operationId: listApplications
@@ -3125,6 +3169,94 @@ components:
     AssessmentConfidence:
       type: string
       enum: [LOW, MEDIUM, HIGH, INSUFFICIENT_DATA]
+
+    PublicAssessment:
+      type: object
+      description: |
+        Anonymous screening result (M8.1). No account, no `trademarkId`, no client identity and
+        never `marginBps` or an internal score outside the disclosed set.
+      required:
+        - status
+        - pRegistration
+        - modelVersion
+        - disclaimerVersion
+        - isLegalAdvice
+        - disclaimers
+        - headlineConfidence
+        - subSignals
+        - riskFlags
+        - recommendedNextActions
+        - featureSnapshot
+        - corpusFreshness
+      properties:
+        status: { type: string, enum: [scored, INSUFFICIENT_DATA] }
+        pRegistration: { type: ["number", "null"], minimum: 0, maximum: 1 }
+        method: { type: string, enum: [trigram, bge, hybrid] }
+        modelVersion: { type: string, example: "bootstrap-0.1.0" }
+        disclaimerVersion: { type: string, example: "disclaimer-1.0.0" }
+        isLegalAdvice: { type: boolean, enum: [false] }
+        disclaimer: { type: string }
+        disclaimers:
+          type: object
+          required: [en, zh-CN, zh-TW]
+          properties:
+            en: { type: string }
+            zh-CN: { type: string }
+            zh-TW: { type: string }
+          additionalProperties: false
+        headlineConfidence: { $ref: "#/components/schemas/AssessmentConfidence" }
+        subSignals:
+          type: object
+          required: [candidateCount, maxTrigram, maxPhonetic, minClassDistance, goodsMax]
+          properties:
+            candidateCount: { type: integer, minimum: 0 }
+            maxTrigram: { type: number, minimum: 0, maximum: 1 }
+            maxPhonetic: { type: number, minimum: 0, maximum: 1 }
+            minClassDistance: { type: integer, minimum: 0 }
+            goodsMax: { type: number, minimum: 0, maximum: 1 }
+          additionalProperties: false
+        riskFlags:
+          type: array
+          items: { type: string, enum: [DESCRIPTIVE, DISTINCTIVE, LIKELY_CONFLICT, INSUFFICIENT_SPECIMEN, INSUFFICIENT_CORPUS] }
+        recommendedNextActions:
+          type: array
+          items: { type: string }
+        featureSnapshot:
+          type: object
+          required: [query, modelVersion, topCandidates]
+          properties:
+            query:
+              type: object
+              required: [markText, classCodes, goodsSummary]
+              properties:
+                markText: { type: string }
+                classCodes:
+                  type: array
+                  items: { type: integer, minimum: 1, maximum: 45 }
+                goodsSummary: { type: ["string", "null"] }
+              additionalProperties: false
+            modelVersion: { type: string }
+            topCandidates:
+              type: array
+              items:
+                type: object
+                required: [serialNumber, markText, score]
+                properties:
+                  serialNumber: { type: string }
+                  markText: { type: string }
+                  score: { type: number, minimum: 0, maximum: 1 }
+                additionalProperties: false
+          additionalProperties: false
+        corpusFreshness:
+          type: object
+          required: [status, lastCompletedAt, ageHours, slaHours]
+          properties:
+            status: { type: string, enum: [fresh, stale, unknown] }
+            lastCompletedAt: { type: ["string", "null"], format: date-time }
+            ageHours: { type: ["number", "null"] }
+            slaHours: { type: number }
+          additionalProperties: false
+      additionalProperties: false
 
     Assessment:
       type: object

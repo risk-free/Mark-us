@@ -11,8 +11,18 @@
 
 import { Hono } from "hono";
 
-import { corpusFreshness, type AssessmentScore, type CorpusSearchResult, type QueryMark } from "@markus/tm-data";
+import {
+  corpusFreshness,
+  normalizeMarkText,
+  type AssessmentScore,
+  type CorpusSearchResult,
+  type QueryMark,
+} from "@markus/tm-data";
 import type { CorpusStore } from "@markus/tm-data";
+
+import { assessmentCacheKey, type AssessmentCache } from "./assessment-cache.js";
+import { METRICS_CONTENT_TYPE, type MetricsRegistry } from "./metrics.js";
+import { clientIp, type RateLimiter } from "./rate-limit.js";
 
 export interface CorpusSearcher {
   search(query: string, options?: { limit?: number }): Promise<CorpusSearchResult>;
@@ -26,6 +36,12 @@ export interface AppServices {
   search: CorpusSearcher;
   store: CorpusStore;
   assess: Assessor;
+  /** Optional 24 h result cache (M8.1); active only with both versions set. */
+  cache?: AssessmentCache;
+  /** Optional abuse-control limiter (M8.2). */
+  rateLimiter?: RateLimiter;
+  /** Optional Prometheus registry; `/metrics` is exposed only when enabled. */
+  metrics?: MetricsRegistry;
 }
 
 export interface AppOptions {
@@ -33,6 +49,18 @@ export interface AppOptions {
   freshnessSlaHours: number;
   defaultSearchLimit?: number;
   maxSearchLimit?: number;
+  /** Result-cache TTL in seconds (`TM_ASSESSMENT_CACHE_TTL_SECONDS`), default 24 h. */
+  assessmentCacheTtlSeconds?: number;
+  /** Per-IP hourly limit (`TM_ASSESS_RATE_IP_PER_HOUR`). */
+  assessRateIpPerHour?: number;
+  /** Per (normalised mark, class) hourly limit (`TM_ASSESS_RATE_MARK_PER_HOUR`). */
+  assessRateMarkPerHour?: number;
+  /** Version stamped into the cache key; required for caching to engage. */
+  modelVersion?: string;
+  /** Version stamped into the cache key; required for caching to engage. */
+  disclaimerVersion?: string;
+  /** Expose `GET /metrics` when a registry is supplied. */
+  metricsEnabled?: boolean;
 }
 
 const parseLimit = (raw: string | undefined, fallback: number, max: number): number => {
@@ -49,12 +77,29 @@ const parseClassCodes = (raw: string | undefined): number[] => {
 };
 
 export function createApp(services: AppServices, options: AppOptions): Hono {
-  const { search, store, assess } = services;
+  const { search, store, assess, cache, rateLimiter, metrics } = services;
   const sla = options.freshnessSlaHours;
   const defaultSearchLimit = options.defaultSearchLimit ?? 20;
   const maxSearchLimit = options.maxSearchLimit ?? 100;
+  const cacheTtl = options.assessmentCacheTtlSeconds ?? 86_400;
+  const rateIpPerHour = options.assessRateIpPerHour ?? 20;
+  const rateMarkPerHour = options.assessRateMarkPerHour ?? 5;
+  const metricsEnabled = options.metricsEnabled === true && metrics !== undefined;
 
   const app = new Hono();
+
+  if (metrics) {
+    app.use("*", async (c, next) => {
+      const start = performance.now();
+      await next();
+      metrics.observeHttp(
+        c.req.routePath,
+        c.req.method,
+        c.res.status,
+        (performance.now() - start) / 1000,
+      );
+    });
+  }
 
   app.get("/health", (c) =>
     c.json({
@@ -63,6 +108,10 @@ export function createApp(services: AppServices, options: AppOptions): Hono {
       time: new Date().toISOString(),
     }),
   );
+
+  if (metricsEnabled && metrics) {
+    app.get("/metrics", (c) => c.body(metrics.render(), 200, { "Content-Type": METRICS_CONTENT_TYPE }));
+  }
 
   app.get("/tm/search", async (c) => {
     const q = c.req.query("q") ?? "";
@@ -94,14 +143,57 @@ export function createApp(services: AppServices, options: AppOptions): Hono {
       goodsSummary: c.req.query("goods") ?? null,
     };
 
-    const [assessment, lastCompletedAt] = await Promise.all([
-      assess.score(query),
-      store.lastCompletedRunAt(),
-    ]);
+    if (rateLimiter) {
+      const ip = clientIp(c.req.header("x-forwarded-for"));
+      const mark = normalizeMarkText(query.markText);
+      const niceClass = query.classCodes.length > 0 ? query.classCodes.join(",") : "-";
+      const ipResult = await rateLimiter.consume(`markus:rl:assess:ip:${ip}`, rateIpPerHour, 3600);
+      const markResult = await rateLimiter.consume(
+        `markus:rl:assess:mark:${mark}:${niceClass}`,
+        rateMarkPerHour,
+        3600,
+      );
+      if (!ipResult.allowed || !markResult.allowed) {
+        const retryAfter = Math.max(
+          1,
+          Math.ceil(Math.max(ipResult.retryAfterSeconds, markResult.retryAfterSeconds)),
+        );
+        return c.json({ error: "rate limit exceeded" }, 429, {
+          "Retry-After": String(retryAfter),
+        });
+      }
+    }
+
+    const lastCompletedAt = await store.lastCompletedRunAt();
+    const freshness = corpusFreshness(lastCompletedAt, new Date(), sla);
+
+    const canCache =
+      cache !== undefined && options.modelVersion !== undefined && options.disclaimerVersion !== undefined;
+    const key = canCache
+      ? assessmentCacheKey(query, options.modelVersion!, options.disclaimerVersion!)
+      : "";
+
+    if (canCache) {
+      const startedAt = performance.now();
+      const cached = await cache!.get(key);
+      if (cached !== null) {
+        metrics?.observeAssessment((performance.now() - startedAt) / 1000, true);
+        const core = JSON.parse(cached) as Record<string, unknown>;
+        return c.json({ ...core, corpusFreshness: freshness });
+      }
+    }
+
+    const scoreStartedAt = performance.now();
+    const assessment = await assess.score(query);
+    metrics?.observeAssessment((performance.now() - scoreStartedAt) / 1000, false);
+
+    if (canCache) {
+      await cache!.set(key, JSON.stringify(assessment), cacheTtl);
+    }
 
     return c.json({
       ...assessment,
-      corpusFreshness: corpusFreshness(lastCompletedAt, new Date(), sla),
+      corpusFreshness: freshness,
     });
   });
 

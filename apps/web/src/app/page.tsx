@@ -7,6 +7,11 @@ export default function HomePage() {
         will live under locale-prefixed routes (P1/P2).
       </p>
       <ul className="list-disc pl-6 text-gray-700">
+        <li>
+          <a href="/assess" className="text-blue-600 hover:underline">
+            /assess — public, anonymous screening
+          </a>
+        </li>
         <li>/portal — client magic-link access (P2)</li>
         <li>/expert — attorney workspace (P2)</li>
         <li>/crm — salesperson console (P3)</li>

@@ -111,6 +111,11 @@ export const envSchema = z.object({
   TM_CORPUS_INGEST_ENABLED: envBoolean("false"),
   USPTO_ASSISTED_LOGIN_ENABLED: envBoolean("false"),
 
+  // Anonymous assessment (M8.1/M8.2): 24 h result cache and abuse limits.
+  TM_ASSESSMENT_CACHE_TTL_SECONDS: z.coerce.number().int().min(1).default(86_400),
+  TM_ASSESS_RATE_IP_PER_HOUR: z.coerce.number().int().min(1).default(20),
+  TM_ASSESS_RATE_MARK_PER_HOUR: z.coerce.number().int().min(1).default(5),
+
   // LLM gateway (D-04)
   LLM_PRIMARY_BASE_URL: optionalUrl(),
   LLM_PRIMARY_API_KEY: optionalSecret,

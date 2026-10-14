@@ -1,6 +1,9 @@
 import type { AssessmentScore, CorpusRunSummary, CorpusStore, CorpusSearchResult, QueryMark } from "@markus/tm-data";
 
-import { createApp, type AppServices } from "./app.js";
+import { createApp, type AppServices, type AppOptions } from "./app.js";
+import { InMemoryAssessmentCache } from "./assessment-cache.js";
+import { MetricsRegistry } from "./metrics.js";
+import { InMemoryRateLimiter } from "./rate-limit.js";
 
 const now = new Date();
 
@@ -81,8 +84,30 @@ class FakeStore implements CorpusStore {
   }
 }
 
-const app = (search: AppServices["search"], store: FakeStore, assess: AppServices["assess"] = fakeAssess()) =>
-  createApp({ search, store, assess }, { freshnessSlaHours: 26 });
+interface AppOverrides {
+  cache?: AppServices["cache"];
+  rateLimiter?: AppServices["rateLimiter"];
+  metrics?: AppServices["metrics"];
+  assessmentCacheTtlSeconds?: AppOptions["assessmentCacheTtlSeconds"];
+  assessRateIpPerHour?: AppOptions["assessRateIpPerHour"];
+  assessRateMarkPerHour?: AppOptions["assessRateMarkPerHour"];
+  modelVersion?: AppOptions["modelVersion"];
+  disclaimerVersion?: AppOptions["disclaimerVersion"];
+  metricsEnabled?: AppOptions["metricsEnabled"];
+}
+
+const app = (
+  search: AppServices["search"],
+  store: FakeStore,
+  assess: AppServices["assess"] = fakeAssess(),
+  overrides: AppOverrides = {},
+) => {
+  const { cache, rateLimiter, metrics, ...options } = overrides;
+  return createApp(
+    { search, store, assess, cache, rateLimiter, metrics },
+    { freshnessSlaHours: 26, ...options },
+  );
+};
 
 describe("createApp /tm/search (M7.2)", () => {
   test("rejects a request without q", async () => {
@@ -169,5 +194,105 @@ describe("createApp /tm/assess (P5.5 disclosure)", () => {
     const assess2 = fakeAssess();
     await app(fakeSearch("x"), new FakeStore(), assess2).request("/tm/assess?q=ACME&niceClass=25");
     expect(assess2.lastQuery).toEqual({ markText: "ACME", classCodes: [25], goodsSummary: null });
+  });
+});
+
+describe("createApp /tm/assess cache (M8.1)", () => {
+  test("serves a second identical query from cache without re-scoring", async () => {
+    const cache = new InMemoryAssessmentCache();
+    let calls = 0;
+    const assess: AppServices["assess"] = {
+      async score(query: QueryMark) {
+        calls += 1;
+        return { ...assessment, featureSnapshot: { ...assessment.featureSnapshot, query } };
+      },
+    };
+    const handler = app(fakeSearch("x"), new FakeStore(), assess, {
+      cache,
+      modelVersion: "bootstrap-0.1.0",
+      disclaimerVersion: "disclaimer-1.0.0",
+    });
+
+    const first = await handler.request("/tm/assess?q=ACME&niceClass=9&goods=software");
+    const second = await handler.request("/tm/assess?q=ACME&niceClass=9&goods=software");
+
+    expect(calls).toBe(1);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(await second.json()).toMatchObject({
+      pRegistration: 0.62,
+      corpusFreshness: { status: "unknown" },
+    });
+  });
+
+  test("does not cache without the version pair", async () => {
+    const cache = new InMemoryAssessmentCache();
+    let calls = 0;
+    const assess: AppServices["assess"] = {
+      async score(query: QueryMark) {
+        calls += 1;
+        return { ...assessment, featureSnapshot: { ...assessment.featureSnapshot, query } };
+      },
+    };
+    const handler = app(fakeSearch("x"), new FakeStore(), assess, { cache });
+
+    await handler.request("/tm/assess?q=ACME");
+    await handler.request("/tm/assess?q=ACME");
+    expect(calls).toBe(2);
+  });
+});
+
+describe("createApp /tm/assess rate limit (M8.2)", () => {
+  test("returns 429 with a Retry-After header once the limit is passed", async () => {
+    const rateLimiter = new InMemoryRateLimiter();
+    const handler = app(fakeSearch("x"), new FakeStore(), fakeAssess(), {
+      rateLimiter,
+      assessRateIpPerHour: 1,
+      assessRateMarkPerHour: 100,
+    });
+
+    expect((await handler.request("/tm/assess?q=ACME")).status).toBe(200);
+    const blocked = await handler.request("/tm/assess?q=ACME");
+
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get("retry-after")).toBe("3600");
+    await expect(blocked.json()).resolves.toEqual({ error: "rate limit exceeded" });
+  });
+
+  test("does not leak mark existence in the 429 body", async () => {
+    const rateLimiter = new InMemoryRateLimiter();
+    const handler = app(fakeSearch("x"), new FakeStore(), fakeAssess(), {
+      rateLimiter,
+      assessRateIpPerHour: 1,
+    });
+
+    await handler.request("/tm/assess?q=SECRETCO");
+    const blocked = await handler.request("/tm/assess?q=SECRETCO");
+    expect(await blocked.text()).not.toContain("SECRETCO");
+  });
+});
+
+describe("createApp /metrics (M8.1)", () => {
+  test("exposes Prometheus metrics when enabled", async () => {
+    const metrics = new MetricsRegistry();
+    const handler = app(fakeSearch("x"), new FakeStore(), fakeAssess(), { metrics, metricsEnabled: true });
+
+    await handler.request("/tm/assess?q=ACME");
+    const response = await handler.request("/metrics");
+
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    expect(text).toContain("assessment_duration_seconds");
+    expect(text).toContain("# TYPE http_requests_total counter");
+    expect(text).toContain('route="/tm/assess"');
+    expect(text).not.toContain("ACME");
+  });
+
+  test("does not expose /metrics when disabled", async () => {
+    const metrics = new MetricsRegistry();
+    const handler = app(fakeSearch("x"), new FakeStore(), fakeAssess(), { metrics });
+
+    const response = await handler.request("/metrics");
+    expect(response.status).toBe(404);
   });
 });
