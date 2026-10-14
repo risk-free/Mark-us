@@ -22,7 +22,7 @@ export interface ScoringModel {
 export const BASE_RATE = 0.6;
 
 /** Bumped whenever the disclaimer copy changes; stamped on every assessment (M6.2). */
-export const DISCLAIMER_VERSION = "disclaimer-1.0.0";
+export { DISCLAIMER_VERSION } from "./disclaimers.js";
 
 export const BASELINE_MODEL_VERSION = "baseline-base-rate";
 export const BOOTSTRAP_MODEL_VERSION = "bootstrap-0.1.0";

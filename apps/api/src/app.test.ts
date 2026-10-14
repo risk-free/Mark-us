@@ -1,8 +1,43 @@
-import type { CorpusRunSummary, CorpusStore, CorpusSearchResult } from "@markus/tm-data";
+import type { AssessmentScore, CorpusRunSummary, CorpusStore, CorpusSearchResult, QueryMark } from "@markus/tm-data";
 
 import { createApp, type AppServices } from "./app.js";
 
 const now = new Date("2026-10-13T12:00:00.000Z");
+
+const assessment: AssessmentScore = {
+  status: "scored",
+  pRegistration: 0.62,
+  method: "trigram",
+  isLegalAdvice: false,
+  disclaimer: "not legal advice",
+  disclaimers: { en: "not legal advice", "zh-CN": "非法律意见", "zh-TW": "非法律意見" },
+  disclaimerVersion: "disclaimer-1.0.0",
+  modelVersion: "bootstrap-0.1.0",
+  headlineConfidence: "MEDIUM",
+  subSignals: { candidateCount: 2, maxTrigram: 0.7, maxPhonetic: 0.6, minClassDistance: 0, goodsMax: 0.5 },
+  riskFlags: ["LIKELY_CONFLICT"],
+  recommendedNextActions: ["Have a qualified trademark attorney review the result before filing."],
+  featureSnapshot: {
+    query: { markText: "ACME", classCodes: [9], goodsSummary: null },
+    modelVersion: "bootstrap-0.1.0",
+    topCandidates: [],
+  },
+};
+
+interface FakeAssessor {
+  score(query: QueryMark): Promise<AssessmentScore>;
+  lastQuery?: QueryMark;
+}
+
+const fakeAssess = (): FakeAssessor => {
+  const fake: FakeAssessor = {
+    async score(query: QueryMark) {
+      fake.lastQuery = query;
+      return { ...assessment, featureSnapshot: { ...assessment.featureSnapshot, query } };
+    },
+  };
+  return fake;
+};
 
 const searchResult = (query: string): CorpusSearchResult => ({
   query,
@@ -46,8 +81,8 @@ class FakeStore implements CorpusStore {
   }
 }
 
-const app = (search: AppServices["search"], store: FakeStore) =>
-  createApp({ search, store }, { freshnessSlaHours: 26 });
+const app = (search: AppServices["search"], store: FakeStore, assess: AppServices["assess"] = fakeAssess()) =>
+  createApp({ search, store, assess }, { freshnessSlaHours: 26 });
 
 describe("createApp /tm/search (M7.2)", () => {
   test("rejects a request without q", async () => {
@@ -97,5 +132,42 @@ describe("createApp /tm/ingest/runs (M7.1 ledger)", () => {
     expect(body.runs).toHaveLength(2);
     expect(body.runs[0].id).toBe("r2");
     expect(body.runs[1].marksRejected).toBe(1);
+  });
+});
+
+describe("createApp /tm/assess (P5.5 disclosure)", () => {
+  test("rejects a missing query", async () => {
+    const response = await app(fakeSearch("x"), new FakeStore()).request("/tm/assess");
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "missing required query parameter: q" });
+  });
+
+  test("returns the assessment payload with model version, 3-locale disclaimer and freshness", async () => {
+    const store = new FakeStore();
+    store.lastCompleted = new Date(now.getTime() - 3_600_000);
+    const response = await app(fakeSearch("x"), store).request("/tm/assess?q=ACME&niceClass=9&goods=software");
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      status: "scored",
+      pRegistration: 0.62,
+      modelVersion: "bootstrap-0.1.0",
+      disclaimerVersion: "disclaimer-1.0.0",
+      isLegalAdvice: false,
+      headlineConfidence: "MEDIUM",
+      disclaimers: { en: "not legal advice", "zh-CN": "非法律意见", "zh-TW": "非法律意見" },
+      corpusFreshness: { status: "fresh", slaHours: 26 },
+    });
+    expect(body.recommendedNextActions.length).toBeGreaterThan(0);
+  });
+
+  test("parses niceClass and goods into the query mark (ignoring an out-of-range class)", async () => {
+    const assess = fakeAssess();
+    await app(fakeSearch("x"), new FakeStore(), assess).request("/tm/assess?q=ACME&niceClass=99&goods=software");
+    expect(assess.lastQuery).toEqual({ markText: "ACME", classCodes: [], goodsSummary: "software" });
+
+    const assess2 = fakeAssess();
+    await app(fakeSearch("x"), new FakeStore(), assess2).request("/tm/assess?q=ACME&niceClass=25");
+    expect(assess2.lastQuery).toEqual({ markText: "ACME", classCodes: [25], goodsSummary: null });
   });
 });

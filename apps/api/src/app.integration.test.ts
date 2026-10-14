@@ -18,6 +18,9 @@ import { PrismaClient } from "@prisma/client";
 import postgres from "postgres";
 
 import {
+  BOOTSTRAP_MODEL,
+  CorpusAssessmentScorer,
+  DISCLAIMER_VERSION,
   PrismaCorpusSearcher,
   PrismaCorpusStore,
   type CorpusSqlClient,
@@ -74,10 +77,16 @@ describe("USPTO corpus search API against PostgreSQL 16 (M7.2)", () => {
     sql = postgres(url, { max: 1 });
     await sql.unsafe(MIGRATION_SQL);
     prisma = new PrismaClient({ datasourceUrl: url });
+    const search = new PrismaCorpusSearcher(prisma as unknown as CorpusSqlClient);
     app = createApp(
       {
-        search: new PrismaCorpusSearcher(prisma as unknown as CorpusSqlClient),
+        search,
         store: new PrismaCorpusStore(prisma as unknown as CorpusTransactionHost),
+        assess: new CorpusAssessmentScorer({
+          searcher: search,
+          model: BOOTSTRAP_MODEL,
+          disclaimerVersion: DISCLAIMER_VERSION,
+        }),
       },
       { freshnessSlaHours: 26 },
     );
@@ -192,5 +201,47 @@ describe("USPTO corpus search API against PostgreSQL 16 (M7.2)", () => {
     expect(body.runs[0].marksSkipped).toBe(5);
     expect(body.runs[1].marksImported).toBe(2);
     expect(body.runs[1].marksRejected).toBe(1);
+  });
+
+  it("scores against the live corpus with the 3-locale disclosure and degrades on an empty corpus (P5.5)", async () => {
+    await sql.unsafe(
+      `INSERT INTO "TmCorpusClass" ("id", "label") VALUES ('009', 'Electrical'), ('025', 'Clothing')
+       ON CONFLICT DO NOTHING;`,
+    );
+    const soft = await seedMark("SOFTNEST", { goodsSummary: "software as a service" });
+    const spaced = await seedMark("SOFT NEST", { goodsSummary: "software as a service" });
+    await seedMark("SOFTEKS", { goodsSummary: "software" });
+    await prisma.tmCorpusMarkClass.createMany({
+      data: [
+        { markId: soft.id, classId: "009" },
+        { markId: spaced.id, classId: "009" },
+      ],
+    });
+
+    const path = "/tm/assess?q=SOFTNEST&niceClass=9&goods=software%20as%20a%20service";
+    const response = await app.request(path);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.status).toBe("scored");
+    expect(body.pRegistration).toBeGreaterThan(0);
+    expect(body.pRegistration).toBeLessThanOrEqual(1);
+    expect(body.modelVersion).toBe(BOOTSTRAP_MODEL.version);
+    expect(body.disclaimerVersion).toBe(DISCLAIMER_VERSION);
+    expect(body.isLegalAdvice).toBe(false);
+    expect(Object.keys(body.disclaimers).sort()).toEqual(["en", "zh-CN", "zh-TW"]);
+    expect(Array.isArray(body.riskFlags)).toBe(true);
+    expect(body.recommendedNextActions.length).toBeGreaterThan(0);
+    expect(body.corpusFreshness.status).toBe("unknown");
+    expect(body.featureSnapshot.query).toMatchObject({ markText: "SOFTNEST", classCodes: [9] });
+
+    const replay = await (await app.request(path)).json();
+    expect(replay.pRegistration).toBe(body.pRegistration);
+
+    await sql.unsafe(`TRUNCATE "TmCorpusMark" RESTART IDENTITY CASCADE;`);
+    const degraded = await (await app.request("/tm/assess?q=SOFTNEST")).json();
+    expect(degraded.status).toBe("INSUFFICIENT_DATA");
+    expect(degraded.pRegistration).toBeNull();
+    expect(degraded.headlineConfidence).toBe("INSUFFICIENT_DATA");
+    expect(degraded.riskFlags).toContain("INSUFFICIENT_CORPUS");
   });
 });

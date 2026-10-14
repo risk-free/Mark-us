@@ -11,6 +11,7 @@
  * tunable per-deployment threshold is a future config knob, not a contract.
  */
 
+import { DISCLAIMERS } from "./disclaimers.js";
 import { normalizeMarkText } from "./normalize.js";
 
 export const SEARCH_METHOD = "trigram" as const;
@@ -18,9 +19,8 @@ export const SEARCH_METHOD = "trigram" as const;
 /** `pg_trgm.similarity_threshold` default — the `%` operator's floor. */
 export const SEARCH_MIN_SCORE = 0.3;
 
-export const SEARCH_DISCLAIMER =
-  "Mark-US search output is a similarity signal only — it is not legal advice, does not " +
-  "guarantee registrability, and never blocks a filing. A qualified trademark attorney decides.";
+/** The D-03 disclosure that ships with every similarity/score payload (M6.2). */
+export const SEARCH_DISCLAIMER = DISCLAIMERS.en.text;
 
 export interface CorpusSearchCandidate {
   serialNumber: string;

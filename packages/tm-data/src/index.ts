@@ -14,6 +14,14 @@
 export { parseCsvText, rowsToRecords } from "./csv.js";
 export { areRelatedClasses, classAdjacency, closestClassDistance, NICE_RELATED_GROUPS, normalizeClass } from "./classes.js";
 export type { ClassAdjacency } from "./classes.js";
+export {
+  disclaimerFor,
+  disclaimersByLocale,
+  DISCLAIMERS,
+  DISCLAIMER_VERSION,
+  SUPPORTED_LOCALES,
+} from "./disclaimers.js";
+export type { Disclaimer, DisclaimerLocale } from "./disclaimers.js";
 export { extractFeatures } from "./features.js";
 export type { FeatureCandidate, FeatureVector, QueryMark } from "./features.js";
 export { corpusFreshness, DEFAULT_FRESHNESS_SLA_HOURS } from "./freshness.js";
@@ -31,7 +39,6 @@ export {
   BOOTSTRAP_MODEL,
   BOOTSTRAP_MODEL_VERSION,
   createLogisticScorer,
-  DISCLAIMER_VERSION,
 } from "./model.js";
 export type { LogisticCoefficients, ScoringModel } from "./model.js";
 export {
@@ -88,6 +95,8 @@ export type {
   CorpusAssessmentScorerOptions,
   CorpusSearchLike,
 } from "./score.js";
+export { deriveSuggestions } from "./suggest.js";
+export type { AssessmentConfidence, RiskFlag, SuggestionInput, Suggestions } from "./suggest.js";
 export type { CorpusMarkInput, ParseOutcome } from "./types.js";
 
 /** TSDR per-mark lookup (M7.3) — status only, daily T+1 batch. Lands in P5. */

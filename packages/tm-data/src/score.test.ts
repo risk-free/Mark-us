@@ -26,6 +26,12 @@ describe("scoreCandidates", () => {
     expect(result.isLegalAdvice).toBe(false);
     expect(result.method).toBe("trigram");
     expect(result.disclaimer.length).toBeGreaterThan(20);
+    expect(result.disclaimers.en.length).toBeGreaterThan(20);
+    expect(result.disclaimers["zh-CN"].length).toBeGreaterThan(5);
+    expect(result.disclaimers["zh-TW"].length).toBeGreaterThan(5);
+    expect(result.headlineConfidence).toBe("HIGH");
+    expect(result.riskFlags).toContain("LIKELY_CONFLICT");
+    expect(result.recommendedNextActions.length).toBeGreaterThan(0);
     expect(result.subSignals).toMatchObject({ candidateCount: 1, maxTrigram: 0.8, minClassDistance: 0 });
     expect(result.featureSnapshot.topCandidates).toEqual([
       { serialNumber: "11111111", markText: "AKME", score: 0.8 },
@@ -36,8 +42,9 @@ describe("scoreCandidates", () => {
     const result = scoreCandidates(query, [], BOOTSTRAP_MODEL, DISCLAIMER_VERSION);
     expect(result.status).toBe(INSUFFICIENT_DATA);
     expect(result.pRegistration).toBeNull();
-    expect(result.riskFlags).toContain("NO_CORPUS_CANDIDATES");
-    expect(result.riskFlags).toContain(INSUFFICIENT_DATA);
+    expect(result.headlineConfidence).toBe("INSUFFICIENT_DATA");
+    expect(result.riskFlags).toContain("INSUFFICIENT_CORPUS");
+    expect(result.recommendedNextActions.length).toBeGreaterThan(0);
   });
 
   test("is reproducible for the same input (M6.1)", () => {
