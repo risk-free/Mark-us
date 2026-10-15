@@ -1,0 +1,16 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`formatEvalReport snapshots the real M5b run 1`] = `
+"Mark-us P6.4 offline eval (gate M5b)
+Retrieval: n=24 k=5 PASS
+  recall@5    1.0000 >= 0.8500  PASS
+  precision@3 0.6111 >= 0.5000  PASS
+  mrr         0.9792 >= 0.6000  PASS
+  misses: none
+PII guard: n=7 PASS
+  rejection rate 1.0000 >= 1.0000  PASS
+  fetch calls on rejected 0  PASS
+  leaked: none
+  positive control PASS
+Gate M5b: PASS"
+`;

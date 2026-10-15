@@ -11,6 +11,7 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "eval": "pnpm --filter @markus/eval test",
     "contract:lint": "node scripts/lint-contract.mjs",
     "check:node": "node scripts/check-node-baseline.mjs",
     "db:generate": "pnpm --filter @markus/db generate",

@@ -56,6 +56,9 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      - name: Eval harness · prompt regression + zero-PII (M5b)
+        run: pnpm --filter @markus/eval test
+
       - name: Build
         run: pnpm build
         env:
