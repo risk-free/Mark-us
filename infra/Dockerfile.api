@@ -16,6 +16,8 @@ RUN pnpm db:generate \
  && pnpm --filter @markus/config build \
  && pnpm --filter @markus/core build \
  && pnpm --filter @markus/tm-data build \
+ && pnpm --filter @markus/llm-gateway build \
+ && pnpm --filter @markus/kb build \
  && pnpm --filter @markus/api build
 
 FROM node:22-alpine AS runtime
