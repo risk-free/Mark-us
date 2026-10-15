@@ -50,6 +50,12 @@ importers:
       '@markus/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@markus/kb':
+        specifier: workspace:*
+        version: link:../../packages/kb
+      '@markus/llm-gateway':
+        specifier: workspace:*
+        version: link:../../packages/llm-gateway
       '@markus/tm-data':
         specifier: workspace:*
         version: link:../../packages/tm-data

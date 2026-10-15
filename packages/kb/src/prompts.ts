@@ -16,6 +16,13 @@ import { resolveKbLocale, type KbLocale } from "./types.js";
 
 export const DEFAULT_PROMPT_LOCALE: KbLocale = "en";
 
+/**
+ * Names the RAG prompt + model contract (P6.3). Stamped on every assistant
+ * response as `modelVersion` so a stored reply can name the exact prompt/model
+ * pair that produced it; bump it whenever the prompt shape or task changes.
+ */
+export const RAG_PROMPT_VERSION = "rag-1.0.0";
+
 /** One numbered KB excerpt handed to the model for citation. */
 export interface PromptSource {
   index: number;

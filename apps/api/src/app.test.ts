@@ -1,6 +1,14 @@
 import type { AssessmentScore, CorpusRunSummary, CorpusStore, CorpusSearchResult, QueryMark } from "@markus/tm-data";
 
-import { createApp, type AppServices, type AppOptions } from "./app.js";
+import {
+  createApp,
+  type AppOptions,
+  type AppServices,
+  type AssistantAnswer,
+  type AssistantCitation,
+  type AssistantInput,
+  type AssistantService,
+} from "./app.js";
 import { InMemoryAssessmentCache } from "./assessment-cache.js";
 import { MetricsRegistry } from "./metrics.js";
 import { InMemoryRateLimiter } from "./rate-limit.js";
@@ -85,12 +93,15 @@ class FakeStore implements CorpusStore {
 }
 
 interface AppOverrides {
+  assistant?: AppServices["assistant"];
   cache?: AppServices["cache"];
   rateLimiter?: AppServices["rateLimiter"];
   metrics?: AppServices["metrics"];
   assessmentCacheTtlSeconds?: AppOptions["assessmentCacheTtlSeconds"];
   assessRateIpPerHour?: AppOptions["assessRateIpPerHour"];
   assessRateMarkPerHour?: AppOptions["assessRateMarkPerHour"];
+  assistantRateIpPerHour?: AppOptions["assistantRateIpPerHour"];
+  assistantPromptVersion?: AppOptions["assistantPromptVersion"];
   modelVersion?: AppOptions["modelVersion"];
   disclaimerVersion?: AppOptions["disclaimerVersion"];
   metricsEnabled?: AppOptions["metricsEnabled"];
@@ -102,12 +113,60 @@ const app = (
   assess: AppServices["assess"] = fakeAssess(),
   overrides: AppOverrides = {},
 ) => {
-  const { cache, rateLimiter, metrics, ...options } = overrides;
+  const { assistant, cache, rateLimiter, metrics, ...options } = overrides;
   return createApp(
-    { search, store, assess, cache, rateLimiter, metrics },
+    { search, store, assess, assistant, cache, rateLimiter, metrics },
     { freshnessSlaHours: 26, ...options },
   );
 };
+
+const testCitation: AssistantCitation = {
+  index: 1,
+  id: "basics",
+  title: "Trademark basics",
+  section: "basics",
+  url: "https://www.uspto.gov/trademarks/basics",
+  lang: "en",
+};
+
+interface FakeAssistant extends AssistantService {
+  lastInput?: AssistantInput;
+}
+
+const stubAssistant = (build: (input: AssistantInput) => AssistantAnswer): FakeAssistant => {
+  const fake: FakeAssistant = {
+    async answer(input: AssistantInput) {
+      fake.lastInput = input;
+      return build(input);
+    },
+  };
+  return fake;
+};
+
+const okAnswer = (locale: string): AssistantAnswer => ({
+  status: "ok",
+  answer: "File in the class that matches your goods [1].",
+  citations: [testCitation],
+  locale,
+  version: "rag-1.0.0",
+  provider: "primary",
+  model: "test-model",
+});
+
+const degradedAnswer = (locale: string): AssistantAnswer => ({
+  status: "degraded",
+  answer: null,
+  citations: [testCitation],
+  locale,
+  version: "rag-1.0.0",
+});
+
+const postAssistant = (handler: ReturnType<typeof app>, body: unknown) =>
+  handler.request("/tm/assistant", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
 
 describe("createApp /tm/search (M7.2)", () => {
   test("rejects a request without q", async () => {
@@ -294,5 +353,151 @@ describe("createApp /metrics (M8.1)", () => {
 
     const response = await handler.request("/metrics");
     expect(response.status).toBe(404);
+  });
+});
+
+describe("createApp /tm/assistant (P6.3 disclosure + M6.4)", () => {
+  const handler = (assistant: AppServices["assistant"], overrides: AppOverrides = {}) =>
+    app(fakeSearch("x"), new FakeStore(), fakeAssess(), { assistant, ...overrides });
+
+  test("rejects a missing or blank markText", async () => {
+    const appHandler = handler(stubAssistant((input) => okAnswer(input.locale ?? "zh-CN")));
+
+    const missing = await postAssistant(appHandler, {});
+    expect(missing.status).toBe(400);
+    await expect(missing.json()).resolves.toEqual({ error: "missing required field: markText" });
+
+    const blank = await postAssistant(appHandler, { markText: "   " });
+    expect(blank.status).toBe(400);
+    await expect(blank.json()).resolves.toEqual({ error: "missing required field: markText" });
+  });
+
+  test("rejects a body that is not valid JSON", async () => {
+    const response = await handler(undefined).request("/tm/assistant", {
+      method: "POST",
+      body: "not-json",
+    });
+    expect(response.status).toBe(400);
+  });
+
+  test("ok: answers with citations and the full 3-locale disclosure envelope", async () => {
+    const appHandler = handler(stubAssistant((input) => okAnswer(input.locale ?? "zh-CN")));
+    const response = await postAssistant(appHandler, {
+      markText: "ACME",
+      classCodes: [9],
+      jurisdiction: "US",
+      businessDescription: "software",
+      locale: "en",
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      status: "ok",
+      answer: "File in the class that matches your goods [1].",
+      locale: "en",
+      isLegalAdvice: false,
+      modelVersion: "rag-1.0.0",
+      disclaimerVersion: "disclaimer-1.0.0",
+      provider: "primary",
+      model: "test-model",
+    });
+    expect(body.answer).not.toBeNull();
+    expect(body.citations).toEqual([testCitation]);
+    expect(Object.keys(body.disclaimers).sort()).toEqual(["en", "zh-CN", "zh-TW"]);
+    expect(body.disclaimer).toBe(body.disclaimers.en);
+  });
+
+  test("degraded (M6.4): 200 with citations, no answer, and full disclosure", async () => {
+    const appHandler = handler(stubAssistant((input) => degradedAnswer(input.locale ?? "zh-CN")));
+    const response = await postAssistant(appHandler, { markText: "ACME" });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      status: "degraded",
+      answer: null,
+      locale: "zh-CN",
+      isLegalAdvice: false,
+      modelVersion: "rag-1.0.0",
+      disclaimerVersion: "disclaimer-1.0.0",
+    });
+    expect(body.citations).toHaveLength(1);
+    expect(body.disclaimers).toMatchObject({
+      en: expect.any(String),
+      "zh-CN": expect.any(String),
+      "zh-TW": expect.any(String),
+    });
+    expect(body.provider).toBeUndefined();
+    expect(body.model).toBeUndefined();
+  });
+
+  test("degrades with empty citations when no assistant is wired", async () => {
+    const response = await postAssistant(app(fakeSearch("x"), new FakeStore()), { markText: "ACME" });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      status: "degraded",
+      answer: null,
+      citations: [],
+      locale: "zh-CN",
+      isLegalAdvice: false,
+      modelVersion: "rag-unknown",
+      disclaimerVersion: "disclaimer-1.0.0",
+    });
+  });
+
+  test("rate limits per IP and leaks no mark text in the 429 body", async () => {
+    const rateLimiter = new InMemoryRateLimiter();
+    const appHandler = handler(stubAssistant((input) => okAnswer(input.locale ?? "zh-CN")), {
+      rateLimiter,
+      assistantRateIpPerHour: 1,
+    });
+
+    expect((await postAssistant(appHandler, { markText: "ACME" })).status).toBe(200);
+    const blocked = await postAssistant(appHandler, { markText: "SECRETCO" });
+
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get("retry-after")).toBe("3600");
+    const text = await blocked.text();
+    expect(text).toContain("rate limit exceeded");
+    expect(text).not.toContain("SECRETCO");
+  });
+
+  test("falls back to zh-CN for an unsupported locale", async () => {
+    const assistant = stubAssistant((input) => okAnswer(input.locale ?? "zh-CN"));
+    const body = await (await postAssistant(handler(assistant), { markText: "ACME", locale: "fr-FR" })).json();
+
+    expect(body.locale).toBe("zh-CN");
+    expect(assistant.lastInput?.locale).toBe("zh-CN");
+  });
+
+  test("passes only minimised fields and filters out-of-range class codes (M6.3)", async () => {
+    const assistant = stubAssistant((input) => okAnswer(input.locale ?? "zh-CN"));
+    const response = await postAssistant(handler(assistant), {
+      markText: "  ACME  ",
+      classCodes: [9, 0, 46, 2.5, 25],
+      jurisdiction: " US ",
+      businessDescription: "software",
+      locale: "zh-TW",
+      name: "Jane Doe",
+      email: "jane@example.com",
+      phone: "+1 202 555 0100",
+      question: "what should I do?",
+    });
+
+    expect(response.status).toBe(200);
+    expect(assistant.lastInput).toEqual({
+      markText: "ACME",
+      locale: "zh-TW",
+      classCodes: [9, 25],
+      jurisdiction: "US",
+      businessDescription: "software",
+    });
+    expect(assistant.lastInput).not.toHaveProperty("name");
+    expect(assistant.lastInput).not.toHaveProperty("email");
+    expect(assistant.lastInput).not.toHaveProperty("phone");
+    expect(assistant.lastInput).not.toHaveProperty("question");
   });
 });

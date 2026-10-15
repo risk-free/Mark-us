@@ -116,6 +116,9 @@ export const envSchema = z.object({
   TM_ASSESS_RATE_IP_PER_HOUR: z.coerce.number().int().min(1).default(20),
   TM_ASSESS_RATE_MARK_PER_HOUR: z.coerce.number().int().min(1).default(5),
 
+  // Anonymous assistant (M6.4): per-IP hourly limit for POST /tm/assistant.
+  TM_ASSISTANT_RATE_IP_PER_HOUR: z.coerce.number().int().min(1).default(30),
+
   // LLM gateway (D-04)
   LLM_PRIMARY_BASE_URL: optionalUrl(),
   LLM_PRIMARY_API_KEY: optionalSecret,

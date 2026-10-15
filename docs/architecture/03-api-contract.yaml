@@ -86,6 +86,8 @@ tags:
     description: Contacts, leads, conversations, tickets
   - name: trademarks
     description: Marks, assessments, corpus search
+  - name: assistant
+    description: Anonymous RAG guidance assistant
   - name: filings
     description: Applications, office actions, filing ceremony, ingest
   - name: documents
@@ -1295,6 +1297,41 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+
+  /tm/assistant:
+    post:
+      operationId: assistantChat
+      tags: [assistant]
+      summary: Anonymous trademark guidance assistant (RAG)
+      description: |
+        Stateless, unauthenticated RAG guidance. The only inputs are mark text, Nice class(es),
+        jurisdiction and an optional business description — no person identifiers and no
+        free-form question field ever cross the LLM boundary (M6.3); the gateway's PII guard is the
+        second line of defence. Every response carries the 3-locale disclaimer, the disclaimer and
+        RAG prompt/model versions, and `isLegalAdvice: false` (M6.2). When the model is unavailable
+        the endpoint still returns `200` with `status: "degraded"`, the retrieval `citations` and
+        `answer: null` — never a fabricated answer and never a 5xx (M6.4).
+      security: []
+      servers:
+        - url: https://api.markus.hk
+        - url: https://staging.api.markus.hk
+        - url: http://localhost:3001
+      x-contract-status: PENDING-P6
+      x-phase: P6
+      x-ratelimit: "30 / 1h per IP"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssistantRequest" }
+      responses:
+        "200":
+          description: Guidance answer, or cited references when the model is unavailable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssistantResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
 
   /applications:
     get:
@@ -3257,6 +3294,80 @@ components:
             slaHours: { type: number }
           additionalProperties: false
       additionalProperties: false
+
+    AssistantLocale:
+      type: string
+      description: |
+        Answer and disclaimer locale; matches the D-03 disclaimer keys and the KB locales. This is
+        not the request-header `Locale` parameter.
+      enum: [en, zh-CN, zh-TW]
+      default: zh-CN
+
+    AssistantRequest:
+      type: object
+      description: |
+        Minimised assistant inputs (M6.3). No person identifier (name, e-mail, phone, WeChat id) and
+        no free-form question field: these structured fields are the only chat inputs.
+      required: [markText]
+      additionalProperties: false
+      properties:
+        markText: { type: string, minLength: 1, maxLength: 255 }
+        classCodes:
+          type: array
+          description: Optional Nice class codes; entries outside 1..45 are ignored, not an error.
+          items: { type: integer, minimum: 1, maximum: 45 }
+        jurisdiction: { type: string, maxLength: 64 }
+        businessDescription: { type: string, maxLength: 500 }
+        locale: { $ref: "#/components/schemas/AssistantLocale" }
+
+    AssistantResponse:
+      type: object
+      description: |
+        RAG guidance envelope (M6.2 / M6.4). `answer` is `null` exactly when `status` is
+        `degraded`, in which case `citations` hold the gateway-free retrieval results; the 3-locale
+        disclaimer, both versions and `isLegalAdvice: false` are always present.
+      required:
+        - status
+        - answer
+        - citations
+        - locale
+        - isLegalAdvice
+        - disclaimer
+        - disclaimers
+        - disclaimerVersion
+        - modelVersion
+      additionalProperties: false
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        answer: { type: ["string", "null"] }
+        citations:
+          type: array
+          items:
+            type: object
+            required: [index, id, title, section, url, lang]
+            additionalProperties: false
+            properties:
+              index: { type: integer, minimum: 1 }
+              id: { type: string }
+              title: { type: string }
+              section: { type: string }
+              url: { type: string }
+              lang: { $ref: "#/components/schemas/AssistantLocale" }
+        locale: { $ref: "#/components/schemas/AssistantLocale" }
+        isLegalAdvice: { type: boolean, enum: [false] }
+        disclaimer: { type: string }
+        disclaimers:
+          type: object
+          required: [en, zh-CN, zh-TW]
+          additionalProperties: false
+          properties:
+            en: { type: string }
+            zh-CN: { type: string }
+            zh-TW: { type: string }
+        disclaimerVersion: { type: string, example: "disclaimer-1.0.0" }
+        modelVersion: { type: string, example: "rag-1.0.0" }
+        provider: { type: string }
+        model: { type: string }
 
     Assessment:
       type: object

@@ -13,6 +13,9 @@ import { Hono } from "hono";
 
 import {
   corpusFreshness,
+  disclaimerFor,
+  disclaimersByLocale,
+  DISCLAIMER_VERSION,
   normalizeMarkText,
   type AssessmentScore,
   type CorpusSearchResult,
@@ -32,10 +35,45 @@ export interface Assessor {
   score(query: QueryMark): Promise<AssessmentScore>;
 }
 
+/** Minimised assistant inputs (M6.3): no name, e-mail, phone or document. */
+export interface AssistantInput {
+  markText: string;
+  classCodes?: number[];
+  jurisdiction?: string;
+  businessDescription?: string;
+  locale?: string;
+}
+
+export interface AssistantCitation {
+  index: number;
+  id: string;
+  title: string;
+  section: string;
+  url: string;
+  lang: string;
+}
+
+export interface AssistantAnswer {
+  status: "ok" | "degraded";
+  answer: string | null;
+  citations: AssistantCitation[];
+  locale: string;
+  version: string;
+  provider?: string;
+  model?: string;
+}
+
+/** RAG-backed assistant port; structural so `@markus/kb` stays out of `app.ts`. */
+export interface AssistantService {
+  answer(input: AssistantInput): Promise<AssistantAnswer>;
+}
+
 export interface AppServices {
   search: CorpusSearcher;
   store: CorpusStore;
   assess: Assessor;
+  /** Optional RAG assistant (P6.3); degrades to cited references when absent. */
+  assistant?: AssistantService;
   /** Optional 24 h result cache (M8.1); active only with both versions set. */
   cache?: AssessmentCache;
   /** Optional abuse-control limiter (M8.2). */
@@ -55,6 +93,10 @@ export interface AppOptions {
   assessRateIpPerHour?: number;
   /** Per (normalised mark, class) hourly limit (`TM_ASSESS_RATE_MARK_PER_HOUR`). */
   assessRateMarkPerHour?: number;
+  /** Per-IP hourly limit for `/tm/assistant` (`TM_ASSISTANT_RATE_IP_PER_HOUR`). */
+  assistantRateIpPerHour?: number;
+  /** RAG prompt/model version stamped on assistant replies (M6.2). */
+  assistantPromptVersion?: string;
   /** Version stamped into the cache key; required for caching to engage. */
   modelVersion?: string;
   /** Version stamped into the cache key; required for caching to engage. */
@@ -76,14 +118,40 @@ const parseClassCodes = (raw: string | undefined): number[] => {
   return [parsed];
 };
 
+const ASSISTANT_LOCALES = ["en", "zh-CN", "zh-TW"] as const;
+
+/** Assistant answer locale; an unknown tag falls back to `zh-CN`, never an error. */
+const resolveAssistantLocale = (raw: unknown): string =>
+  typeof raw === "string" && (ASSISTANT_LOCALES as readonly string[]).includes(raw) ? raw : "zh-CN";
+
+/** Keep only integer Nice classes in `1..45`; anything else is ignored (not an error). */
+const parseAssistantClassCodes = (raw: unknown): number[] => {
+  if (!Array.isArray(raw)) return [];
+  const codes: number[] = [];
+  for (const value of raw) {
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 45) continue;
+    codes.push(value);
+  }
+  return codes;
+};
+
+/** Accept only a non-empty trimmed string; `undefined` for anything else. */
+const optionalText = (raw: unknown): string | undefined => {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  return trimmed.length === 0 ? undefined : trimmed;
+};
+
 export function createApp(services: AppServices, options: AppOptions): Hono {
-  const { search, store, assess, cache, rateLimiter, metrics } = services;
+  const { search, store, assess, assistant, cache, rateLimiter, metrics } = services;
   const sla = options.freshnessSlaHours;
   const defaultSearchLimit = options.defaultSearchLimit ?? 20;
   const maxSearchLimit = options.maxSearchLimit ?? 100;
   const cacheTtl = options.assessmentCacheTtlSeconds ?? 86_400;
   const rateIpPerHour = options.assessRateIpPerHour ?? 20;
   const rateMarkPerHour = options.assessRateMarkPerHour ?? 5;
+  const assistantRateIpPerHour = options.assistantRateIpPerHour ?? 30;
+  const assistantPromptVersion = options.assistantPromptVersion ?? "rag-unknown";
   const metricsEnabled = options.metricsEnabled === true && metrics !== undefined;
 
   const app = new Hono();
@@ -194,6 +262,62 @@ export function createApp(services: AppServices, options: AppOptions): Hono {
     return c.json({
       ...assessment,
       corpusFreshness: freshness,
+    });
+  });
+
+  app.post("/tm/assistant", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "invalid request body" }, 400);
+    }
+    const record = (body ?? {}) as Record<string, unknown>;
+
+    const markText = optionalText(record.markText);
+    if (markText === undefined) {
+      return c.json({ error: "missing required field: markText" }, 400);
+    }
+
+    const locale = resolveAssistantLocale(record.locale);
+    const input: AssistantInput = { markText, locale };
+    const classCodes = parseAssistantClassCodes(record.classCodes);
+    if (classCodes.length > 0) input.classCodes = classCodes;
+    const jurisdiction = optionalText(record.jurisdiction);
+    if (jurisdiction !== undefined) input.jurisdiction = jurisdiction;
+    const businessDescription = optionalText(record.businessDescription);
+    if (businessDescription !== undefined) input.businessDescription = businessDescription;
+
+    if (rateLimiter) {
+      const ip = clientIp(c.req.header("x-forwarded-for"));
+      const result = await rateLimiter.consume(
+        `markus:rl:assistant:ip:${ip}`,
+        assistantRateIpPerHour,
+        3600,
+      );
+      if (!result.allowed) {
+        return c.json({ error: "rate limit exceeded" }, 429, {
+          "Retry-After": String(Math.max(1, Math.ceil(result.retryAfterSeconds))),
+        });
+      }
+    }
+
+    const answer: AssistantAnswer = assistant
+      ? await assistant.answer(input)
+      : { status: "degraded", answer: null, citations: [], locale, version: assistantPromptVersion };
+
+    return c.json({
+      status: answer.status,
+      answer: answer.answer,
+      citations: answer.citations,
+      locale: answer.locale,
+      isLegalAdvice: false,
+      disclaimer: disclaimerFor(answer.locale).text,
+      disclaimers: disclaimersByLocale(),
+      disclaimerVersion: DISCLAIMER_VERSION,
+      modelVersion: answer.version,
+      ...(answer.provider === undefined ? {} : { provider: answer.provider }),
+      ...(answer.model === undefined ? {} : { model: answer.model }),
     });
   });
 

@@ -1,6 +1,12 @@
 import { scanText } from "@markus/llm-gateway";
 
-import { buildRagMessages, buildSystemPrompt, buildUserPrompt, type PromptSource } from "./prompts.js";
+import {
+  buildRagMessages,
+  buildSystemPrompt,
+  buildUserPrompt,
+  RAG_PROMPT_VERSION,
+  type PromptSource,
+} from "./prompts.js";
 
 const SOURCES: PromptSource[] = [
   {
@@ -39,6 +45,12 @@ describe("buildSystemPrompt", () => {
     expect(buildSystemPrompt("en")).toMatch(/do not contain enough information/i);
     expect(buildSystemPrompt("zh-CN")).toContain("信息不足");
     expect(buildSystemPrompt("zh-TW")).toContain("資訊不足");
+  });
+});
+
+describe("RAG_PROMPT_VERSION", () => {
+  test("is a semver-shaped version naming the RAG prompt contract", () => {
+    expect(RAG_PROMPT_VERSION).toMatch(/^rag-\d+\.\d+\.\d+$/);
   });
 });
 

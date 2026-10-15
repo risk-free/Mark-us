@@ -12,6 +12,11 @@ export default function HomePage() {
             /assess — public, anonymous screening
           </a>
         </li>
+        <li>
+          <a href="/assistant" className="text-blue-600 hover:underline">
+            /assistant — anonymous trademark guidance assistant
+          </a>
+        </li>
         <li>/portal — client magic-link access (P2)</li>
         <li>/expert — attorney workspace (P2)</li>
         <li>/crm — salesperson console (P3)</li>

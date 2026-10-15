@@ -32,6 +32,7 @@ export {
   buildSystemPrompt,
   buildUserPrompt,
   DEFAULT_PROMPT_LOCALE,
+  RAG_PROMPT_VERSION,
 } from "./prompts.js";
 export type { PromptContext, PromptSource } from "./prompts.js";
 
