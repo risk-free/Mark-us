@@ -1,0 +1,86 @@
+{
+  "slug": "reading-a-screening-result",
+  "publishedAt": "2026-10-08",
+  "author": "MarkUS",
+  "readingMinutes": 4,
+  "title": {
+    "en": "How to read a screening result",
+    "zh-CN": "如何阅读筛查结果",
+    "zh-TW": "如何閱讀篩查結果"
+  },
+  "description": {
+    "en": "What the screening number is, what travels with it, and what it is not.",
+    "zh-CN": "筛查数字代表什么、随它一同返回的是什么，以及它不代表什么。",
+    "zh-TW": "篩查數字代表什麼、隨它一同返回的是什麼，以及它不代表什麼。"
+  },
+  "keywords": {
+    "en": ["screening", "assessment", "trademark"],
+    "zh-CN": ["筛查", "评估", "商标"],
+    "zh-TW": ["篩查", "評估", "商標"]
+  },
+  "sections": [
+    {
+      "heading": {
+        "en": "What the number is",
+        "zh-CN": "这个数字是什么",
+        "zh-TW": "這個數字是什麼"
+      },
+      "paragraphs": {
+        "en": [
+          "The screening surface returns a single percentage under the field name pRegistration. It is computed from how closely your mark resembles what is already in the corpus you were matched against, and it is labelled a screening signal rather than a prediction.",
+          "It is not an estimate of what an examining attorney will decide. Nobody outside the USPTO can observe that decision in advance, so any tool that claims to forecast it is describing something it cannot see."
+        ],
+        "zh-CN": [
+          "筛查功能会在字段 pRegistration 下返回一个百分比。它由你的标识与所比对语料中已有内容的接近程度计算得出，并且被标注为筛查信号，而不是预测。",
+          "它不是对审查员将作出何种裁量的估计。除美国专利商标局之外，没有任何人能够预先观察到这个裁量，因此任何声称能预测它的工具，描述的都是它看不到的东西。"
+        ],
+        "zh-TW": [
+          "篩查功能會在欄位 pRegistration 下返回一個百分比。它由你的標識與所比對語料中已有內容的接近程度計算得出，並且被標註為篩查訊號，而不是預測。",
+          "它不是對審查員將作出何種裁量的估計。除美國專利商標局之外，沒有任何人能夠預先觀察到這個裁量，因此任何聲稱能預測它的工具，描述的都是它看不到的東西。"
+        ]
+      }
+    },
+    {
+      "heading": {
+        "en": "What travels with the number",
+        "zh-CN": "与这个数字一同返回的内容",
+        "zh-TW": "與這個數字一同返回的內容"
+      },
+      "paragraphs": {
+        "en": [
+          "Every result carries the model version that produced it, the version of the disclaimer that was shown, and the three-locale disclaimer text itself. It also states how fresh the corpus was at the moment you looked.",
+          "These are not decoration. They are what makes a reading auditable: if two people look at the same result months apart and disagree, the model version and the corpus freshness tell you whether they were looking at the same thing."
+        ],
+        "zh-CN": [
+          "每条结果都会带上产生它的模型版本、所展示的免责声明版本，以及三种语言的免责声明文本本身。它还会说明你查询时语料的时效状态。",
+          "这些不是装饰。正是它们让一次读数可被追查：如果两个人在相隔数月后查看同一条结果却得出不同结论，模型版本与语料时效会告诉你，他们看的是否是同一个东西。"
+        ],
+        "zh-TW": [
+          "每條結果都會帶上產生它的模型版本、所展示的免責聲明版本，以及三種語言的免責聲明文字本身。它還會說明你查詢時語料的時效狀態。",
+          "這些不是裝飾。正是它們讓一次讀數可被追查：如果兩人在相隔數月後查看同一條結果卻得出不同結論，模型版本與語料時效會告訴你，他們看的是否是同一個東西。"
+        ]
+      }
+    },
+    {
+      "heading": {
+        "en": "What it is not",
+        "zh-CN": "它不是什么",
+        "zh-TW": "它不是什麼"
+      },
+      "paragraphs": {
+        "en": [
+          "A screening result is not legal advice, and it is not a guarantee that a mark will register. The examining attorney exercises discretion and the outcome may differ from what any tool shows.",
+          "The useful question to take from a screening is narrower than whether you will win: it is whether there is a crowded area you had not looked at, in a class you had not considered, and whether that is worth an attorney's time before you spend anything."
+        ],
+        "zh-CN": [
+          "筛查结果不是法律意见，也不保证标识能够获准注册。审查员拥有自由裁量权，实际结果可能与任何工具所展示的不同。",
+          "从筛查中真正值得带走的，是一个比“你会不会赢”更窄的问题：是否存在一个你原本没有查看的拥挤领域、一个你原本没有考虑的分类，以及这件事是否值得你在花钱之前先花律师的时间。"
+        ],
+        "zh-TW": [
+          "篩查結果不是法律意見，也不保證標識能夠獲准註冊。審查員擁有裁量權，實際結果可能與任何工具所展示的不同。",
+          "從篩查中真正值得帶走的，是一個比「你會不會贏」更窄的問題：是否存在一個你原本沒有查看的擁擠領域、一個你原本沒有考慮的分類，以及這件事是否值得你在花錢之前先花律師的時間。"
+        ]
+      }
+    }
+  ]
+}

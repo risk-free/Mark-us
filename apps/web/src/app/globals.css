@@ -1,1 +1,104 @@
 @import "tailwindcss";
+
+/*
+ * Design tokens (SCHEDULE 1.1).
+ *
+ * Tailwind v4 generates utilities from `@theme` — every `--color-*` below
+ * becomes a `bg-*` / `text-*` / `border-*` utility, so the palette is declared
+ * once here and components never hardcode a hex value.
+ *
+ * Contrast is deliberate, not incidental: `brand-700` on white and `ink-500` on
+ * white are the two text colours used on marketing surfaces and both clear
+ * WCAG AA (4.5:1) at body sizes.
+ */
+@theme {
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans SC",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans TC", sans-serif;
+
+  --color-brand-50: #eff4ff;
+  --color-brand-100: #dbe6ff;
+  --color-brand-200: #bdd0ff;
+  --color-brand-300: #92afff;
+  --color-brand-400: #5f86fd;
+  --color-brand-500: #3b63f6;
+  --color-brand-600: #2544eb;
+  --color-brand-700: #1d34d8;
+  --color-brand-800: #1e2daf;
+  --color-brand-900: #1c2b8a;
+  --color-brand-950: #111a54;
+
+  --color-ink-50: #f8fafc;
+  --color-ink-100: #f1f5f9;
+  --color-ink-200: #e2e8f0;
+  --color-ink-300: #cbd5e1;
+  --color-ink-400: #94a3b8;
+  --color-ink-500: #64748b;
+  --color-ink-600: #475569;
+  --color-ink-700: #334155;
+  --color-ink-800: #1e293b;
+  --color-ink-900: #0f172a;
+  --color-ink-950: #020617;
+
+  --radius-4xl: 2rem;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    /* The sticky header would otherwise cover an in-page anchor target. */
+    scroll-padding-top: 5rem;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    text-rendering: optimizeLegibility;
+  }
+
+  /*
+   * One focus treatment everywhere (a11y pass, SCHEDULE 1.5). Keyboard users
+   * must always be able to see where they are; `:focus-visible` keeps the ring
+   * off mouse clicks.
+   */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-700);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /*
+   * Skip link (WCAG 2.4.1). Visually hidden until focused, then pinned to the
+   * top-left so a keyboard user can bypass the header on every page.
+   */
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 100;
+  }
+
+  .skip-link:focus {
+    left: 1rem;
+    top: 1rem;
+    padding: 0.5rem 1rem;
+    background: var(--color-brand-700);
+    color: #fff;
+    border-radius: 0.5rem;
+  }
+}

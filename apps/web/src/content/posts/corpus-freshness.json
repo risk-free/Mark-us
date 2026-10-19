@@ -1,0 +1,65 @@
+{
+  "slug": "corpus-freshness",
+  "publishedAt": "2026-09-24",
+  "author": "MarkUS",
+  "readingMinutes": 3,
+  "title": {
+    "en": "Why corpus freshness is on every result",
+    "zh-CN": "为什么每条结果都标注语料时效",
+    "zh-TW": "為什麼每條結果都標註語料時效"
+  },
+  "description": {
+    "en": "A search result without a freshness marker cannot be acted on responsibly.",
+    "zh-CN": "没有时效标记的检索结果，无法被负责任地使用。",
+    "zh-TW": "沒有時效標記的檢索結果，無法被負責任地使用。"
+  },
+  "keywords": {
+    "en": ["corpus", "freshness", "evidence"],
+    "zh-CN": ["语料", "时效", "证据"],
+    "zh-TW": ["語料", "時效", "證據"]
+  },
+  "sections": [
+    {
+      "heading": {
+        "en": "Where the corpus comes from",
+        "zh-CN": "语料的来源",
+        "zh-TW": "語料的來源"
+      },
+      "paragraphs": {
+        "en": [
+          "Screening runs against a corpus that is rebuilt on a schedule rather than queried live from a registry. That choice is deliberate: a rebuild gives a stable, reproducible snapshot that can be versioned and cited.",
+          "The trade is latency. Between rebuilds there is a window in which a newly filed application may not appear in your results. A tool that hid that window would be quietly wrong every time it mattered."
+        ],
+        "zh-CN": [
+          "筛查所基于的语料按计划重建，而不是实时向注册机构查询。这个取舍是有意为之：重建可以产出稳定、可复现的快照，从而能够被版本化与引用。",
+          "代价是延迟。在两次重建之间，存在一个窗口期，其间新提交的申请可能不会出现在你的结果中。如果某个工具把这个窗口藏起来，它在真正要紧的时候就会悄悄地给出错误答案。"
+        ],
+        "zh-TW": [
+          "篩查所依據的語料按計畫重建，而不是即時向註冊機構查詢。這個取捨是有意為之：重建可以產出穩定、可重現的快照，從而能夠被版本化與引用。",
+          "代價是延遲。在兩次重建之間，存在一個視窗期，其間新提交的申請可能不會出現在你的結果中。如果某個工具把這個視窗藏起來，它在真正要緊的時候就會悄悄地給出錯誤答案。"
+        ]
+      }
+    },
+    {
+      "heading": {
+        "en": "What the freshness marker tells you",
+        "zh-CN": "时效标记告诉你什么",
+        "zh-TW": "時效標記告訴你什麼"
+      },
+      "paragraphs": {
+        "en": [
+          "Each result carries a status and an age. A fresh corpus means the rebuild completed inside its service window; a stale one means it did not, and a screen that was clean against stale data may be hiding something recent.",
+          "Read the marker before you read the score. It changes what the rest of the result is entitled to mean."
+        ],
+        "zh-CN": [
+          "每条结果都带有状态与时效时长。语料为 fresh 表示重建在其服务窗口内完成；若为 stale，则表示未完成，而一份针对陈旧数据的干净筛查，可能正藏着近期的变化。",
+          "请先读标记，再读分数。标记会改变其余内容的含义。"
+        ],
+        "zh-TW": [
+          "每條結果都帶有狀態與時效長度。語料為 fresh 表示重建在其服務視窗內完成；若為 stale，則表示未完成，而一份針對陳舊資料的乾淨篩查，可能正藏著近期的變化。",
+          "請先讀標記，再讀分數。標記會改變其餘內容的意義。"
+        ]
+      }
+    }
+  ]
+}

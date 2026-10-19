@@ -41,6 +41,16 @@ jobs:
       - name: Contract lint (ARCH-03, M1.1)
         run: pnpm contract:lint
 
+      # SCHEDULE 1.3 + M8.3/M8.4: the marketing copy is gated in CI, not by hand.
+      #   content-lint      — no prohibited claim (no success rate, no "best"/"leading")
+      #   score-disclosure  — every score-bearing surface carries its disclaimer
+      #   i18n-parity       — en / zh-CN / zh-TW hold exactly the same key set
+      #   third-party       — no analytics SDK, pixel or tracker (M8.3)
+      # TypeScript is not enough for any of these: a missing translation key and a
+      # forbidden marketing claim both compile cleanly.
+      - name: Marketing compliance gates (M8.3, M8.4, SCHEDULE 1.3)
+        run: pnpm --filter @markus/web check:compliance
+
       - name: Single Node major (M1.6)
         run: pnpm check:node
 
@@ -280,9 +290,14 @@ jobs:
           [ "${#body}" -ge 40 ] \
             || { echo "health payload too small: ${#body} B < 40" >&2; exit 1; }
 
+      # SCHEDULE 1.2: `localePrefix: "always"` means `/` is a redirect to a
+      # concrete locale (prefix > cookie > IP > Accept-Language > zh-CN), so the
+      # probe must follow it -- `--fail` alone would read the empty 307 body and
+      # fail on a perfectly healthy site. The assertions below are unchanged: an
+      # empty shell still cannot pass the marker + byte-floor checks.
       - name: Web responds (markers + 3000-byte floor)
         run: |
-          body=$(curl --fail --silent --show-error \
+          body=$(curl --fail --silent --show-error --location \
             --retry 20 --retry-connrefused --retry-delay 3 --retry-all-errors \
             http://127.0.0.1:3000/)
           printf '%s' "$body" | grep -q '<!DOCTYPE html>' \

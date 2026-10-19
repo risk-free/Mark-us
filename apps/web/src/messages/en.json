@@ -1,0 +1,247 @@
+{
+  "meta": {
+    "siteName": "MarkUS",
+    "titleTemplate": "{page} | MarkUS",
+    "defaultTitle": "MarkUS — US trademark screening and filing preparation",
+    "defaultDescription": "Search the public trademark record, run a screening assessment and prepare a US trademark filing with reference material, in English, Simplified Chinese and Traditional Chinese.",
+    "localeSwitcherLabel": "Language",
+    "openGraphSiteName": "MarkUS"
+  },
+  "nav": {
+    "home": "Home",
+    "about": "About",
+    "services": "Services",
+    "cases": "Cases",
+    "blog": "Blog",
+    "assess": "Screening",
+    "assistant": "Assistant",
+    "skipToContent": "Skip to content",
+    "primaryLabel": "Primary",
+    "localeSwitcherLabel": "Change language"
+  },
+  "footer": {
+    "productHeading": "Product",
+    "companyHeading": "Company",
+    "statusHeading": "Status",
+    "tagline": "Reference tooling for preparing US trademark filings.",
+    "plannedPortal": "Client portal — planned",
+    "plannedExpert": "Attorney workspace — planned",
+    "plannedCrm": "Sales console — planned",
+    "plannedAdmin": "Admin console — planned",
+    "note": "Screening output is informational. It is not legal advice, and an examiner decides the outcome of any application.",
+    "rights": "© MarkUS. All rights reserved."
+  },
+  "home": {
+    "hero": {
+      "eyebrow": "For cross-border sellers filing in the United States",
+      "title": "Prepare a US trademark filing from the public record",
+      "subtitle": "MarkUS puts corpus search, a screening assessment and a guided filing checklist in one place, so you can see how a mark compares with what is already on file before you decide what to spend.",
+      "primaryCta": "Start a screening assessment",
+      "secondaryCta": "See what is covered",
+      "note": "The screening path is anonymous and needs no account."
+    },
+    "capabilities": {
+      "title": "What the platform does",
+      "lead": "Three surfaces, each one narrow enough to be checked by the person relying on it.",
+      "search": {
+        "title": "Public-corpus search",
+        "body": "Search published trademark records by mark text and Nice class. Every result carries a match score and the freshness of the corpus it came from."
+      },
+      "assess": {
+        "title": "Screening assessment",
+        "body": "A screening pass returns similarity signals, the risk flags attached to them, and the model and disclaimer versions that produced the reading."
+      },
+      "assistant": {
+        "title": "Guidance assistant",
+        "body": "Ask about Nice classes, filing steps and terminology. Answers cite the knowledge-base entries they were drawn from."
+      }
+    },
+    "workflow": {
+      "title": "How a filing is prepared",
+      "lead": "The same four steps apply whether you file alone or with an attorney.",
+      "step1": {
+        "title": "Describe the mark",
+        "body": "Enter the mark text and, where you know it, the Nice classes the goods or services fall into."
+      },
+      "step2": {
+        "title": "Review the screening output",
+        "body": "Read the similarity signals, the risk flags and the corpus freshness, alongside the disclaimer that applies to them."
+      },
+      "step3": {
+        "title": "Hand over to your attorney",
+        "body": "If you engage a licensed trademark attorney, the screening output is material you can put in front of them."
+      },
+      "step4": {
+        "title": "File and monitor",
+        "body": "Once a filing exists, office actions and renewal dates are tracked in the client portal."
+      }
+    },
+    "faq": {
+      "title": "Common questions",
+      "whatIsScreening": {
+        "question": "What does a screening assessment actually tell me?",
+        "answer": "It compares your mark with a published corpus and reports similarity signals, the risk flags attached to them, and the model and disclaimer versions behind the reading. It is preparation material. It is not a filing decision, and the examining attorney or examiner decides the outcome."
+      },
+      "corpus": {
+        "question": "Where does the screening data come from?",
+        "answer": "Screening runs against a versioned corpus that is rebuilt on a schedule. Each result states how fresh the corpus was at the moment it was consulted."
+      },
+      "attorney": {
+        "question": "Do I still need an attorney?",
+        "answer": "Many applicants filing in the United States engage a licensed trademark attorney. This platform gives you material to discuss with them; it does not stand in for that review."
+      },
+      "languages": {
+        "question": "Which languages are supported?",
+        "answer": "The interface is available in English, Simplified Chinese and Traditional Chinese, and the assessment disclaimer is published in all three."
+      }
+    },
+    "comingSoon": {
+      "title": "Not built yet",
+      "lead": "These surfaces are scheduled for later phases. They are listed so the shape of the product is visible, not because they are available today.",
+      "portal": "Client portal — magic-link access",
+      "expert": "Attorney workspace — matter files and review queues",
+      "crm": "Sales console — pipeline and client records",
+      "admin": "Admin console — configuration and ERP"
+    }
+  },
+  "about": {
+    "title": "About MarkUS",
+    "lead": "MarkUS exists to make US trademark filing preparation legible: what the public record says, how a mark compares with what is already registered, and which steps are still outstanding.",
+    "mission": {
+      "title": "What we are trying to do",
+      "body": "Trademark filing is a research task before it is a paperwork task. Most avoidable cost comes from filing against a crowded mark without having read the record first. MarkUS is built around making that read cheap, fast and citable."
+    },
+    "values": {
+      "title": "How we work",
+      "candour": {
+        "title": "Name the source",
+        "body": "Every screening result carries the model version, the disclaimer version and the corpus it was drawn from, so a reading can be traced back to what produced it."
+      },
+      "restraint": {
+        "title": "No promises",
+        "body": "We publish signals and the limits of those signals. We publish no success rate and no accuracy figure, and we make no comparison with other providers."
+      },
+      "privacy": {
+        "title": "Anonymous by default",
+        "body": "The public screening and assistant paths need no account. Nothing on them is used to build an advertising profile."
+      }
+    },
+    "compliance": {
+      "title": "How to read our output",
+      "body": "Screening output describes similarity signals observed in a public corpus. It is not legal advice, it is not a guarantee of registrability, and the examining attorney or examiner makes the decision. Versioned legal copy travels with every result, so you can always see the wording you were shown."
+    }
+  },
+  "services": {
+    "title": "What we cover",
+    "lead": "The product is deliberately small. These are the surfaces that exist today, and what each one is for.",
+    "liveBadge": "Available",
+    "plannedBadge": "Planned",
+    "search": {
+      "title": "Corpus search",
+      "summary": "Structured search over published trademark records, filtered by mark text and Nice class.",
+      "bullet1": "Trigram and dense match ranking",
+      "bullet2": "Per-result corpus freshness",
+      "bullet3": "Same response envelope as the other surfaces"
+    },
+    "assess": {
+      "title": "Screening assessment",
+      "summary": "A single-mark screening pass that returns similarity signals and the metadata behind them.",
+      "bullet1": "Signal strength, kept separate from any probability reading",
+      "bullet2": "Risk flags and recommended next actions",
+      "bullet3": "Model version, disclaimer version and the three-locale disclaimer"
+    },
+    "assistant": {
+      "title": "Guidance assistant",
+      "summary": "Question answering over the trademark knowledge base, with citations back to source entries.",
+      "bullet1": "Answers in English, Simplified Chinese and Traditional Chinese",
+      "bullet2": "Cited knowledge-base entries on every answer",
+      "bullet3": "Degrades to a citation-only answer when retrieval returns nothing"
+    },
+    "portal": {
+      "title": "Client portal",
+      "summary": "Magic-link access to filing status, office actions and renewal dates. Scheduled for a later phase."
+    },
+    "expert": {
+      "title": "Attorney workspace",
+      "summary": "Matter files, review queues and client correspondence. Scheduled for a later phase."
+    }
+  },
+  "cases": {
+    "title": "Worked examples",
+    "lead": "How teams use the platform, described as scenarios rather than client accounts.",
+    "notice": {
+      "title": "About these examples",
+      "body": "These are illustrative scenarios describing how the tools are used. They are not client accounts, and they do not describe the outcome of any real filing."
+    },
+    "scenario1": {
+      "title": "A seller checks a new word mark before committing to a class",
+      "industry": "Cross-border retail",
+      "summary": "The team runs a screening assessment on a candidate word, reads the similarity signals against the categories they intend to sell in, and narrows the class list before engaging an attorney.",
+      "tag1": "Word mark",
+      "tag2": "Class selection",
+      "tag3": "Preparation"
+    },
+    "scenario2": {
+      "title": "An attorney uses the assistant to brief a junior on Nice classes",
+      "industry": "Legal practice",
+      "summary": "The assistant answers class-definition questions with citations to the knowledge base, so the junior reads the source entry rather than a paraphrase.",
+      "tag1": "Nice classes",
+      "tag2": "Cited answers",
+      "tag3": "Training"
+    },
+    "scenario3": {
+      "title": "A brand owner checks how fresh the corpus is before relying on a search",
+      "industry": "Brand management",
+      "summary": "Search results state the freshness of the corpus behind them, so the team can tell a current picture from a stale one before acting on it.",
+      "tag1": "Corpus freshness",
+      "tag2": "Record review",
+      "tag3": "Evidence"
+    }
+  },
+  "blog": {
+    "title": "Notes",
+    "lead": "Short explainers on how the tools work and how to read their output.",
+    "readMore": "Read the note",
+    "publishedOn": "Published",
+    "updatedOn": "Updated",
+    "readingMinutes": "{minutes} min read",
+    "backToIndex": "All notes",
+    "empty": "No notes have been published yet.",
+    "articleNotice": "This note is general information about the tools, not legal advice about a specific mark."
+  },
+  "errors": {
+    "generic": {
+      "title": "Something went wrong",
+      "body": "This page could not be rendered. The problem has been contained to this request.",
+      "retry": "Try again"
+    },
+    "notFound": {
+      "title": "Page not found",
+      "body": "The address you followed does not match a page on this site.",
+      "cta": "Go to the home page"
+    },
+    "loading": {
+      "label": "Loading"
+    }
+  },
+  "score": {
+    "resultHeading": "Screening Result",
+    "guidanceHeading": "Guidance",
+    "pRegistrationLabel": "pRegistration (screening signal):",
+    "headlineConfidenceLabel": "Headline confidence:",
+    "statusLabel": "Status:",
+    "methodLabel": "Method:",
+    "localeLabel": "Locale:",
+    "modelVersionLabel": "Model version:",
+    "disclaimerVersionLabel": "Disclaimer version:",
+    "corpusFreshnessLabel": "Corpus freshness:",
+    "isLegalAdviceLabel": "isLegalAdvice:",
+    "notEnoughData": "Not enough data",
+    "riskFlagsHeading": "Risk flags",
+    "actionsHeading": "Recommended next actions",
+    "disclaimersHeading": "Disclaimers (all three locales)",
+    "degradedNotice": "guidance unavailable — see references below",
+    "noReferences": "No references returned.",
+    "referencesHeading": "References"
+  }
+}

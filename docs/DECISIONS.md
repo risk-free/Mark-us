@@ -558,6 +558,123 @@ and audit on the secondary. The D-25 floor is easily met at +12: one month of wo
 
 ---
 
+## D-27: Test runner for apps/web — jest only, vitest removed
+**ID:** D-27
+**Status:** ACCEPTED
+**Date:** 2026-10-17
+**Owner:** ARCH (ruling 2026-10-17) / DEV (implementation)
+**Impact:** P1 marketing website (`apps/web`), `pnpm test`, `pnpm check:supply-chain`
+**Source:** supply-chain regression introduced during P1 work (see A0, Developer→Architect 0001)
+
+### Context
+apps/web used vitest (^3) as a second test runner alongside repo-wide jest (D-12 records "Jest + React Testing Library + Playwright"). vitest ^3 pulls tinypool (2 critical RCE advisories GHSA-5gmw-xhrv-c9v3, GHSA-85c8-ppgw-ccpr) plus vitest/@vitest/mocker (GHSA-82fw-gwwq-j7x9), failing `pnpm check:supply-chain` (6 unlisted advisories, 2 critical).
+
+### Decision
+1. Port the five apps/web suites (score, posts, locales, messages, site) to jest; delete vitest, vitest.config.ts and the vitest-format snapshot.
+2. Add apps/web/jest.config.cjs extending @markus/config/jest.preset.cjs with `^@/(.*)$` → `<rootDir>/src/$1` and `^@markus/tm-data$` → `<rootDir>/../../packages/tm-data/src/index.ts`; ts-jest jsx override `react-jsx`; `resolveJsonModule: true`.
+3. Set `apps/web` `"test": "jest"`; mirror jest devDeps (jest ^29.7.0, ts-jest ^29.4.14, @types/jest ^29.5.14).
+
+### Rationale
+One test runner repo-wide; removes 4 advisories and the dual-runner/dual-config burden in one move.
+
+### Consequences
+- `pnpm test` = `turbo run test` = jest; all 5 suites (67 tests) green, 18 snapshots regenerated with unchanged markup.
+- `pnpm check:supply-chain` reports 0 unlisted advisories (CI is the authority; the dev host cannot reach the audit endpoint).
+
+---
+
+## D-28: next-intl version floor — ^4.14.9
+**ID:** D-28
+**Status:** ACCEPTED
+**Date:** 2026-10-17
+**Owner:** ARCH (ruling 2026-10-17)
+**Impact:** P1 marketing website (`apps/web`), `pnpm check:supply-chain`
+**Source:** supply-chain regression + Windows build workaround (Developer→Architect 0001)
+
+### Context
+next-intl was temporarily downgraded to 4.5.8 to work around a Windows-only @swc/core DACL failure (Debugger 0001 B3). 4.5.8 is below the fix boundary for GHSA-8f24-v5vv-gm5j (open redirect, fixed 4.9.1) and GHSA-4c35-wcg5-mm9h (precompile prototype pollution, fixed 4.9.2); 4.14.9 is clean on both.
+
+### Decision
+Revert next-intl to ^4.14.9.
+
+### Rationale
+The security floor takes precedence over a local-environment workaround; the @swc/core failure is environmental, not version-related.
+
+### Consequences
+- next-intl 4.14.9 requires @swc/core ~1.16.0; local Windows builds need a temporary local override that is never committed (see D-29).
+- CI/Linux builds natively (no DACL check).
+
+---
+
+## D-29: No committed @swc/core override
+**ID:** D-29
+**Status:** ACCEPTED
+**Date:** 2026-10-17
+**Owner:** ARCH (ruling 2026-10-17)
+**Impact:** `package.json` pnpm.overrides, local Windows build, `pnpm build`
+**Source:** @swc/core@1.16.18 native-binding DACL rejection (Debugger 0001 B3)
+
+### Context
+@swc/core@1.16.18 refuses to load on the dev Windows host because C:\ and D:\ roots grant replacement rights to Everyone/Authenticated Users (non-default ACLs; account resolves as ANONYMOUS\franc). Forcing @swc/core to 1.15.7 via pnpm.overrides works locally but is below next-intl's ~1.16.0 contract and is a global, all-platform pin for one machine.
+
+### Decision
+Do NOT commit a @swc/core override. Keep it local-only and uncommitted for any local build verification; CI/Linux builds natively.
+
+### Rationale
+Avoid pinning a transitive dependency down a version repo-wide for a single environment defect.
+
+### Consequences
+- `next build` cannot run natively on this Windows host until the ACL defect is resolved; static-emission evidence was captured with a temporary local override, then reverted (29 prerendered HTML files, all SSG, zero dynamic routes).
+- The ACL defect is tracked with the Debugger (0001 B3); fixing it removes the need for any override.
+
+---
+
+## D-30: CSP 'unsafe-inline' signed off for the marketing origin
+**ID:** D-30
+**Status:** ACCEPTED
+**Date:** 2026-10-17
+**Owner:** ARCH (ruling 2026-10-17)
+**Impact:** `apps/web/next.config.mjs` CSP, P2 portal scope
+**Source:** SSG nonce impossibility (Developer→Architect 0001)
+
+### Context
+SSG makes a per-request nonce impossible and hash-based CSP is brittle against Next's inline bootstrap. The marketing origin is static, unauthenticated, no-PII and third-party-script-free (D-07/M8.3 enforced).
+
+### Decision
+style-src 'unsafe-inline' approved; script-src 'unsafe-inline' approved for the marketing origin ONLY, and MUST be revisited before any authenticated surface (P2 portal) shares this origin.
+
+### Rationale
+No viable alternative for static HTML with Next's inline bootstrap; conditions limit blast radius.
+
+### Consequences
+- Record as D-30 with reviewBy at the P2 gate.
+- Conditions: never dangerouslySetInnerHTML user text (/assess and /assistant render user mark text — keep it escaped); keep object-src 'none', base-uri 'self', frame-ancestors 'none'; keep 'unsafe-eval' dev-only.
+
+---
+
+## D-31: localePrefix "always" accepted
+**ID:** D-31
+**Status:** ACCEPTED
+**Date:** 2026-10-17
+**Owner:** ARCH (ruling 2026-10-17)
+**Impact:** `apps/web/src/i18n/routing.ts`, `apps/web/src/middleware.ts`, SEO/canonical, CI smoke test
+**Source:** locale-prefix routing (Developer→Architect 0001)
+
+### Context
+next-intl routing with localePrefix "always" makes `/` a 307 redirect to a concrete locale (detection order: prefix > cookie > IP > Accept-Language > zh-CN default).
+
+### Decision
+Accept "always"; a 307 (temporary) is the correct status because the target varies by cookie/IP — a 308 to a varying target would be wrong.
+
+### Rationale
+Prefix-always is the next-intl recommendation and keeps every locale URL canonical; the 307 honestly reflects a varying target.
+
+### Consequences
+- Each locale page self-canonicals to its prefixed URL; full hreflang incl. x-default; `/` excluded from the sitemap; sitemap enumerates all three locale roots.
+- CI smoke probe uses `curl --location` and asserts the FINAL response is a 200 locale page, not merely that a redirect hop was followed.
+
+---
+
 ## Business-side prerequisites (non-code, start immediately)
 
 | Item | Owner | Blocks |

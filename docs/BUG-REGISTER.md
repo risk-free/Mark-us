@@ -79,7 +79,7 @@ This document is the **single, living register of defects and latent production 
 | BUG-038 | `Dockerfile.api` runs as root, ships devDependencies, lockfile is optional | Low | STATIC | OPEN |
 | BUG-039 | `pnpm-workspace.yaml` has no `onlyBuiltDependencies` allowlist | Low | STATIC | OPEN |
 | BUG-040 | `turbo.json` declares no `env` allowlist → cache key ignores secrets | Low | STATIC | OPEN |
-| BUG-041 | `COPY --chown` writes 0-byte files into the runtime image (Linux-only smoke declared) | High | REPRODUCED | OPEN (api/worker) |
+| BUG-041 | `COPY --chown` writes 0-byte files into the runtime image (Linux-only smoke declared) | High | REPRODUCED | CLEARED |
 | BUG-042 | `docker compose --profile app up` hangs on Docker Desktop/Windows — containers stuck `Created` | Medium | REPRODUCED | OPEN |
 
 ---
@@ -1420,7 +1420,7 @@ Two smaller issues in the same file: `typecheck` and `test` declare no `outputs`
 | **Evidence** | REPRODUCED (Docker Desktop/Windows): `COPY --from=build --chown=node:node /app /app` wrote **empty** files into the runtime image — every `.next/static` chunk, the CSS, and `next/package.json` landed at 0 bytes; the web container crash-looped with `ERR_INVALID_PACKAGE_CONFIG`. The build stage was healthy, isolating the fault to the `--chown` copy. Verified at `616ad7d` that plain `COPY` + `RUN chown -R node:node /app` yields identical contents **and** node ownership, and the full stack then passes the production-gate. |
 | **Location** | `infra/Dockerfile.api:25`, `infra/Dockerfile.worker:24` (identical pattern — fixed at `65c2e6c`); `infra/Dockerfile.web` (fixed at `616ad7d`) |
 | **Blocks** | — |
-| **Status** | CLEARED — fix merged (`web` `616ad7d`; `api`/`worker` `65c2e6c`); runtime smoke re-verified 2026-10-12. Residual: compose-smoke marker + byte-size-floor assertion (ARCH-01 §12 ruling 3) still to implement — tracked in the 2026-10-12 changelog row |
+| **Status** | CLEARED — fix merged (`web` `616ad7d`; `api`/`worker` `65c2e6c`); residual done at `12fc3cf` — BUG-041 fully closed (changelog row 2026-10-12) |
 | **Discussion** | — |
 | **Answered by / Answered at** | ARCH 2026-10-11 — rulings in `ARCH-01` §12 |
 | **Verified by / Verified at** | `616ad7d` runtime verification: API health ok, web 200 with 6301 B real HTML, worker logs the designed P0 scaffold state, D-01 gate exits 1 |
