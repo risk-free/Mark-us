@@ -295,17 +295,25 @@ jobs:
       # probe must follow it -- `--fail` alone would read the empty 307 body and
       # fail on a perfectly healthy site. The assertions below are unchanged: an
       # empty shell still cannot pass the marker + byte-floor checks.
-      - name: Web responds (markers + 3000-byte floor)
+      #
+      # D-31 follow-up: floors are now sized against the localized landing page
+      # (~52 KB / ~43k chars per prerender output), not the retired ~6 KB
+      # placeholder. The smallest locale body measured was zh-CN at 42916 chars
+      # / 52137 B, so a 34000 B floor (~20% below the minimum) holds whether
+      # bash counts characters or bytes, while a truncated header-only body
+      # (~1 KB) still fails.
+      - name: Web responds (markers + localized-page floor)
         run: |
           body=$(curl --fail --silent --show-error --location \
             --retry 20 --retry-connrefused --retry-delay 3 --retry-all-errors \
             http://127.0.0.1:3000/)
+          echo "web body ${#body} B"
           printf '%s' "$body" | grep -q '<!DOCTYPE html>' \
             || { echo "missing DOCTYPE marker (empty shell?)" >&2; exit 1; }
           printf '%s' "$body" | grep -q 'MarkUS' \
             || { echo "missing page marker (empty shell?)" >&2; exit 1; }
-          [ "${#body}" -ge 3000 ] \
-            || { echo "page too small: ${#body} B < 3000" >&2; exit 1; }
+          [ "${#body}" -ge 34000 ] \
+            || { echo "page too small: ${#body} B < 34000" >&2; exit 1; }
 
       # M3.4: the worker now holds the queues open and runs the transactional-outbox
       # relay, so it must stay running (it no longer exits with "no processors").
