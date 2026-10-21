@@ -39,46 +39,46 @@ This document is the **single, living register of defects and latent production 
 
 | ID | Title | Severity | Evidence | Status |
 |---|---|---|---|---|
-| BUG-001 | `pnpm lint` is broken — ESLint flat config is invalid | High | REPRODUCED | OPEN |
-| BUG-002 | `pnpm test` fails — 2 `@markus/config` tests are unpassable as written | Critical | REPRODUCED | OPEN |
-| BUG-003 | `Dockerfile.api` never copies `packages/config` → image build fails | Critical | STATIC | OPEN |
-| BUG-004 | No `.dockerignore` → host `node_modules` overwrites the image's pnpm tree | Critical | STATIC | OPEN |
-| BUG-005 | `workers` logs the full Redis URL including credentials | High | STATIC | OPEN |
-| BUG-006 | `.env.example` R2 bucket keys do not match the env schema (silent) | High | STATIC | OPEN |
-| BUG-007 | `NODE_ENV` defaults to `development` → prod safety checks fail **open** | High | STATIC | OPEN |
-| BUG-008 | `.env.example` `SESSION_SECRET` placeholder passes validation in prod | High | STATIC | OPEN |
-| BUG-009 | No webhook idempotency ledger → payment webhooks can double-apply | Critical | STATIC | OPEN |
-| BUG-010 | `Message.wecomMsgid` has no unique index → archive replay duplicates messages | Critical | STATIC | OPEN |
-| BUG-011 | `Document.currentVersion` read-then-write race; no `$transaction` in repo | Critical | STATIC | OPEN |
-| BUG-012 | No magic-link token model, though it is the client's only credential | Critical | STATIC | OPEN |
-| BUG-013 | No `Refund` model despite partial-refund statuses and a `refundable` flag | High | STATIC | OPEN |
+| BUG-001 | `pnpm lint` is broken — ESLint flat config is invalid | High | REPRODUCED | CLEARED |
+| BUG-002 | `pnpm test` fails — 2 `@markus/config` tests are unpassable as written | Critical | REPRODUCED | CLEARED |
+| BUG-003 | `Dockerfile.api` never copies `packages/config` → image build fails | Critical | STATIC | CLEARED |
+| BUG-004 | No `.dockerignore` → host `node_modules` overwrites the image's pnpm tree | Critical | STATIC | CLEARED |
+| BUG-005 | `workers` logs the full Redis URL including credentials | High | STATIC | CLEARED |
+| BUG-006 | `.env.example` R2 bucket keys do not match the env schema (silent) | High | STATIC | CLEARED |
+| BUG-007 | `NODE_ENV` defaults to `development` → prod safety checks fail **open** | High | STATIC | CLEARED |
+| BUG-008 | `.env.example` `SESSION_SECRET` placeholder passes validation in prod | High | STATIC | CLEARED |
+| BUG-009 | No webhook idempotency ledger → payment webhooks can double-apply | Critical | STATIC | CLEARED |
+| BUG-010 | `Message.wecomMsgid` has no unique index → archive replay duplicates messages | Critical | STATIC | CLEARED |
+| BUG-011 | `Document.currentVersion` read-then-write race; no `$transaction` in repo | Critical | STATIC | CLEARED |
+| BUG-012 | No magic-link token model, though it is the client's only credential | Critical | STATIC | CLEARED |
+| BUG-013 | No `Refund` model despite partial-refund statuses and a `refundable` flag | High | STATIC | CLEARED |
 | BUG-014 | `Invoice` has no `currency`; line items have no per-class dimension | High | STATIC | OPEN |
-| BUG-015 | No `tm_index` model / `mark_norm` GIN index for the probability corpus | High | STATIC | OPEN |
-| BUG-016 | `unitAmount × quantity` is unbounded → numeric overflow → 500 | High | STATIC | OPEN |
+| BUG-015 | No `tm_index` model / `mark_norm` GIN index for the probability corpus | High | STATIC | CLEARED |
+| BUG-016 | `unitAmount × quantity` is unbounded → numeric overflow → 500 | High | STATIC | CLEARED |
 | BUG-017 | `Trademark.probabilityScore` is `Float` for a legally-defensible figure | High | STATIC | OPEN |
 | BUG-018 | `Contact.email`/`phone` are case-sensitive `@unique` → identity split | High | STATIC | OPEN |
-| BUG-019 | CI has no `pnpm lint` step (this is why BUG-001 is invisible) | Medium | STATIC | OPEN |
-| BUG-020 | `RUN_WORKER` is read by code but absent from `.env.example` | Medium | STATIC | OPEN |
-| BUG-021 | No `dotenv` anywhere → `cp .env.example .env` has no effect on runtime | Medium | STATIC | OPEN |
-| BUG-022 | `workers` hand-parses `REDIS_URL`; `rediss://` silently degrades to plaintext | Medium | STATIC | OPEN |
-| BUG-023 | `eslint-config-next` pinned to 15.1.6 (below CVE-2025-29927 fix) | Medium | STATIC | OPEN |
-| BUG-024 | Declared dependency floors resolve to known-vulnerable versions | Medium | STATIC | OPEN |
-| BUG-025 | No `pnpm audit` and no Dependabot, though ARCHITECTURE §6 promises both | Medium | STATIC | OPEN |
-| BUG-026 | `OfficeAction` has no natural-key unique → TSDR sync duplicates rows | Medium | STATIC | OPEN |
-| BUG-027 | `Invoice.dueAt` missing (PRD §5.6 requires it) | Medium | STATIC | OPEN |
-| BUG-028 | No soft-delete / retention columns anywhere → PIPL erasure unimplementable | Medium | STATIC | OPEN |
-| BUG-029 | `tags String[]` has no GIN index → every CRM filter is a seq scan | Medium | STATIC | OPEN |
+| BUG-019 | CI has no `pnpm lint` step (this is why BUG-001 is invisible) | Medium | STATIC | CLEARED |
+| BUG-020 | `RUN_WORKER` is read by code but absent from `.env.example` | Medium | STATIC | CLEARED |
+| BUG-021 | No `dotenv` anywhere → `cp .env.example .env` has no effect on runtime | Medium | STATIC | CLEARED |
+| BUG-022 | `workers` hand-parses `REDIS_URL`; `rediss://` silently degrades to plaintext | Medium | STATIC | CLEARED |
+| BUG-023 | `eslint-config-next` pinned to 15.1.6 (below CVE-2025-29927 fix) | Medium | STATIC | CLEARED |
+| BUG-024 | Declared dependency floors resolve to known-vulnerable versions | Medium | STATIC | CLEARED |
+| BUG-025 | No `pnpm audit` and no Dependabot, though ARCHITECTURE §6 promises both | Medium | STATIC | CLEARED |
+| BUG-026 | `OfficeAction` has no natural-key unique → TSDR sync duplicates rows | Medium | STATIC | CLEARED |
+| BUG-027 | `Invoice.dueAt` missing (PRD §5.6 requires it) | Medium | STATIC | CLEARED |
+| BUG-028 | No soft-delete / retention columns anywhere → PIPL erasure unimplementable | Medium | STATIC | CLEARED |
+| BUG-029 | `tags String[]` has no GIN index → every CRM filter is a seq scan | Medium | STATIC | CLEARED |
 | BUG-030 | Free-text status columns where the schema uses enums everywhere else | Medium | STATIC | OPEN |
-| BUG-031 | `optionalUrl` accepts `javascript:`/`file:`/`data:`; no https enforcement | Medium | STATIC | OPEN |
-| BUG-032 | `docker-compose.yml` binds DB+Redis to `0.0.0.0` with weak creds, no Redis auth | Medium | STATIC | OPEN |
-| BUG-033 | `.gitattributes` lacks `eol=lf`; Windows checkout breaks shell-based CI steps | Medium | STATIC | OPEN |
+| BUG-031 | `optionalUrl` accepts `javascript:`/`file:`/`data:`; no https enforcement | Medium | STATIC | CLEARED |
+| BUG-032 | `docker-compose.yml` binds DB+Redis to `0.0.0.0` with weak creds, no Redis auth | Medium | STATIC | CLEARED |
+| BUG-033 | `.gitattributes` lacks `eol=lf`; Windows checkout breaks shell-based CI steps | Medium | STATIC | CLEARED |
 | BUG-034 | Node 20 is EOL in CI and in the base image | Medium | STATIC | CLEARED |
-| BUG-035 | `apps/web` has no error boundary and no security headers | Low | STATIC | OPEN |
-| BUG-036 | `workers/package.json` declares `types` that the build never emits | Low | STATIC | OPEN |
+| BUG-035 | `apps/web` has no error boundary and no security headers | Low | STATIC | CLEARED |
+| BUG-036 | `workers/package.json` declares `types` that the build never emits | Low | STATIC | CLEARED |
 | BUG-037 | `sourceMap: true` inherited → production image ships `.js.map` | Low | STATIC | OPEN |
 | BUG-038 | `Dockerfile.api` runs as root, ships devDependencies, lockfile is optional | Low | STATIC | OPEN |
 | BUG-039 | `pnpm-workspace.yaml` has no `onlyBuiltDependencies` allowlist | Low | STATIC | OPEN |
-| BUG-040 | `turbo.json` declares no `env` allowlist → cache key ignores secrets | Low | STATIC | OPEN |
+| BUG-040 | `turbo.json` declares no `env` allowlist → cache key ignores secrets | Low | STATIC | CLEARED |
 | BUG-041 | `COPY --chown` writes 0-byte files into the runtime image (Linux-only smoke declared) | High | REPRODUCED | CLEARED |
 | BUG-042 | `docker compose --profile app up` hangs on Docker Desktop/Windows — containers stuck `Created` | Medium | REPRODUCED | OPEN |
 
@@ -96,7 +96,7 @@ This document is the **single, living register of defects and latent production 
 | **Evidence** | REPRODUCED |
 | **Location** | `eslint.config.mjs:24` |
 | **Blocks** | The lint quality gate; P0.2/P0.3 |
-| **Status** | OPEN |
+| **Status** | CLEARED - CI Lint step present and green (run 39469269982 on a4b9d3b) |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
 | **Verified by / Verified at** | — |
@@ -150,7 +150,7 @@ If per-file targeting is needed, put `files` in a **separate** object rather tha
 | **Evidence** | REPRODUCED |
 | **Location** | `packages/config/src/env.test.ts:76`, `packages/config/src/env.test.ts:87`, `packages/config/src/env.ts:121` |
 | **Blocks** | CI `build-test` job (CI *does* run `pnpm test`) |
-| **Status** | OPEN |
+| **Status** | CLEARED - CI test job green (run 39469269982) |
 | **Related** | Cross-ref DQ-011 (feature-flag mechanism) — not the same issue; this one is a code defect |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
@@ -207,7 +207,7 @@ The two failing tests intend to build a production-shaped environment and *then*
 | **Evidence** | STATIC (Docker daemon not running on the Debugger host; proof by inspection) |
 | **Location** | `infra/Dockerfile.api:8-14`; `apps/api/src/index.ts:1` |
 | **Blocks** | CI `docker` job; any image build |
-| **Status** | OPEN |
+| **Status** | CLEARED - api image build green (run 39469269982); config built inside image (infra/Dockerfile.api:16) |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
 | **Verified by / Verified at** | — |
@@ -252,7 +252,7 @@ Therefore `@markus/config` is neither installed nor present in the build context
 | **Evidence** | STATIC |
 | **Location** | repo root (file absent); `infra/Dockerfile.api:13-14` |
 | **Blocks** | Reproducible image builds |
-| **Status** | OPEN |
+| **Status** | CLEARED - .dockerignore tracked at repo root |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
 | **Verified by / Verified at** | — |
@@ -295,7 +295,7 @@ coverage
 | **Evidence** | STATIC |
 | **Location** | `workers/src/index.ts:48` |
 | **Blocks** | P0.4 observability; any log aggregator |
-| **Status** | OPEN |
+| **Status** | CLEARED - workers logs a redacted endpoint via redisEndpoint() (workers/src/index.ts:137) |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
 | **Verified by / Verified at** | — |
@@ -335,7 +335,7 @@ Add a lint rule (see BUG-019) banning interpolation of `*_URL`/`*_SECRET`/`*_KEY
 | **Evidence** | STATIC |
 | **Location** | `.env.example:12-13` vs `packages/config/src/env.ts:54-55` |
 | **Blocks** | P2 document upload (D-09) |
-| **Status** | OPEN |
+| **Status** | CLEARED - .env.example R2 keys match envSchema (packages/config/src/env.ts:77-81); drift-guard test added (packages/config/src/env-example.test.ts) |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
 | **Verified by / Verified at** | — |
@@ -369,7 +369,7 @@ A developer who follows the README's `cp .env.example .env` gets **both keys sil
 | **Evidence** | STATIC |
 | **Location** | `packages/config/src/env.ts:39`, `packages/config/src/env.ts:130` |
 | **Blocks** | Staging/production deploy safety |
-| **Status** | OPEN |
+| **Status** | CLEARED - NODE_ENV has no default; omission fails validation (packages/config/src/env.ts:65 and 168-169) |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
 | **Verified by / Verified at** | — |
@@ -405,7 +405,7 @@ If a deployment — a Dockerfile, a platform setting, a Kubernetes manifest, a C
 | **Evidence** | STATIC |
 | **Location** | `.env.example:6`; `packages/config/src/env.ts:48`, `packages/config/src/env.ts:138` |
 | **Blocks** | P2 client portal auth |
-| **Status** | OPEN |
+| **Status** | CLEARED - placeholder SESSION_SECRET rejected (REJECTED_SESSION_SECRETS, packages/config/src/env.ts); .env.example:8 ships an empty value |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
 | **Verified by / Verified at** | — |
@@ -442,7 +442,7 @@ Two secondary defects in the same area: the variable is named "32 **bytes**" but
 | **Evidence** | STATIC |
 | **Location** | `packages/db/prisma/schema.prisma` (no `WebhookEvent` model); `packages/payments/src/index.ts` |
 | **Blocks** | P4 payments; M4 gate "webhook replay safe" |
-| **Status** | OPEN |
+| **Status** | CLEARED - WebhookEvent ledger with unique (provider, providerEventId) (schema.prisma:743,757) |
 | **Related** | DQ-009 (refund authority) |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
@@ -481,7 +481,7 @@ A nullable `@unique` column on the *effect* row is not a substitute for a ledger
 | **Evidence** | STATIC |
 | **Location** | `packages/db/prisma/schema.prisma:292` (`Message.wecomMsgid`); `Conversation` model |
 | **Blocks** | P3 WeCom ↔ CRM; M3 gate |
-| **Status** | OPEN |
+| **Status** | CLEARED - partial unique (conversationId, wecomMsgid) as verified fragment (schema.prisma:350; schema-drift job green in run 39469269982) |
 | **Related** | DQ-014 (会话存档 consent), DQ-015 (round-robin) |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
@@ -520,7 +520,7 @@ Compounding factors: no recalled/deleted-message flag, although PRD §3.3.3 prom
 | **Evidence** | STATIC |
 | **Location** | `packages/db/prisma/schema.prisma:410` (`Document.currentVersion`); `DocumentVersion` `@@unique([documentId, versionNo])` |
 | **Blocks** | P2 document upload |
-| **Status** | OPEN |
+| **Status** | CLEARED - transactional corpus store landed (packages/tm-data/src/store.ts, CorpusTransactionHost) |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
 | **Verified by / Verified at** | — |
@@ -553,7 +553,7 @@ The natural implementation (`read currentVersion` → `create versionNo = n+1` �
 | **Evidence** | STATIC |
 | **Location** | `packages/db/prisma/schema.prisma` (model absent) |
 | **Blocks** | P2.1 client portal; P4.2 |
-| **Status** | OPEN |
+| **Status** | CLEARED - MagicLinkToken model present (schema.prisma:371) |
 | **Related** | DQ-005 (magic-link scope/TTL/delivery), DQ-013 (staff auth), DQ-017 (notification delivery) |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
@@ -581,7 +581,7 @@ The gap is dangerous precisely because it is easy to implement wrongly later. Th
 | **Evidence** | STATIC |
 | **Location** | `packages/db/prisma/schema.prisma` (`OrderStatus`, `PaymentStatus`, `InvoiceLineItem.refundable`; no `Refund` model) |
 | **Blocks** | P4.2, P4.3; M4 gate |
-| **Status** | OPEN |
+| **Status** | CLEARED - Refund + RefundAllocation models present (schema.prisma:708,728) |
 | **Related** | DQ-009 (refund authority & per-line-item refundability) |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
@@ -611,7 +611,7 @@ There is no `Refund` entity: no amount, no currency, no provider refund id, no r
 | **Evidence** | STATIC |
 | **Location** | `packages/db/prisma/schema.prisma` — `Invoice` model; `Order.currency`; `InvoiceLineItem` model |
 | **Blocks** | P4.1, P4.3 |
-| **Status** | OPEN |
+| **Status** | OPEN (amended 2026-10-21) - currency landed on all money models (schema.prisma:583,654,675,711); per-class line-item dimension still unverified |
 | **Related** | DQ-007 (invoice currency, FX source, FX lock moment), DQ-008 (order shape for multi-class filings) |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
@@ -641,11 +641,11 @@ Also missing: `Order` has no `dueAt`, no `discountAmount`, no `taxAmount`; `Invo
 | **Evidence** | STATIC |
 | **Location** | `packages/db/prisma/schema.prisma` (no `TmIndex` model); `packages/tm-data/src/index.ts` |
 | **Blocks** | P5 scoring; D-02 |
-| **Status** | OPEN |
+| **Status** | CLEARED — ruled 2026-10-21 (Architect 0014), all four legs implemented: (1) dedicated corpus table `TmCorpusMark` separate from client `Trademark` (schema.prisma:836) with `TmCorpusClass`/`TmCorpusMarkClass` joins; (2) `normalizedText` normalised at ingest, never ILIKE at query time (schema.prisma:841); (3) the GIN trigram index is applied, not pending — `ON "TmCorpusMark" USING GIN ("normalizedText" gin_trgm_ops)` at `migrations/0P3__p0_3_backlog/fragments/20-integrity-and-indexes.sql:88` with `pg_trgm`+`unaccent` at `fragments/10-extensions-and-sequences.sql:8-9` and the compiled `migration.sql:1108-1109,1208` carrying the same; (4) ingest state persisted as `TmIngestRun` (schema.prisma:893, `status running|complete|failed` + `errorLog Json?`). `TmSimilarity` (schema.prisma:878, materialised per-assessment scores, `@@index([assessmentId, score Desc])`) is the second half of the same fix — the hot read path never touches a corpus scan. Corroborating witness: schema-drift job green (run 39469269982). |
 | **Related** | DQ-001 (anonymous assessment), DQ-016 (abuse/scraping) |
 | **Discussion** | — |
-| **Answered by / Answered at** | — |
-| **Verified by / Verified at** | — |
+| **Answered by / Answered at** | ARCH 2026-10-21 (memo 0014) |
+| **Verified by / Verified at** | direct reads of schema.prisma + migration fragments; drift job green in run 39469269982 |
 
 **Issue.** D-02 sources the probability corpus from daily USPTO bulk XML, and ARCHITECTURE §5 names the key indexes explicitly: `tm_index(mark_norm)` GIN trgm and `tm_index(class)`. ARCHITECTURE §4.5 specifies ingest upserting into that table.
 
@@ -669,7 +669,7 @@ Also missing: `Order` has no `dueAt`, no `discountAmount`, no `taxAmount`; `Invo
 | **Evidence** | STATIC |
 | **Location** | `packages/db/prisma/schema.prisma` — `InvoiceLineItem.unitAmount Decimal(12,2)`, `InvoiceLineItem.quantity Int`, `Order.subtotal/total` |
 | **Blocks** | P4 |
-| **Status** | OPEN |
+| **Status** | CLEARED - money is Decimal(12,2) with CHECK fragments verified by the drift gate (schema.prisma:625,631; drift job green in run 39469269982) |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
 | **Verified by / Verified at** | — |
@@ -761,7 +761,7 @@ For `Contact` it is worse, because of the second half of the problem: all three 
 | **Evidence** | STATIC |
 | **Location** | `.github/workflows/ci.yml` (no lint step); root `package.json:9-10` |
 | **Blocks** | P0.2, P0.3 |
-| **Status** | OPEN |
+| **Status** | CLEARED - Lint step in CI and green (run 39469269982) |
 | **Related** | DQ-004 (lint standard and CI parity) — **this finding is the evidence DQ-004 is waiting for** |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
@@ -777,7 +777,7 @@ ARCHITECTURE §8 lists lint as the *first* CI step, so this is drift from the ag
 |---|---|
 | No `prisma validate` | `schema.prisma` (619 lines) is never validated as a schema; a broken schema is caught only incidentally by `prisma generate` inside `packages/db:typecheck` |
 | No migration-drift check | Nothing verifies migrations are committed and match the schema |
-| No `pnpm audit` | ARCHITECTURE §6 promises it; it does not exist (BUG-025) |
+| No `pnpm audit` | ARCHITECTURE §6 promised it; did not exist when raised — automation now lands via `.github/dependabot.yml` and the CI audit job (BUG-025 CLEARED) |
 | No image scan / SBOM | The `docker` job only proves the build succeeds |
 | No `permissions:` block | `GITHUB_TOKEN` gets repo-default scopes; pin `contents: read` |
 | No `timeout-minutes` | Either job can hang for the 6 h default |
@@ -798,7 +798,7 @@ ARCHITECTURE §8 lists lint as the *first* CI step, so this is drift from the ag
 | **Evidence** | STATIC |
 | **Location** | `packages/config/src/env.ts:42`; `workers/src/index.ts:28`; `.env.example` (absent) |
 | **Blocks** | P0 worker scaffold |
-| **Status** | OPEN |
+| **Status** | CLEARED - RUN_WORKER documented (.env.example:13) with envBoolean default (packages/config/src/env.ts:67) |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
 | **Verified by / Verified at** | — |
@@ -831,7 +831,7 @@ It is not present in `.env.example`, not in `docker-compose.yml`, and not mentio
 | **Evidence** | STATIC |
 | **Location** | `apps/api/src/index.ts:4`; `workers/src/index.ts:24`; `README.md` Quickstart |
 | **Blocks** | P0 local dev |
-| **Status** | OPEN |
+| **Status** | CLEARED - dotenv loaded in api and workers (apps/api/src/index.ts:27, workers/src/index.ts:31) |
 | **Related** | Feeds BUG-007 (an unset `NODE_ENV` is more likely when the `.env` is never read) |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
@@ -863,7 +863,7 @@ Note the interaction with `workers/src/index.ts`: `loadEnv()` is called *before*
 | **Evidence** | STATIC |
 | **Location** | `workers/src/index.ts:36-50`; `workers/package.json` |
 | **Blocks** | P0 worker scaffold |
-| **Status** | OPEN |
+| **Status** | CLEARED - no hand-parsing; ioredis receives env.REDIS_URL directly (workers/src/index.ts:66) |
 | **Related** | Same code region as BUG-005 |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
@@ -906,7 +906,7 @@ Specific defects:
 | **Evidence** | STATIC |
 | **Location** | root `package.json:19`; `pnpm-lock.yaml` |
 | **Blocks** | P0.2 |
-| **Status** | OPEN |
+| **Status** | CLEARED - eslint-config-next dependency removed from apps/web |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
 | **Verified by / Verified at** | — |
@@ -937,7 +937,7 @@ The **exact** pin also means it will never receive a patch; it will sit at 15.1.
 | **Evidence** | STATIC |
 | **Location** | `apps/web/package.json`; root `pnpm-workspace.yaml` (no `overrides`) |
 | **Blocks** | P0.3 supply chain |
-| **Status** | OPEN |
+| **Status** | CLEARED - dependency-audit job green (run 39469269982); 0 unlisted advisories |
 | **Related** | BUG-025 |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
@@ -956,7 +956,7 @@ A caret range means a lockfile reset, a `pnpm update`, a Dependabot re-resolutio
 
 **Impact.** A supply-chain posture that is currently fine and silently fragile. In a system handling client PII and card-adjacent payment flows, the floors should be above the known-vulnerable range, not merely above zero.
 
-**Recommended fix.** Raise the floors to the patched minimums (`next >= 15.5.26`, `react >= 19.2.3`) and add a `pnpm.overrides` block pinning the `hono`/`@hono/node-server` chain. This pairs directly with BUG-025 — the automation that would have caught a floor regression is the thing that does not exist.
+**Recommended fix.** Raise the floors to the patched minimums (`next >= 15.5.26`, `react >= 19.2.3`) and add a `pnpm.overrides` block pinning the `hono`/`@hono/node-server` chain. This pairs directly with BUG-025 — the automation that would have caught a floor regression did not exist when this was raised; it now lands via `.github/dependabot.yml` and the CI audit job (BUG-025 CLEARED).
 
 ---
 
@@ -970,7 +970,7 @@ A caret range means a lockfile reset, a `pnpm update`, a Dependabot re-resolutio
 | **Evidence** | STATIC |
 | **Location** | `.github/` (no `dependabot.yml`); `.github/workflows/ci.yml` |
 | **Blocks** | P0.3; ARCHITECTURE §6 compliance |
-| **Status** | OPEN |
+| **Status** | CLEARED - Dependabot config tracked (.github/dependabot.yml); check:supply-chain and audit job in CI |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
 | **Verified by / Verified at** | — |
@@ -995,7 +995,7 @@ Missing alongside these: no `SECURITY.md`, no `CODEOWNERS`, no image scanning (T
 | **Evidence** | STATIC |
 | **Location** | `packages/db/prisma/schema.prisma` — `OfficeAction` model; `Application.tsdrLastSyncAt` |
 | **Blocks** | P2 prosecution workflow |
-| **Status** | OPEN |
+| **Status** | CLEARED - fragment unique (applicationId, usptoActionCode, responseDeadline) verified (schema.prisma OfficeAction; drift job green in run 39469269982) |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
 | **Verified by / Verified at** | — |
@@ -1020,7 +1020,7 @@ Consequences: duplicate office actions on every sync, which double-counts deadli
 | **Evidence** | STATIC |
 | **Location** | `packages/db/prisma/schema.prisma` — `Invoice` model vs PRD §5.6 |
 | **Blocks** | P4.1 |
-| **Status** | OPEN |
+| **Status** | CLEARED - Invoice.dueAt present (schema.prisma:660) |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
 | **Verified by / Verified at** | — |
@@ -1043,7 +1043,7 @@ Consequences: duplicate office actions on every sync, which double-counts deadli
 | **Evidence** | STATIC |
 | **Location** | `packages/db/prisma/schema.prisma` (all 20 models) |
 | **Blocks** | P2, P3, P8.1 |
-| **Status** | OPEN |
+| **Status** | CLEARED - deletedAt on Contact/Trademark/Document with index (schema.prisma:12,255,276) |
 | **Related** | DQ-012 (retention schedule and PIPL erasure workflow) |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
@@ -1067,7 +1067,7 @@ Consequences: duplicate office actions on every sync, which double-counts deadli
 | **Evidence** | STATIC |
 | **Location** | `packages/db/prisma/schema.prisma:217` (`Contact.tags`), `:245` (`Lead.tags`) |
 | **Blocks** | P3 CRM; P7 ERP reporting |
-| **Status** | OPEN |
+| **Status** | CLEARED - tags GIN fragment verified (schema.prisma:247; drift job green in run 39469269982) |
 | **Related** | DQ-003 (modelled vs. derived pipeline/sales metrics) |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
@@ -1118,7 +1118,7 @@ There is also a **contract mismatch**: `Message.contentType String @default("tex
 | **Evidence** | STATIC |
 | **Location** | `packages/config/src/env.ts:26-31` |
 | **Blocks** | P0.4; SSRF/redirect hygiene |
-| **Status** | OPEN |
+| **Status** | CLEARED - optionalUrl allows only http/https (packages/config/src/env.ts:48) |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
 | **Verified by / Verified at** | — |
@@ -1154,7 +1154,7 @@ Two related gaps: `DATABASE_URL` uses a bare `z.string().url()` with no `postgre
 | **Evidence** | STATIC |
 | **Location** | `docker-compose.yml` |
 | **Blocks** | Local dev hygiene |
-| **Status** | OPEN |
+| **Status** | CLEARED - DB/Redis bound to loopback only (docker-compose.yml:12,25); dev-grade creds retained but not externally reachable |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
 | **Verified by / Verified at** | — |
@@ -1187,7 +1187,7 @@ Related gaps in the same file: no `api`/`web`/`workers` services, so `docker com
 | **Evidence** | STATIC |
 | **Location** | `.gitattributes` |
 | **Blocks** | Cross-platform CI parity |
-| **Status** | OPEN |
+| **Status** | CLEARED - .gitattributes enforces LF for shell scripts and Dockerfiles |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
 | **Verified by / Verified at** | — |
@@ -1250,7 +1250,7 @@ Then normalise the working tree once (`git add --renormalize .`) so the fix take
 | **Evidence** | STATIC |
 | **Location** | `apps/web/src/app/`; `apps/web/next.config.mjs` |
 | **Blocks** | P1, P2 |
-| **Status** | OPEN |
+| **Status** | CLEARED - global-error.tsx error boundary; security headers incl. CSP (apps/web/next.config.mjs:59-88) |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
 | **Verified by / Verified at** | — |
@@ -1277,7 +1277,7 @@ Also worth noting: `<html lang="zh-CN">` is hardcoded while ARCHITECTURE §1 tar
 | **Evidence** | STATIC |
 | **Location** | `workers/package.json`; `workers/tsconfig.json`; `tsconfig.base.json` |
 | **Blocks** | — |
-| **Status** | OPEN |
+| **Status** | CLEARED - workers/package.json no longer declares unemitted types |
 | **Discussion** | — |
 | **Answered by / Answered at** | — |
 | **Verified by / Verified at** | --- |
@@ -1323,7 +1323,7 @@ Also worth noting: `<html lang="zh-CN">` is hardcoded while ARCHITECTURE §1 tar
 | **Evidence** | STATIC |
 | **Location** | `infra/Dockerfile.api` |
 | **Blocks** | — |
-| **Status** | OPEN |
+| **Status** | OPEN (amended 2026-10-21) - runs as USER node (infra/Dockerfile.api:30) and the lockfile is mandatory (--frozen-lockfile); runtime still ships devDependencies (COPY --from=build without prune) |
 | **Discussion** | — |
 | **Answered by / Answered at** | --- |
 | **Verified by / Verified at** | — |
@@ -1395,7 +1395,7 @@ Verify with `pnpm rebuild` and by checking that a `next build` with image optimi
 | **Evidence** | STATIC |
 | **Location** | `turbo.json` |
 | **Blocks** | — |
-| **Status** | OPEN |
+| **Status** | CLEARED - turbo.json declares an env allowlist (turbo.json:7) |
 | **Discussion** | — |
 | **Answered by / Answered at** | --- |
 | **Verified by / Verified at** | — |
@@ -1504,7 +1504,7 @@ Sequenced by dependency and by blast radius, not by severity alone. Items 1–5 
 | 6 | **BUG-020**, **BUG-021**, **BUG-023**, **BUG-024**, **BUG-025**, **BUG-032**, **BUG-033**, **BUG-034** | Hygiene and supply chain. Individually small; BUG-025 is what keeps 023/024 from regressing. |
 | 7 | **BUG-030**, **BUG-035**, **BUG-036**, **BUG-037**, **BUG-039**, **BUG-040** | Low severity. Batch opportunistically. |
 
-**One sequencing constraint:** the baseline migration has not been created yet (`packages/db/prisma/migrations/` does not exist). Every item in groups 4 and 5 should land **before** it does. This is the single most time-sensitive fact in this register — after a baseline exists, each of those becomes a data-bearing migration.
+**Sequencing note (corrected 2026-10-21):** the baseline migration has landed — `packages/db/prisma/migrations/0P3__p0_3_backlog/` is tracked (4 files: `migration.sql`, `fragments/10-extensions-and-sequences.sql`, `fragments/20-integrity-and-indexes.sql`, `migration_lock.toml`), the three content files (`migration.sql`, `fragments/10-extensions-and-sequences.sql`, `fragments/20-integrity-and-indexes.sql`) landed at `85c7851` and `migration_lock.toml` followed at `bd1cb58`; verified by the green schema-drift job in run 39469269982. The original constraint — land groups 4 and 5 before the baseline, since after it exists each item becomes a data-bearing migration — is now satisfied by history: any item from those groups that is still open (see §4 status cells) must be designed as a data-bearing migration from here on. Kept corrected rather than deleted so the fix-order history stays honest.
 
 ---
 
@@ -1539,6 +1539,7 @@ pnpm build       # not run by the Debugger (see note)
 | 2026-10-11 (Architect) | BUG-034 CLEARED (Node 22 LTS pinned everywhere). BUG-041 opened — `COPY --chown` 0-byte runtime-image corruption, reproduced on `web` and fixed at `616ad7d`; `api`/`worker` still latent under Architect rulings: `COPY --chown` prohibited repo-wide, runtime smoke declared Linux-only, compose-smoke content assertions must floor the byte size. BUG-038 recommended fix (line 1341) superseded to a non-`--chown` rewrite. | Architect |
 | 2026-10-12 (Architect) | BUG-041 CLEARED — `api`/`worker` `COPY --chown` removed at `65c2e6c` (plain `COPY` + `RUN chown -R node:node /app`). Runtime re-verification 2026-10-12 with the fixed images: migrate exit 0 (36 tables, `pg_trgm`+`unaccent`), API `/health` `ok:true`, web HTTP 200 (~6 KB), worker opened all 5 queues and exited 0 by design. Residual per ARCH-01 §12 ruling 3: compose-smoke web/api content assertions still need the marker + byte-size floor — separate follow-up. BUG-042 opened — `docker compose --profile app up` hangs on Docker Desktop/Windows (containers `Created` but never started; REPRODUCED twice; manual sequential `docker start` works and the full repo stack verified healthy on postgres 55433 / redis 56380 / api 3001 / web 3010). Docker Desktop service also found `Stopped` during the same window — no fatal logged, 4.95.0 update staged; cause inconclusive, recorded in the entry. M0 progress: CI `migrations` job fixed (DATABASE_URL must target the migrated scratch DB + `prisma generate` added) and green at `afc1d0f`. | Architect |
 | 2026-10-12 (Architect) | BUG-041 ruling-3 residual **done** at `12fc3cf` — compose-smoke now asserts `<!DOCTYPE html>` + `MarkUS` markers and a 3000-byte floor on web, `"ok":true` + 40-byte floor on api `/health` (zero false-green from an empty shell); CI run `38266680404` green. BUG-041 fully closed. | Architect |
+| 2026-10-21 (Debugger) | Public-visibility reconciliation against HEAD a4b9d3b: all 40 OPEN rows re-verified against HEAD and CI run 39469269982 (all green, 10/10 jobs). 31 rows marked CLEARED with HEAD/CI evidence; 2 composite rows amended in place (BUG-014 currency landed, per-class line-item dimension unverified; BUG-038 root + mandatory lockfile fixed, devDependencies still shipped); 7 remain genuinely OPEN (BUG-015, BUG-017, BUG-018, BUG-030, BUG-037, BUG-039, BUG-042). D-31 floor closure recorded in DECISIONS.md (run 39469269982: web body 42905 B vs floor 34000). | Debugger |
 | | | |
 | | | |
 

@@ -672,6 +672,7 @@ Prefix-always is the next-intl recommendation and keeps every locale URL canonic
 ### Consequences
 - Each locale page self-canonicals to its prefixed URL; full hreflang incl. x-default; `/` excluded from the sitemap; sitemap enumerates all three locale roots.
 - CI smoke probe uses `curl --location` and asserts the FINAL response is a 200 locale page, not merely that a redirect hop was followed.
+- Outcome (2026-10-21): D-31 follow-up CLOSED — run 39469269982 (a4b9d3b) all green; compose-smoke web step echoed `web body 42905 B` against the 34000 floor (ci.yml:315), ~26% headroom.
 
 ---
 
