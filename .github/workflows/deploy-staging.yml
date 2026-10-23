@@ -20,10 +20,13 @@ permissions:
   packages: write
 
 jobs:
-  deploy:
-    name: build · push · deploy · verify
+  build:
+    name: build and push ${{ matrix.image }}
     runs-on: ubuntu-latest
-    environment: staging
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [api, web, worker]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,11 +51,13 @@ jobs:
             ghcr.io/${{ github.repository }}/markus-${{ matrix.image }}:staging
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
-        strategy:
-          fail-fast: false
-          matrix:
-            image: [api, web, worker]
 
+  deploy:
+    name: deploy and verify
+    runs-on: ubuntu-latest
+    needs: build
+    environment: staging
+    steps:
       - name: Configure SSH
         run: |
           install -m 700 -d ~/.ssh
