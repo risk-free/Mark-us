@@ -10,6 +10,7 @@ import {
   type AssistantService,
 } from "./app.js";
 import { InMemoryAssessmentCache } from "./assessment-cache.js";
+import { createInMemoryAuth } from "./auth/fakes.js";
 import { MetricsRegistry } from "./metrics.js";
 import { InMemoryRateLimiter } from "./rate-limit.js";
 
@@ -93,6 +94,7 @@ class FakeStore implements CorpusStore {
 }
 
 interface AppOverrides {
+  auth?: AppServices["auth"];
   assistant?: AppServices["assistant"];
   cache?: AppServices["cache"];
   rateLimiter?: AppServices["rateLimiter"];
@@ -113,9 +115,10 @@ const app = (
   assess: AppServices["assess"] = fakeAssess(),
   overrides: AppOverrides = {},
 ) => {
-  const { assistant, cache, rateLimiter, metrics, ...options } = overrides;
+  const { auth: authOverride, assistant, cache, rateLimiter, metrics, ...options } = overrides;
+  const auth = authOverride ?? createInMemoryAuth();
   return createApp(
-    { search, store, assess, assistant, cache, rateLimiter, metrics },
+    { search, store, assess, assistant, cache, rateLimiter, metrics, auth },
     { freshnessSlaHours: 26, ...options },
   );
 };
@@ -206,16 +209,50 @@ describe("createApp /tm/search (M7.2)", () => {
 });
 
 describe("createApp /tm/ingest/runs (M7.1 ledger)", () => {
-  test("returns and caps recent runs", async () => {
+  test("returns and caps recent runs for a MASTER_ADMIN session", async () => {
     const store = new FakeStore();
     store.runs = [
       { id: "r2", runDate: new Date("2026-10-13"), status: "complete", filesProcessed: 1, marksUpserted: 0, marksSkipped: 1, marksImported: 0, marksUpdated: 0, marksRejected: 0, startedAt: new Date("2026-10-13T03:10:00Z"), finishedAt: new Date("2026-10-13T03:11:00Z") },
       { id: "r1", runDate: new Date("2026-10-12"), status: "complete", filesProcessed: 1, marksUpserted: 2, marksSkipped: 0, marksImported: 2, marksUpdated: 0, marksRejected: 1, startedAt: new Date("2026-10-12T03:10:00Z"), finishedAt: new Date("2026-10-12T03:11:00Z") },
     ];
-    const body = await (await app(fakeSearch("x"), store).request("/tm/ingest/runs")).json();
+    const auth = createInMemoryAuth();
+    const session = await auth.sessions.create({
+      actorType: "STAFF",
+      actorId: "admin-1",
+      role: "MASTER_ADMIN",
+      locale: "zh-CN",
+      ip: "127.0.0.1",
+      ua: "jest",
+    });
+    const response = await app(fakeSearch("x"), store, fakeAssess(), { auth }).request(
+      "/tm/ingest/runs",
+      { headers: { cookie: `mkus_staff=${session.id}` } },
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
     expect(body.runs).toHaveLength(2);
     expect(body.runs[0].id).toBe("r2");
     expect(body.runs[1].marksRejected).toBe(1);
+  });
+
+  test("denies anonymous and non-admin principals (tm.ingest.read)", async () => {
+    const anonymous = await app(fakeSearch("x"), new FakeStore()).request("/tm/ingest/runs");
+    expect(anonymous.status).toBe(401);
+
+    const auth = createInMemoryAuth();
+    const session = await auth.sessions.create({
+      actorType: "STAFF",
+      actorId: "expert-1",
+      role: "EXPERT",
+      locale: "zh-CN",
+      ip: "127.0.0.1",
+      ua: "jest",
+    });
+    const forbidden = await app(fakeSearch("x"), new FakeStore(), fakeAssess(), { auth }).request(
+      "/tm/ingest/runs",
+      { headers: { cookie: `mkus_staff=${session.id}` } },
+    );
+    expect(forbidden.status).toBe(403);
   });
 });
 

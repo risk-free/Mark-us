@@ -19,6 +19,19 @@ import { PrismaClient } from "@prisma/client";
 import { Redis } from "ioredis";
 
 import { createApp, type AssistantService } from "./app.js";
+import {
+  MagicLinkService,
+  PrismaMagicLinkStore,
+  PrismaStaffCredentialStore,
+  PrismaTotpSeedVault,
+  RedisKeyValueStore,
+  RedisSessionIndexStore,
+  SessionService,
+  StaffAuthService,
+  argon2Passwords,
+  type MagicLinkDeliverer,
+  type TotpSeedVault,
+} from "./auth/index.js";
 import { RedisAssessmentCache } from "./assessment-cache.js";
 import { MetricsRegistry } from "./metrics.js";
 import { RedisRateLimiter } from "./rate-limit.js";
@@ -122,6 +135,47 @@ redis.on("error", (error: Error) => {
 
 const search = new PrismaCorpusSearcher(prisma as unknown as CorpusSqlClient);
 
+// P2.1 auth wiring: Redis sessions + Postgres credential/token stores.
+const authKv = new RedisKeyValueStore(redis);
+const sessions = new SessionService(authKv, new RedisSessionIndexStore(redis));
+const staffStore = new PrismaStaffCredentialStore(prisma);
+// Fail closed when the vault key is absent (D-01): TOTP-enrolled logins deny.
+const totpVault: TotpSeedVault = env.VAULT_MASTER_KEY
+  ? new PrismaTotpSeedVault(prisma, env.VAULT_MASTER_KEY)
+  : { revealSeed: async () => null };
+const rateLimiter = new RedisRateLimiter(redis);
+
+const staffAuth = new StaffAuthService({
+  store: staffStore,
+  sessions,
+  kv: authKv,
+  rateLimiter,
+  passwords: argon2Passwords,
+  totpVault,
+});
+
+/**
+ * Interim deliverer (P2.1): the AliCloud DirectMail adapter (DQ-017) lands
+ * with the notifications module. Metadata only — the token/URL is never
+ * logged (R-005).
+ */
+const magicLinkDeliverer: MagicLinkDeliverer = {
+  async deliver({ contactId, expiresAt }) {
+    console.log(
+      `[auth] magic link issued contact=${contactId} expiresAt=${expiresAt.toISOString()}`,
+    );
+  },
+};
+
+const magicLinks = new MagicLinkService({
+  store: new PrismaMagicLinkStore(prisma),
+  sessions,
+  rateLimiter,
+  deliverer: magicLinkDeliverer,
+  secret: env.MAGIC_LINK_SECRET,
+  publicBaseUrl: env.PUBLIC_BASE_URL,
+});
+
 const app = createApp(
   {
     search,
@@ -131,9 +185,10 @@ const app = createApp(
       model: BOOTSTRAP_MODEL,
       disclaimerVersion: DISCLAIMER_VERSION,
     }),
+    auth: { sessions, staffAuth, magicLinks },
     assistant,
     cache: new RedisAssessmentCache(redis),
-    rateLimiter: new RedisRateLimiter(redis),
+    rateLimiter,
     metrics: new MetricsRegistry(),
   },
   {
@@ -146,6 +201,7 @@ const app = createApp(
     modelVersion: BOOTSTRAP_MODEL.version,
     disclaimerVersion: DISCLAIMER_VERSION,
     metricsEnabled: true,
+    secureCookies: env.NODE_ENV === "production",
   },
 );
 

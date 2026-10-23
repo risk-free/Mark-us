@@ -1,0 +1,204 @@
+/**
+ * In-memory doubles for the auth ports: unit/integration tests and DB-free
+ * local development. Production wiring uses the Prisma + Redis adapters in
+ * `index.ts`. These fakes honour the same contracts — including the atomic
+ * single-use consume — so behaviour tested here carries over.
+ */
+
+import { InMemoryRateLimiter, type RateLimiter } from "../rate-limit.js";
+import { InMemoryKeyValueStore, type KeyValueStore } from "./kv.js";
+import {
+  MagicLinkService,
+  type MagicLinkContact,
+  type MagicLinkDeliverer,
+  type MagicLinkStore,
+  type MagicLinkTokenRow,
+} from "./magic-link.js";
+import { argon2Passwords } from "./passwords.js";
+import {
+  InMemorySessionIndexStore,
+  SessionService,
+  type SessionIndexStore,
+} from "./session.js";
+import {
+  StaffAuthService,
+  type PasswordVerifier,
+  type StaffCredential,
+  type StaffCredentialStore,
+  type TotpSeedVault,
+} from "./staff-auth.js";
+
+export class InMemoryStaffCredentialStore implements StaffCredentialStore {
+  readonly users = new Map<string, StaffCredential>();
+  readonly lastLogins = new Map<string, Date>();
+
+  async findByEmail(email: string): Promise<StaffCredential | null> {
+    for (const user of this.users.values()) {
+      if (user.email === email) return user;
+    }
+    return null;
+  }
+
+  async findById(id: string): Promise<StaffCredential | null> {
+    return this.users.get(id) ?? null;
+  }
+
+  async touchLastLogin(id: string, at: Date): Promise<void> {
+    this.lastLogins.set(id, at);
+  }
+}
+
+interface StoredToken extends MagicLinkTokenRow {
+  tokenHash: string;
+}
+
+export class InMemoryMagicLinkStore implements MagicLinkStore {
+  readonly contacts = new Map<string, MagicLinkContact>();
+  readonly tokens = new Map<string, StoredToken>();
+  #sequence = 0;
+
+  async findContactByEmail(email: string): Promise<MagicLinkContact | null> {
+    for (const contact of this.contacts.values()) {
+      if (contact.email === email) return contact;
+    }
+    return null;
+  }
+
+  async createToken(input: {
+    contactId: string;
+    tokenHash: string;
+    scope: string;
+    expiresAt: Date;
+    requestIp: string;
+    requestUa: string;
+  }): Promise<void> {
+    const contact = this.contacts.get(input.contactId);
+    if (contact === undefined) throw new Error(`unknown contact ${input.contactId}`);
+    this.#sequence += 1;
+    this.tokens.set(input.tokenHash, {
+      id: `mlt_${this.#sequence}`,
+      contactId: input.contactId,
+      tokenHash: input.tokenHash,
+      expiresAt: input.expiresAt,
+      consumedAt: null,
+      attempts: 0,
+      contact,
+    });
+  }
+
+  async findTokenByHash(tokenHash: string): Promise<MagicLinkTokenRow | null> {
+    const row = this.tokens.get(tokenHash);
+    if (row === undefined) return null;
+    // The Prisma adapter re-reads the contact, so a deleted contact is seen.
+    const contact = this.contacts.get(row.contactId) ?? row.contact;
+    return { ...row, contact };
+  }
+
+  async recordAttempt(id: string, attempts: number, destroy: boolean): Promise<void> {
+    for (const row of this.tokens.values()) {
+      if (row.id === id) {
+        row.attempts = attempts;
+        if (destroy) row.consumedAt = new Date();
+        return;
+      }
+    }
+    throw new Error(`unknown token ${id}`);
+  }
+
+  async consume(id: string): Promise<boolean> {
+    for (const row of this.tokens.values()) {
+      if (row.id === id) {
+        if (row.consumedAt !== null) return false;
+        row.consumedAt = new Date();
+        return true;
+      }
+    }
+    return false;
+  }
+}
+
+export class InMemoryTotpSeedVault implements TotpSeedVault {
+  readonly seeds = new Map<string, string>();
+
+  async revealSeed(staffId: string): Promise<string | null> {
+    return this.seeds.get(staffId) ?? null;
+  }
+}
+
+export class RecordingMagicLinkDeliverer implements MagicLinkDeliverer {
+  readonly deliveries: { contactId: string; url: string; expiresAt: Date }[] = [];
+
+  async deliver(input: { contactId: string; url: string; expiresAt: Date }): Promise<void> {
+    this.deliveries.push(input);
+  }
+
+  /** Extracts the raw token from a delivered URL; test convenience only. */
+  tokenOf(index: number): string {
+    const url = this.deliveries[index]?.url ?? "";
+    return new URL(url).searchParams.get("token") ?? "";
+  }
+}
+
+export interface InMemoryAuth {
+  sessions: SessionService;
+  staffAuth: StaffAuthService;
+  magicLinks: MagicLinkService;
+  kv: KeyValueStore;
+  index: SessionIndexStore;
+  staffStore: InMemoryStaffCredentialStore;
+  magicStore: InMemoryMagicLinkStore;
+  totpVault: InMemoryTotpSeedVault;
+  deliverer: RecordingMagicLinkDeliverer;
+  rateLimiter: RateLimiter;
+}
+
+export interface InMemoryAuthOptions {
+  now?: () => Date;
+  secret?: string;
+  publicBaseUrl?: string;
+  passwords?: PasswordVerifier;
+}
+
+export function createInMemoryAuth(options: InMemoryAuthOptions = {}): InMemoryAuth {
+  const now = options.now ?? (() => new Date());
+  const kv = new InMemoryKeyValueStore(() => now().getTime());
+  const index = new InMemorySessionIndexStore(() => now().getTime());
+  const sessions = new SessionService(kv, index, () => now());
+  const rateLimiter = new InMemoryRateLimiter(() => now().getTime());
+  const staffStore = new InMemoryStaffCredentialStore();
+  const magicStore = new InMemoryMagicLinkStore();
+  const totpVault = new InMemoryTotpSeedVault();
+  const deliverer = new RecordingMagicLinkDeliverer();
+
+  const staffAuth = new StaffAuthService({
+    store: staffStore,
+    sessions,
+    kv,
+    rateLimiter,
+    passwords: options.passwords ?? argon2Passwords,
+    totpVault,
+    now: () => now(),
+  });
+  const magicLinks = new MagicLinkService({
+    store: magicStore,
+    sessions,
+    rateLimiter,
+    deliverer,
+    secret: options.secret ?? "unit-test-magic-link-secret",
+    publicBaseUrl: options.publicBaseUrl ?? "https://portal.test",
+    now: () => now(),
+  });
+
+  return {
+    sessions,
+    staffAuth,
+    magicLinks,
+    kv,
+    index,
+    staffStore,
+    magicStore,
+    totpVault,
+    deliverer,
+    rateLimiter,
+  };
+}

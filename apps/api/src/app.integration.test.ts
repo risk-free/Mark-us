@@ -28,6 +28,7 @@ import {
 } from "@markus/tm-data";
 
 import { createApp } from "./app.js";
+import { createInMemoryAuth, type InMemoryAuth } from "./auth/fakes.js";
 
 jest.setTimeout(180_000);
 
@@ -49,6 +50,7 @@ describe("USPTO corpus search API against PostgreSQL 16 (M7.2)", () => {
   let prisma: PrismaClient;
   let sql: ReturnType<typeof postgres>;
   let app: ReturnType<typeof createApp>;
+  let auth: InMemoryAuth;
 
   const seedMark = (mark: string, overrides: Partial<Parameters<typeof prisma.tmCorpusMark.create>[0]["data"]> = {}) =>
     prisma.tmCorpusMark.create({
@@ -78,6 +80,7 @@ describe("USPTO corpus search API against PostgreSQL 16 (M7.2)", () => {
     await sql.unsafe(MIGRATION_SQL);
     prisma = new PrismaClient({ datasourceUrl: url });
     const search = new PrismaCorpusSearcher(prisma as unknown as CorpusSqlClient);
+    auth = createInMemoryAuth();
     app = createApp(
       {
         search,
@@ -87,10 +90,24 @@ describe("USPTO corpus search API against PostgreSQL 16 (M7.2)", () => {
           model: BOOTSTRAP_MODEL,
           disclaimerVersion: DISCLAIMER_VERSION,
         }),
+        auth,
       },
       { freshnessSlaHours: 26 },
     );
   });
+
+  /** MASTER_ADMIN session cookie for the RBAC-guarded ingest ledger. */
+  const adminCookie = async (): Promise<string> => {
+    const session = await auth.sessions.create({
+      actorType: "STAFF",
+      actorId: "admin-1",
+      role: "MASTER_ADMIN",
+      locale: "zh-CN",
+      ip: "127.0.0.1",
+      ua: "jest",
+    });
+    return `mkus_staff=${session.id}`;
+  };
 
   afterAll(async () => {
     await prisma?.$disconnect();
@@ -195,7 +212,9 @@ describe("USPTO corpus search API against PostgreSQL 16 (M7.2)", () => {
       finishedAt: new Date("2026-10-12T03:05:00.000Z"),
     });
 
-    const body = await (await app.request("/tm/ingest/runs")).json();
+    const body = await (
+      await app.request("/tm/ingest/runs", { headers: { cookie: await adminCookie() } })
+    ).json();
     expect(body.runs).toHaveLength(2);
     expect(body.runs[0].runDate).toBe("2026-10-12T00:00:00.000Z");
     expect(body.runs[0].marksSkipped).toBe(5);

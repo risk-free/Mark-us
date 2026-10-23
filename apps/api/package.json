@@ -14,10 +14,12 @@
   "dependencies": {
     "@hono/node-server": "^1.19.17",
     "@markus/config": "workspace:*",
+    "@markus/core": "workspace:*",
     "@markus/kb": "workspace:*",
     "@markus/llm-gateway": "workspace:*",
     "@markus/tm-data": "workspace:*",
     "@prisma/client": "^6.19.3",
+    "argon2": "^0.45.1",
     "dotenv": "^16.6.1",
     "hono": "^4.13.13",
     "ioredis": "^5.11.1"

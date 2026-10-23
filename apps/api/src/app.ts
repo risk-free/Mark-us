@@ -24,6 +24,15 @@ import {
 import type { CorpusStore } from "@markus/tm-data";
 
 import { assessmentCacheKey, type AssessmentCache } from "./assessment-cache.js";
+import {
+  createAuthRoutes,
+  csrfGuard,
+  requirePermission,
+  sessionResolver,
+  type MagicLinkService,
+  type SessionService,
+  type StaffAuthService,
+} from "./auth/index.js";
 import { METRICS_CONTENT_TYPE, type MetricsRegistry } from "./metrics.js";
 import { clientIp, type RateLimiter } from "./rate-limit.js";
 
@@ -68,10 +77,18 @@ export interface AssistantService {
   answer(input: AssistantInput): Promise<AssistantAnswer>;
 }
 
+/** Auth bundle (P2.1). Required so protected routes fail closed (rule 3). */
+export interface AuthServices {
+  sessions: SessionService;
+  staffAuth: StaffAuthService;
+  magicLinks: MagicLinkService;
+}
+
 export interface AppServices {
   search: CorpusSearcher;
   store: CorpusStore;
   assess: Assessor;
+  auth: AuthServices;
   /** Optional RAG assistant (P6.3); degrades to cited references when absent. */
   assistant?: AssistantService;
   /** Optional 24 h result cache (M8.1); active only with both versions set. */
@@ -103,6 +120,8 @@ export interface AppOptions {
   disclaimerVersion?: string;
   /** Expose `GET /metrics` when a registry is supplied. */
   metricsEnabled?: boolean;
+  /** `Secure` cookie attribute; off only for plain-http local development. */
+  secureCookies?: boolean;
 }
 
 const parseLimit = (raw: string | undefined, fallback: number, max: number): number => {
@@ -143,7 +162,7 @@ const optionalText = (raw: unknown): string | undefined => {
 };
 
 export function createApp(services: AppServices, options: AppOptions): Hono {
-  const { search, store, assess, assistant, cache, rateLimiter, metrics } = services;
+  const { search, store, assess, auth, assistant, cache, rateLimiter, metrics } = services;
   const sla = options.freshnessSlaHours;
   const defaultSearchLimit = options.defaultSearchLimit ?? 20;
   const maxSearchLimit = options.maxSearchLimit ?? 100;
@@ -168,6 +187,20 @@ export function createApp(services: AppServices, options: AppOptions): Hono {
       );
     });
   }
+
+  // Session resolution + CSRF run before every route; the public auth
+  // endpoints (`security: []`) simply carry no session yet.
+  app.use("*", sessionResolver(auth.sessions));
+  app.use("*", csrfGuard());
+
+  app.route(
+    "/",
+    createAuthRoutes({
+      staffAuth: auth.staffAuth,
+      magicLinks: auth.magicLinks,
+      secureCookies: options.secureCookies ?? true,
+    }),
+  );
 
   app.get("/health", (c) =>
     c.json({
@@ -321,7 +354,8 @@ export function createApp(services: AppServices, options: AppOptions): Hono {
     });
   });
 
-  app.get("/tm/ingest/runs", async (c) => {
+  // x-permission: tm.ingest.read (ARCH-03) — MASTER_ADMIN only in the matrix.
+  app.get("/tm/ingest/runs", requirePermission("tm.ingest.read"), async (c) => {
     const limit = parseLimit(c.req.query("limit"), 20, 100);
     const runs = await store.recentRuns(limit);
     return c.json({ runs });
