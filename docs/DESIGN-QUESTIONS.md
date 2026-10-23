@@ -618,7 +618,7 @@ This document is the **single, living register of open product/design questions*
 | FA-004 | DQ-018 | Decide image slimming strategy before HK egress costs are known (runtime stages currently carry dev dependencies) | Developer | P8.1 | OPEN |
 | FA-005 | — | Pin the staging host SSH key instead of `ssh-keyscan` trust-on-first-use | Developer | P8.1 | OPEN |
 | FA-006 | DQ-004 | Revisit type-aware ESLint rules once the codebase has substantive types; measure the runtime cost first | Developer | P2 | OPEN |
-| FA-007 | DQ-005, DQ-013 | `SESSION_SECRET`: shipped placeholders are now rejected outside development, but a *low-entropy* 32-character string still passes. Decide the rule (base64 ≥32 bytes vs. passphrase policy) with the auth design | Developer → Architect | P2.1 | OPEN |
+| FA-007 | DQ-005, DQ-013 | `SESSION_SECRET`: shipped placeholders are now rejected outside development, but a *low-entropy* 32-character string still passes. Decide the rule (base64 ≥32 bytes vs. passphrase policy) with the auth design | Developer → Architect | P2.1 | RESOLVED — R-023 (base64 ≥32 decoded bytes in the schema; `MAGIC_LINK_SECRET` added for domain separation) |
 | FA-008 | — | Dependency floors resolve to versions with published advisories; `pnpm audit --audit-level=high` is now a CI gate, so the next run is the work list | Developer | before M0 | OPEN |
 | FA-009 | DQ-018 | Confirm the HK region's Node runtime and base image — Node 22 LTS is adopted everywhere (`node:22-alpine`); remainder is the HK region itself (OPEN-05, DQ-018) | Architect | P8.1 | RESOLVED — region confirmed HK (`fdc2369`+1) |
 | FA-010 | — | **RESOLVED at `bd1cb58`** — `schema.prisma`, `migration_lock.toml`, `ci.yml`, `packages/db/package.json`, `pnpm-lock.yaml` and `migrations/0P3__p0_3_backlog/` are now committed together, so a clean clone reproduces the baseline and `pnpm db:drift` can pass. Confirm on the `bd1cb58` CI run | Developer | before M3.2 sign-off | RESOLVED |
@@ -833,6 +833,25 @@ Already decided by `ARCH-01` §5.1 (Argon2id password, mandatory TOTP for `EXPER
 `/auth/staff/mfa/verify` vs `/auth/magic-link`, documented as *client* sign-in). No staff magic
 link in Phase 1. The only genuinely open part is FA-007 (`SESSION_SECRET` entropy policy), which
 stays with DQ-005 until P2.1.
+
+**R-023 — `SESSION_SECRET` is strict base64 decoding to ≥ 32 BYTES, enforced in the schema; magic-link hashing gets its own key (`MAGIC_LINK_SECRET`).**
+Ruled 2026-10-23 via Architect memo 0012 answering FA-007 (DQ-005/DQ-013); closes the BUG-008
+residual.
+- **Rule 1 adopted, rule 2 rejected.** The passphrase-entropy-estimate alternative is heuristic
+  and untestable and would re-open the defect being closed. Entropy is measured in **decoded
+  bytes**: strict standard base64 (canonical alphabet and padding — not base64url, no lenient
+  `Buffer.from` decoding), decoded length ≥ 32 bytes (256 bits), enforced by the `env.ts` schema
+  itself for every environment. `assertProductionSafety` keeps its placeholder-membership check
+  unchanged on top.
+- **`.env.example` ships both keys EMPTY** with the `randomBytes(48).toString("base64")`
+  generator one-liner; a real-looking value never ships again. The compose dev defaults are
+  valid-base64 32-byte dev values, both registered in `REJECTED_SESSION_SECRETS` /
+  `REJECTED_MAGIC_LINK_SECRETS`, so staging/production refuse them — the
+  `VAULT_MASTER_KEY = dev-only-not-for-prod` pattern.
+- **Domain separation:** client magic-link tokens are **not** signed with `SESSION_SECRET`.
+  `MAGIC_LINK_SECRET` (same base64 ≥ 32-byte rule, same production gate) keys
+  `HMAC-SHA256(MAGIC_LINK_SECRET, token)`, stored hex at rest in `MagicLinkToken.tokenHash`.
+  TOTP seeds for `MASTER_ADMIN`/`EXPERT` live in the D-01 KMS vault (`StaffUser.totpSecretCipher`).
 
 **R-014 — No active 会话存档 consent ⇒ not assignable.**
 Fail-closed, exactly like a revoked USPTO credential: assignment eligibility requires

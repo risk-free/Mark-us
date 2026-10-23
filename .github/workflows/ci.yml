@@ -332,10 +332,13 @@ jobs:
           exit 1
 
       - name: Refuses to boot in production with development configuration (D-01)
+        # R-023: SESSION_SECRET is the dev fallback — valid base64 that passes
+        # the schema and must be refused by the production placeholder gate.
         run: |
           if docker run --rm \
             -e NODE_ENV=production \
-            -e SESSION_SECRET=ci-only-secret-ci-only-secret-ci-only-01 \
+            -e SESSION_SECRET=bWFya3VzLWRldi1zZXNzaW9uLXNlY3JldC0tZG8tbm90LXVzZS1pbi1wcm9k \
+            -e MAGIC_LINK_SECRET=hUAq9iFig1WvKefdic76wotLJEYh5ndNEWTLKOB5NRwpA8o5HX3oy5ZFBbT753Fn \
             markus-api:ci; then
             echo "expected the api image to refuse to start" >&2
             exit 1

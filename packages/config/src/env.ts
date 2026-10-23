@@ -14,11 +14,24 @@
 import { z } from "zod";
 
 export const DEV_VAULT_FALLBACK = "dev-only-not-for-prod";
-export const DEV_SESSION_FALLBACK = "insecure-local-development-secret-000";
+/**
+ * R-023 / FA-007: session-signing secrets must be base64 decoding to >= 32
+ * BYTES (256 bits), enforced in the schema itself — a low-entropy 32-character
+ * string no longer passes. The local-development value is valid base64 (so the
+ * schema accepts it) and is rejected outside development by membership, the
+ * same pattern as `VAULT_MASTER_KEY`. The retired length-only fallback stays
+ * on the reject list so a stale `.env` still fails closed.
+ */
+export const DEV_SESSION_FALLBACK =
+  "bWFya3VzLWRldi1zZXNzaW9uLXNlY3JldC0tZG8tbm90LXVzZS1pbi1wcm9k"; // "markus-dev-session-secret--do-not-use-in-prod"
+export const DEV_MAGIC_LINK_FALLBACK =
+  "bWFya3VzLWRldi1tYWdpYy1saW5rLXNlY3JldC0tZG8tbm90LXVzZS1wcm9k"; // "markus-dev-magic-link-secret--do-not-use-prod"
 export const REJECTED_SESSION_SECRETS = [
   DEV_SESSION_FALLBACK,
+  "insecure-local-development-secret-000",
   "change-me-32-bytes-minimum",
 ] as const;
+export const REJECTED_MAGIC_LINK_SECRETS = [DEV_MAGIC_LINK_FALLBACK] as const;
 export const DEV_DATABASE_URL = "postgresql://markus:markus@localhost:5432/markus";
 export const DEV_REDIS_URL = "redis://localhost:6379";
 
@@ -61,6 +74,24 @@ const optionalSecret = z
   .optional()
   .transform((value) => (value === "" ? undefined : value));
 
+/**
+ * R-023: strict standard base64 (no base64url, no whitespace, canonical
+ * padding) decoding to at least `minBytes` bytes. `Buffer.from(v, "base64")`
+ * alone is lenient — it silently drops invalid characters — so the regex gates
+ * the alphabet first and the decoded length is what is measured.
+ */
+const STRICT_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+const isBase64WithMinBytes = (value: string, minBytes: number): boolean =>
+  value.length > 0 &&
+  STRICT_BASE64.test(value) &&
+  Buffer.from(value, "base64").length >= minBytes;
+
+const base64Secret = (name: string) =>
+  z.string().refine((value) => isBase64WithMinBytes(value, 32), {
+    message: `${name} must be base64 decoding to >= 32 bytes (generate: node -e "console.log(require('crypto').randomBytes(48).toString('base64'))")`,
+  });
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "staging", "production"]),
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
@@ -71,7 +102,11 @@ export const envSchema = z.object({
   REDIS_URL: urlWithSchemes(["redis:", "rediss:"]).default(DEV_REDIS_URL),
   PUBLIC_BASE_URL: urlWithSchemes(["http:", "https:"]).default("http://localhost:3000"),
   API_BASE_URL: urlWithSchemes(["http:", "https:"]).default("http://localhost:3001"),
-  SESSION_SECRET: z.string().min(32, "SESSION_SECRET needs >= 32 chars (generate: node -e \"console.log(require('crypto').randomBytes(48).toString('base64'))\")"),
+  SESSION_SECRET: base64Secret("SESSION_SECRET"),
+  // R-023 second ruling: magic-link token hashing has its own key (domain
+  // separation) — tokens are HMAC-SHA256(MAGIC_LINK_SECRET, token), hex at
+  // rest. Never reuse SESSION_SECRET.
+  MAGIC_LINK_SECRET: base64Secret("MAGIC_LINK_SECRET"),
 
   // Object storage — R2 (or any S3-compatible endpoint)
   R2_ACCOUNT_ID: optionalSecret,
@@ -182,6 +217,9 @@ export function assertProductionSafety(env: Env): void {
   }
   if ((REJECTED_SESSION_SECRETS as readonly string[]).includes(env.SESSION_SECRET)) {
     problems.push("SESSION_SECRET is a shipped placeholder value");
+  }
+  if ((REJECTED_MAGIC_LINK_SECRETS as readonly string[]).includes(env.MAGIC_LINK_SECRET)) {
+    problems.push("MAGIC_LINK_SECRET is a shipped placeholder value");
   }
   if (env.DATABASE_URL === DEV_DATABASE_URL) {
     problems.push("DATABASE_URL is still the local development connection string");

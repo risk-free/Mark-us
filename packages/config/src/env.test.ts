@@ -1,9 +1,14 @@
+import { randomBytes } from "node:crypto";
+
 import {
   assertProductionSafety,
+  DEV_MAGIC_LINK_FALLBACK,
+  DEV_SESSION_FALLBACK,
   DEV_VAULT_FALLBACK,
   EnvValidationError,
   envSchema,
   loadEnv,
+  REJECTED_MAGIC_LINK_SECRETS,
   REJECTED_SESSION_SECRETS,
   type Env,
 } from "./env.js";
@@ -11,10 +16,16 @@ import {
 const validEnv = (): NodeJS.ProcessEnv => ({
   NODE_ENV: "development",
   SESSION_SECRET: "s".repeat(48),
+  MAGIC_LINK_SECRET: "m".repeat(48),
 });
 
 const parseEnv = (overrides: NodeJS.ProcessEnv): Env =>
-  envSchema.parse({ NODE_ENV: "development", SESSION_SECRET: "s".repeat(48), ...overrides });
+  envSchema.parse({
+    NODE_ENV: "development",
+    SESSION_SECRET: "s".repeat(48),
+    MAGIC_LINK_SECRET: "m".repeat(48),
+    ...overrides,
+  });
 
 const productionOverrides: NodeJS.ProcessEnv = {
   NODE_ENV: "production",
@@ -46,6 +57,41 @@ describe("loadEnv", () => {
   test("rejects a missing or short SESSION_SECRET", () => {
     expect(() => loadEnv({ NODE_ENV: "development" })).toThrow(EnvValidationError);
     expect(() => loadEnv({ ...validEnv(), SESSION_SECRET: "too-short" })).toThrow(
+      /SESSION_SECRET/,
+    );
+  });
+
+  // R-023 / FA-007: entropy is measured in decoded BYTES, not characters.
+  test("rejects a 32-character SESSION_SECRET that decodes to fewer than 32 bytes", () => {
+    expect(() => loadEnv({ ...validEnv(), SESSION_SECRET: "a".repeat(32) })).toThrow(
+      /SESSION_SECRET/,
+    );
+    expect(() => loadEnv({ ...validEnv(), MAGIC_LINK_SECRET: "a".repeat(32) })).toThrow(
+      /MAGIC_LINK_SECRET/,
+    );
+  });
+
+  test("accepts a generated randomBytes(48) base64 secret", () => {
+    const generated = randomBytes(48).toString("base64");
+    const env = loadEnv({ ...validEnv(), SESSION_SECRET: generated, MAGIC_LINK_SECRET: generated });
+    expect(env.SESSION_SECRET).toBe(generated);
+    expect(env.MAGIC_LINK_SECRET).toBe(generated);
+  });
+
+  test("rejects the retired placeholder by the schema itself", () => {
+    expect(() =>
+      loadEnv({ ...validEnv(), SESSION_SECRET: "change-me-32-bytes-minimum" }),
+    ).toThrow(/SESSION_SECRET/);
+    expect(() =>
+      loadEnv({ ...validEnv(), SESSION_SECRET: "insecure-local-development-secret-000" }),
+    ).toThrow(/SESSION_SECRET/);
+  });
+
+  test("rejects base64url and whitespace-padded secrets (strict alphabet)", () => {
+    expect(() => loadEnv({ ...validEnv(), SESSION_SECRET: `${"a".repeat(43)}-` })).toThrow(
+      /SESSION_SECRET/,
+    );
+    expect(() => loadEnv({ ...validEnv(), SESSION_SECRET: ` ${"s".repeat(48)}` })).toThrow(
       /SESSION_SECRET/,
     );
   });
@@ -120,12 +166,18 @@ describe("assertProductionSafety (D-01)", () => {
     expect(() => assertProductionSafety(env)).toThrow(/development fallback/);
   });
 
-  test("rejects a shipped SESSION_SECRET placeholder outside development", () => {
-    for (const placeholder of REJECTED_SESSION_SECRETS) {
-      if (placeholder.length < 32) continue;
-      const env = parseEnv({ ...productionOverrides, SESSION_SECRET: placeholder });
-      expect(() => assertProductionSafety(env)).toThrow(/placeholder/);
-    }
+  test("rejects the shipped dev SESSION_SECRET placeholder outside development", () => {
+    // Only schema-valid values reach the gate; the retired length-only
+    // placeholders are rejected by the schema (see above) before this point.
+    const env = parseEnv({ ...productionOverrides, SESSION_SECRET: DEV_SESSION_FALLBACK });
+    expect(() => assertProductionSafety(env)).toThrow(/SESSION_SECRET.*placeholder/);
+    expect(REJECTED_SESSION_SECRETS).toContain(DEV_SESSION_FALLBACK);
+  });
+
+  test("rejects the shipped dev MAGIC_LINK_SECRET placeholder outside development", () => {
+    const env = parseEnv({ ...productionOverrides, MAGIC_LINK_SECRET: DEV_MAGIC_LINK_FALLBACK });
+    expect(() => assertProductionSafety(env)).toThrow(/MAGIC_LINK_SECRET.*placeholder/);
+    expect(REJECTED_MAGIC_LINK_SECRETS).toContain(DEV_MAGIC_LINK_FALLBACK);
   });
 
   test("rejects missing KMS key and local connection strings in production", () => {
