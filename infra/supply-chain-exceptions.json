@@ -11,7 +11,7 @@
     "  - an entry whose advisory has been fixed upstream is reported so it can be deleted",
     "",
     "pnpm 9.15 cannot express these exclusions itself: auditConfig.ignoreCves",
-    "matches on CVE ids and both advisories below are GHSA-only with no CVE.",
+    "matches on CVE ids and this advisory is GHSA-only with no CVE.",
     "This file is the reviewable, expiring record instead of a silent --ignore flag."
   ],
   "exceptions": [
@@ -28,20 +28,6 @@
       "owner": "Developer (removal) / Architect (renewal)",
       "reviewBy": "2026-12-29",
       "revisitWhen": "braces or micromatch ships a fixed release, or Next 16's eslint plugin drops fast-glob"
-    },
-    {
-      "ghsa": "GHSA-hp3w-g68c-fv3c",
-      "package": "sprintf-js",
-      "severity": "moderate",
-      "title": "denial of service through unbounded precision specifiers",
-      "fixedUpstream": false,
-      "chain": "jest@29.7.0 > @jest/reporters > babel-plugin-istanbul@6.1.1 > @istanbuljs/load-nyc-config@1.1.0 > js-yaml@3.15.2 > argparse@1.0.10 > sprintf-js@1.1.3",
-      "runtimeExposure": "none - test-time only, and only when coverage reporting is enabled. Not shipped in any runtime image.",
-      "reason": "sprintf-js 1.1.3 is the latest release and is the vulnerable version (advisory reports patched_versions '<0.0.0'). js-yaml 3.x pins argparse ^1.0.7, which pins sprintf-js ^1.0.3; js-yaml 4 would be a major change to Jest's own coverage tooling.",
-      "exploitability": "Requires an attacker to control a coverage config file's precision specifier on a developer machine or CI runner.",
-      "owner": "Developer (removal) / Architect (renewal)",
-      "reviewBy": "2026-12-29",
-      "revisitWhen": "sprintf-js ships a fixed release, or Jest drops the js-yaml 3 / argparse 1 chain"
     }
   ]
 }

@@ -15,7 +15,7 @@
     "check:compliance": "pnpm run check:content-lint && pnpm run check:score-disclosure && pnpm run check:i18n-parity && pnpm run check:third-party"
   },
   "dependencies": {
-    "next": "^15.5.27",
+    "next": "^15.5.28",
     "next-intl": "^4.14.9",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
