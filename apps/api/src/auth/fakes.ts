@@ -6,6 +6,7 @@
  */
 
 import { InMemoryRateLimiter, type RateLimiter } from "../rate-limit.js";
+import type { ApplicationItem, ClientStore, TimelineEvent } from "../client.js";
 import { InMemoryKeyValueStore, type KeyValueStore } from "./kv.js";
 import {
   MagicLinkService,
@@ -139,10 +140,130 @@ export class RecordingMagicLinkDeliverer implements MagicLinkDeliverer {
   }
 }
 
+interface OrderRow {
+  id: string;
+  contactId: string;
+  applicationId: string | null;
+  createdAt: Date;
+}
+
+interface DocumentRow {
+  id: string;
+  contactId: string;
+  applicationId: string | null;
+  currentVersion: number;
+  createdAt: Date;
+  filename: string;
+}
+
+interface ConversationRow {
+  id: string;
+  contactId: string;
+  createdAt: Date;
+}
+
+/** In-memory double of the client store port (tests and DB-free dev). */
+export class InMemoryClientStore implements ClientStore {
+  readonly applications = new Map<string, ApplicationItem>();
+  readonly orders = new Map<string, OrderRow>();
+  readonly documents = new Map<string, DocumentRow>();
+  readonly conversations = new Map<string, ConversationRow>();
+
+  constructor(readonly publicBaseUrl: string) {}
+
+  addApplication(contactId: string, item: ApplicationItem): void {
+    this.applications.set(item.id, { ...item, contactId });
+  }
+
+  addOrder(contactId: string, applicationId: string, createdAt?: Date): void {
+    const id = `order_${this.orders.size + 1}`;
+    this.orders.set(id, { id, contactId, applicationId, createdAt: createdAt ?? new Date() });
+  }
+
+  addDocument(contactId: string, applicationId: string | null, input: Partial<DocumentRow>): void {
+    const id = `doc_${this.documents.size + 1}`;
+    this.documents.set(id, {
+      id,
+      contactId,
+      applicationId,
+      currentVersion: 1,
+      createdAt: new Date(),
+      filename: "document.pdf",
+      ...input,
+    });
+  }
+
+  addConversation(contactId: string): void {
+    const id = `conv_${this.conversations.size + 1}`;
+    this.conversations.set(id, { id, contactId, createdAt: new Date() });
+  }
+
+  async listApplications(contactId: string, opts: { cursor?: string; limit?: number } = {}): Promise<{ items: ApplicationItem[]; nextCursor: string | null }> {
+    const limit = opts.limit ?? 25;
+    const orderRows = [...this.orders.values()]
+      .filter((o) => o.contactId === contactId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    let start = 0;
+    if (opts.cursor) {
+      const found = orderRows.findIndex((o) => o.id === opts.cursor);
+      start = found < 0 ? 0 : found + 1;
+    }
+    const page = orderRows.slice(start, start + limit + 1);
+    const items = page
+      .map((o) => this.applications.get(o.applicationId ?? ""))
+      .filter((a): a is ApplicationItem => a !== undefined);
+    return {
+      items: items.slice(0, limit),
+      nextCursor: page.length > limit ? page[limit - 1]?.id ?? null : null,
+    };
+  }
+
+  async getApplication(applicationId: string, contactId: string): Promise<ApplicationItem | null> {
+    const order = [...this.orders.values()].find((o) => o.contactId === contactId && o.applicationId === applicationId);
+    return order ? (this.applications.get(order.applicationId ?? "") ?? null) : null;
+  }
+
+  async getTimeline(contactId: string, opts: { cursor?: string; limit?: number } = {}): Promise<{ items: TimelineEvent[]; nextCursor: string | null }> {
+    const limit = opts.limit ?? 25;
+    const events: TimelineEvent[] = [
+      ...[...this.orders.values()]
+        .filter((o) => o.contactId === contactId)
+        .map((o) => ({ type: "ORDER" as const, id: o.id, contactId, applicationId: o.applicationId, createdAt: o.createdAt.toISOString(), summary: null })),
+      ...[...this.conversations.values()]
+        .filter((c) => c.contactId === contactId)
+        .map((c) => ({ type: "CONVERSATION" as const, id: c.id, contactId, applicationId: null, createdAt: c.createdAt.toISOString(), summary: null })),
+      ...[...this.documents.values()]
+        .filter((d) => d.contactId === contactId)
+        .map((d) => ({ type: "DOCUMENT" as const, id: d.id, contactId, applicationId: d.applicationId, createdAt: d.createdAt.toISOString(), summary: null })),
+    ];
+    events.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+    let start = 0;
+    if (opts.cursor) {
+      const found = events.findIndex((e) => e.id === opts.cursor);
+      start = found < 0 ? 0 : found + 1;
+    }
+    const page = events.slice(start, start + limit + 1);
+    return {
+      items: page.slice(0, limit),
+      nextCursor: page.length > limit ? page[limit]?.id ?? null : null,
+    };
+  }
+
+  async getDocumentDownload(documentId: string, contactId: string): Promise<{ url: string; expiresAt: Date } | null> {
+    const doc = [...this.documents.values()].find((d) => d.id === documentId && d.contactId === contactId && d.applicationId !== null);
+    if (!doc) return null;
+    return {
+      url: `${this.publicBaseUrl}/documents/${documentId}/content?version=${doc.currentVersion}`,
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    };
+  }
+}
+
 export interface InMemoryAuth {
   sessions: SessionService;
   staffAuth: StaffAuthService;
   magicLinks: MagicLinkService;
+  client: InMemoryClientStore;
   kv: KeyValueStore;
   index: SessionIndexStore;
   staffStore: InMemoryStaffCredentialStore;
@@ -179,6 +300,7 @@ export function createInMemoryAuth(options: InMemoryAuthOptions = {}): InMemoryA
     totpVault,
     now: () => now(),
   });
+  const client = new InMemoryClientStore(options.publicBaseUrl ?? "https://portal.test");
   const magicLinks = new MagicLinkService({
     store: magicStore,
     sessions,
@@ -193,6 +315,7 @@ export function createInMemoryAuth(options: InMemoryAuthOptions = {}): InMemoryA
     sessions,
     staffAuth,
     magicLinks,
+    client,
     kv,
     index,
     staffStore,

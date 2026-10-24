@@ -63,10 +63,11 @@ export function permissionsFor(record: SessionRecord): string[] {
 }
 
 /**
- * Contract gap (flagged to Architect): `ActorContext.role` is a required,
- * non-nullable `Role`, yet client sessions carry no staff role. We return
- * `role: null` with `permissions: ["self"]` until the contract names the
- * client representation.
+ * Contract note (R-024): `ActorContext.role` is nullable per the amended
+ * contract (03-api-contract.yaml ActorContext). Client sessions return
+ * `role: null` with `permissions: ["self"]` and `contactId` set to the
+ * actor id; the invariant `role: null ⟺ contactId non-null` is documented,
+ * not schema-expressible.
  */
 function actorContext(record: SessionRecord): Record<string, unknown> {
   return {

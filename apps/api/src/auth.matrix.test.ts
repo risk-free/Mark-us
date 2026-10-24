@@ -96,7 +96,7 @@ const build = async (): Promise<MatrixContext> => {
   });
 
   const app = createApp(
-    { ...fakeCorpus, auth: { sessions: auth.sessions, staffAuth: auth.staffAuth, magicLinks: auth.magicLinks } },
+    { ...fakeCorpus, auth: { sessions: auth.sessions, staffAuth: auth.staffAuth, magicLinks: auth.magicLinks }, client: auth.client },
     { freshnessSlaHours: 26, secureCookies: true },
   );
   return { app, auth };
@@ -383,5 +383,88 @@ describe("auth matrix — CONTACT (client portal)", () => {
     auth.magicStore.contacts.get("contact-1")!.deletedAt = new Date();
     const verify = await json(app, "/auth/magic-link/verify", { token });
     expect(verify.status).toBe(401);
+  });
+
+  test("client self-scope: own resources 200, foreign resources 404, staff denied 403", async () => {
+    const { app, auth } = await build();
+
+    // Seed client data for contact-1 (self) and contact-2 (foreign).
+    auth.client.addApplication("contact-1", {
+      id: "app-own",
+      contactId: "contact-1",
+      serialNumber: "SN-OWN",
+      status: "DRAFT",
+      filingMethod: "ATTENDED",
+      filingDate: null,
+      deadlineAt: null,
+      version: 1,
+      createdAt: new Date("2026-10-01T00:00:00Z"),
+      updatedAt: new Date("2026-10-01T00:00:00Z"),
+    });
+    auth.client.addOrder("contact-1", "app-own");
+    auth.client.addApplication("contact-2", {
+      id: "app-foreign",
+      contactId: "contact-2",
+      serialNumber: "SN-FOREIGN",
+      status: "DRAFT",
+      filingMethod: "ATTENDED",
+      filingDate: null,
+      deadlineAt: null,
+      version: 1,
+      createdAt: new Date("2026-10-02T00:00:00Z"),
+      updatedAt: new Date("2026-10-02T00:00:00Z"),
+    });
+    auth.client.addOrder("contact-2", "app-foreign");
+    auth.client.addDocument("contact-1", "app-own", { id: "doc-own", filename: "own.pdf", currentVersion: 1 });
+    auth.client.addDocument("contact-2", "app-foreign", { id: "doc-foreign", filename: "foreign.pdf", currentVersion: 1 });
+    auth.client.addConversation("contact-1");
+
+    // Portal session for contact-1.
+    await json(app, "/auth/magic-link", { email: "client@example.cn" });
+    const token = auth.deliverer.tokenOf(0);
+    const verify = await json(app, "/auth/magic-link/verify", { token });
+    expect(verify.status).toBe(200);
+    const cookie = cookieFrom(verify, "mkus_portal");
+
+    // Own application list: 200, contains own application only.
+    const list = await app.request("/applications", { headers: { cookie } });
+    expect(list.status).toBe(200);
+    const listBody = await list.json();
+    expect(listBody.items.map((item: { id: string }) => item.id)).toEqual(["app-own"]);
+    expect(listBody.nextCursor).toBeNull();
+
+    // Own application detail: 200.
+    const ownApp = await app.request("/applications/app-own", { headers: { cookie } });
+    expect(ownApp.status).toBe(200);
+    expect((await ownApp.json()).id).toBe("app-own");
+
+    // Foreign application detail: 404 — no existence confirmation.
+    const foreignApp = await app.request("/applications/app-foreign", { headers: { cookie } });
+    expect(foreignApp.status).toBe(404);
+    expect((await foreignApp.json()).code).toBe("NOT_FOUND");
+
+    // Own timeline: 200; foreign timeline: 404.
+    const timeline = await app.request("/contacts/contact-1/timeline", { headers: { cookie } });
+    expect(timeline.status).toBe(200);
+    const timelineBody = await timeline.json();
+    expect(timelineBody.items.map((item: { type: string }) => item.type)).toContain("CONVERSATION");
+    const foreignTimeline = await app.request("/contacts/contact-2/timeline", { headers: { cookie } });
+    expect(foreignTimeline.status).toBe(404);
+
+    // Own document download: 200 presigned URL shape; foreign document: 404.
+    const download = await app.request("/documents/doc-own/download", { headers: { cookie } });
+    expect(download.status).toBe(200);
+    const downloadBody = await download.json();
+    expect(downloadBody.url).toMatch(/^https?:\/\//);
+    expect(new Date(downloadBody.expiresAt).getTime() - Date.now()).toBeLessThanOrEqual(5 * 60_000);
+    const foreignDownload = await app.request("/documents/doc-foreign/download", { headers: { cookie } });
+    expect(foreignDownload.status).toBe(404);
+
+    // Staff actors are denied on client self-service surfaces.
+    const { cookie: staffCookie } = await loginStaff(app, "admin@markus.example", ADMIN_SEED);
+    const staffList = await app.request("/applications", { headers: { cookie: staffCookie } });
+    expect(staffList.status).toBe(403);
+    const staffDownload = await app.request("/documents/doc-own/download", { headers: { cookie: staffCookie } });
+    expect(staffDownload.status).toBe(403);
   });
 });

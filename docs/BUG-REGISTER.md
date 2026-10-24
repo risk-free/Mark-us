@@ -81,6 +81,7 @@ This document is the **single, living register of defects and latent production 
 | BUG-040 | `turbo.json` declares no `env` allowlist → cache key ignores secrets | Low | STATIC | CLEARED |
 | BUG-041 | `COPY --chown` writes 0-byte files into the runtime image (Linux-only smoke declared) | High | REPRODUCED | CLEARED |
 | BUG-042 | `docker compose --profile app up` hangs on Docker Desktop/Windows — containers stuck `Created` | Medium | REPRODUCED | OPEN |
+| BUG-043 | Accepted zod advisory (GHSA-mrhx-c7xc-m3w5) expires 2026-12-24 — migrate to zod 4 before the gate fails closed | Medium | STATIC | OPEN |
 
 ---
 
@@ -1469,6 +1470,27 @@ Host ports locally remapped (Supabase owns 5432/3000): postgres 55433 · redis 5
 
 **Recommended fix / next check.** Reproduce with `docker compose up -d --verbose` to capture where the start orchestration blocks — candidate is a `depends_on` healthcheck condition that is never scheduled, or a Docker-Desktop start-serialization issue. If it is not product config, file upstream with Docker; otherwise adjust `depends_on`/healthcheck wiring. **Low priority** — CI ubuntu path is green; only our local workflow is affected.
 
+### BUG-043 - Accepted zod advisory (GHSA-mrhx-c7xc-m3w5) expires 2026-12-24 — migrate to zod 4 before the gate fails closed
+
+| Field | Value |
+|---|---|
+| **Raised by** | Architect (memo 0018, 2026-10-25); logged by Debugger |
+| **Raised at** | 2026-10-25 |
+| **Severity** | Medium — time-bound hygiene: the supply-chain gate FAILS CLOSED at exception expiry, so 2026-12-24 is a hard deadline, not a nicety |
+| **Evidence** | STATIC — `infra/supply-chain-exceptions.json` carries GHSA-mrhx-c7xc-m3w5 (zod, high, `reviewBy: 2026-12-24`); the gate (`scripts/check-supply-chain.mjs:86-95`) fails the build when `reviewBy` is in the past ("EXPIRED on <date>. Renew it with a named owner or delete it"); the advisory is patched only in zod 4.6.6 — the v3 line stays vulnerable |
+| **Location** | `infra/supply-chain-exceptions.json` (the exception); zod consumers `@markus/config` and `@markus/llm-gateway` (zod 3.25.76) |
+| **Blocks** | CI after 2026-12-24 (audit job red unless the migration lands or the owner renews) |
+| **Status** | OPEN — deadline 2026-12-24 |
+| **Discussion** | — |
+| **Answered by / Answered at** | ARCH 2026-10-25 (memo 0018) — accepted as an EXPIRING exception under D-19; migration to zod 4 logged as the open hygiene item |
+| **Verified by / Verified at** | direct reads 2026-10-25: exception entry (reviewBy 2026-12-24), gate expiry branch (scripts/check-supply-chain.mjs:86-95, fails closed), advisory fix boundary (zod 4.6.6) |
+
+**Issue.** GHSA-mrhx-c7xc-m3w5 is accepted as an expiring exception under D-19: the v3 line has no fixed release (the patch exists only in 4.6.6), and the fix is a breaking zod-4 migration scheduled as its own backlog item. The mechanism is self-enforcing in the right direction — on 2026-12-24 the audit gate fails closed and turns the accepted advisory back into a red build unless the migration has landed or the entry is renewed.
+
+**Impact.** A missed deadline means CI red for a pre-planned maintenance task: fail-closed keeps it safe and loud, but the migration schedule is the real clock. Logging it in the register makes the deadline visible next to every other open defect.
+
+**Recommended fix.** Migrate `@markus/config` and `@markus/llm-gateway` to zod 4.6.6+ (breaking change across the env schema and gateway response schemas) before 2026-12-24, then delete the exception entry. If the migration slips, renewal with a named owner and a new reviewBy is the fallback — never an unlisted advisory.
+
 ---
 
 ## 3. Patterns worth watching
@@ -1540,6 +1562,7 @@ pnpm build       # not run by the Debugger (see note)
 | 2026-10-12 (Architect) | BUG-041 CLEARED — `api`/`worker` `COPY --chown` removed at `65c2e6c` (plain `COPY` + `RUN chown -R node:node /app`). Runtime re-verification 2026-10-12 with the fixed images: migrate exit 0 (36 tables, `pg_trgm`+`unaccent`), API `/health` `ok:true`, web HTTP 200 (~6 KB), worker opened all 5 queues and exited 0 by design. Residual per ARCH-01 §12 ruling 3: compose-smoke web/api content assertions still need the marker + byte-size floor — separate follow-up. BUG-042 opened — `docker compose --profile app up` hangs on Docker Desktop/Windows (containers `Created` but never started; REPRODUCED twice; manual sequential `docker start` works and the full repo stack verified healthy on postgres 55433 / redis 56380 / api 3001 / web 3010). Docker Desktop service also found `Stopped` during the same window — no fatal logged, 4.95.0 update staged; cause inconclusive, recorded in the entry. M0 progress: CI `migrations` job fixed (DATABASE_URL must target the migrated scratch DB + `prisma generate` added) and green at `afc1d0f`. | Architect |
 | 2026-10-12 (Architect) | BUG-041 ruling-3 residual **done** at `12fc3cf` — compose-smoke now asserts `<!DOCTYPE html>` + `MarkUS` markers and a 3000-byte floor on web, `"ok":true` + 40-byte floor on api `/health` (zero false-green from an empty shell); CI run `38266680404` green. BUG-041 fully closed. | Architect |
 | 2026-10-21 (Debugger) | Public-visibility reconciliation against HEAD a4b9d3b: all 40 OPEN rows re-verified against HEAD and CI run 39469269982 (all green, 10/10 jobs). 31 rows marked CLEARED with HEAD/CI evidence; 2 composite rows amended in place (BUG-014 currency landed, per-class line-item dimension unverified; BUG-038 root + mandatory lockfile fixed, devDependencies still shipped); 7 remain genuinely OPEN (BUG-015, BUG-017, BUG-018, BUG-030, BUG-037, BUG-039, BUG-042). D-31 floor closure recorded in DECISIONS.md (run 39469269982: web body 42905 B vs floor 34000). | Debugger |
+| 2026-10-25 (Debugger) | BUG-043 opened — zod GHSA-mrhx-c7xc-m3w5 accepted as an EXPIRING exception (`infra/supply-chain-exceptions.json`, reviewBy 2026-12-24, D-19 mechanism). Hygiene item "migrate to zod 4 before exception expiry" logged OPEN; the supply-chain gate fails closed at expiry, so 2026-12-24 is a hard deadline. Raised by the Architect (memo 0018); facts independently verified by the Debugger (exception entry, gate expiry branch at scripts/check-supply-chain.mjs:86-95, patch boundary zod 4.6.6). | Debugger |
 | | | |
 | | | |
 

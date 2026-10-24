@@ -700,10 +700,14 @@ paths:
       operationId: getContactTimeline
       tags: [crm]
       summary: Unified client-visible history (stage moves, orders, filings, messages)
+      description: |
+        Client actors (role: null) read only their own timeline: the contactId path must equal
+        the session's contactId, any other contactId returns 404 and confirms nothing. Staff
+        actors are not served on this self-service surface (403).
       x-contract-status: provisional
-      x-phase: P3
-      x-permission: contact.read
-      x-scope: owner-or-all
+      x-phase: P2
+      x-permission: self
+      x-scope: own-contact
       responses:
         "200":
           description: Timeline page, oldest first
@@ -1337,26 +1341,21 @@ paths:
     get:
       operationId: listApplications
       tags: [filings]
-      summary: List applications (attorney queue)
+      summary: List the client's own applications (self-service surface)
+      description: |
+        Client actors (role: null) see only applications linked to their contact through an
+        order, newest first, cursor-paginated. Staff actors are not served on this surface
+        (403) — the staff attorney queue is not implemented in this phase.
       x-contract-status: provisional
-      x-phase: P5
-      x-permission: case.read
-      x-scope: assigned-unless-scope-all
+      x-phase: P2
+      x-permission: self
+      x-scope: own-contact
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
-        - name: status
-          in: query
-          schema: { $ref: "#/components/schemas/ApplicationStatus" }
-        - name: dueWithinDays
-          in: query
-          schema: { type: integer, minimum: 0, maximum: 365 }
-        - name: scope
-          in: query
-          schema: { type: string, enum: [mine, all] }
       responses:
         "200":
-          description: Application page
+          description: Application page, client-safe projection
           content:
             application/json:
               schema:
@@ -1365,7 +1364,7 @@ paths:
                 properties:
                   items:
                     type: array
-                    items: { $ref: "#/components/schemas/Application" }
+                    items: { $ref: "#/components/schemas/ApplicationListItem" }
                   nextCursor: { type: ["string", "null"] }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -1410,10 +1409,15 @@ paths:
       operationId: getApplication
       tags: [filings]
       summary: Application detail with office actions and deadline
+      description: |
+        Client actors (role: null) receive only applications linked to their contact through an
+        order; any other applicationId returns 404 and confirms nothing. Staff actors are not
+        served on this self-service surface (403). The projection excludes internal notes and
+        assessment internals.
       x-contract-status: provisional
-      x-phase: P5
-      x-permission: case.read
-      x-scope: assigned-unless-scope-all
+      x-phase: P2
+      x-permission: self
+      x-scope: own-contact
       responses:
         "200":
           description: Application
@@ -1699,10 +1703,14 @@ paths:
       operationId: downloadDocument
       tags: [documents]
       summary: Issue a short-lived presigned download URL for the current version
-      x-contract-status: final
+      description: |
+        Client actors (role: null) receive a URL only for documents on their own applications;
+        any other documentId returns 404 and confirms nothing. Staff actors are not served on
+        this self-service surface (403).
+      x-contract-status: provisional
       x-phase: P2
-      x-permission: document.read
-      x-scope: owner-or-all
+      x-permission: self
+      x-scope: own-contact
       x-audit: DOCUMENT_DOWNLOADED
       parameters:
         - name: version
@@ -3478,6 +3486,22 @@ components:
         lastTsdrSyncAt: { type: string, format: date-time, nullable: true }
         externalSource: { type: string, enum: [MANUAL, WEBCOM, BULK_IMPORT], nullable: true }
         externalReference: { type: string, nullable: true }
+        deadlineAt: { type: string, format: date-time, nullable: true }
+        version: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      additionalProperties: false
+
+    ApplicationListItem:
+      type: object
+      required: [id, contactId, status, filingMethod, version, createdAt]
+      properties:
+        id: { type: string }
+        contactId: { type: string }
+        serialNumber: { type: string, nullable: true }
+        status: { $ref: "#/components/schemas/ApplicationStatus" }
+        filingMethod: { $ref: "#/components/schemas/FilingMethod" }
+        filingDate: { type: string, format: date, nullable: true }
         deadlineAt: { type: string, format: date-time, nullable: true }
         version: { type: integer, minimum: 1 }
         createdAt: { type: string, format: date-time }

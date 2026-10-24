@@ -29,6 +29,7 @@ import {
 
 import { createApp } from "./app.js";
 import { createInMemoryAuth, type InMemoryAuth } from "./auth/fakes.js";
+import { PrismaClientStore } from "./client.js";
 
 jest.setTimeout(180_000);
 
@@ -91,6 +92,7 @@ describe("USPTO corpus search API against PostgreSQL 16 (M7.2)", () => {
           disclaimerVersion: DISCLAIMER_VERSION,
         }),
         auth,
+        client: new PrismaClientStore(prisma as unknown as PrismaClient, "http://localhost:3001"),
       },
       { freshnessSlaHours: 26 },
     );
