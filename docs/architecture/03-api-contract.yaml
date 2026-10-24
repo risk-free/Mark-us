@@ -2804,6 +2804,8 @@ components:
       description: |
         `MASTER_ADMIN` full control; `EXPERT` read-everything plus case, document and filing writes;
         `SALESPERSON` own-record access only.
+        For client (CONTACT) sessions role is `null` and the actor carries exactly `["self"]`;
+        the invariant role:null ⟺ contactId non-null is documented, not schema-expressible.
 
     StaffStatus:
       type: string
@@ -2816,10 +2818,12 @@ components:
         actorId: { type: string }
         role: { $ref: "#/components/schemas/Role" }
         locale: { type: string, enum: [zh-CN, en-US, zh-HK] }
-        contactId: { type: string, nullable: true, description: Set for client sessions only. }
+        contactId: { type: string, nullable: true, description: Set for client sessions only. role:null ⟺ contactId non-null. }
         permissions:
           type: array
-          description: Effective permission strings, resolved server-side; the client never decides.
+          description: |
+            Effective permission strings, resolved server-side; the client never decides.
+            Client (CONTACT) actors carry exactly ["self"] and are deny-by-default on staff surfaces.
           items: { type: string }
       additionalProperties: false
 
