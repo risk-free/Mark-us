@@ -18,7 +18,7 @@
     "@markus/kb": "workspace:*",
     "@markus/llm-gateway": "workspace:*",
     "@markus/tm-data": "workspace:*",
-    "@prisma/client": "^6.19.3",
+    "@prisma/client": "^7.10.1",
     "argon2": "^0.45.1",
     "dotenv": "^16.6.1",
     "hono": "^4.13.13",
