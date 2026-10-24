@@ -16,18 +16,18 @@
   ],
   "exceptions": [
     {
-      "ghsa": "GHSA-vfj7-8cjw-p6xm",
-      "package": "braces",
+      "ghsa": "GHSA-mrhx-c7xc-m3w5",
+      "package": "zod",
       "severity": "high",
-      "title": "stack-exhaustion denial of service through deeply nested patterns",
-      "fixedUpstream": false,
-      "chain": "eslint-config-next@15.5.27 > @next/eslint-plugin-next@15.5.27 > fast-glob@3.3.1 > micromatch@4.0.8 > braces@3.0.3",
-      "runtimeExposure": "none - build-time only. braces is reachable only from the ESLint layer (pnpm lint). It is not in apps/web's standalone output, not in the api or worker images' runtime graph, and never executes on a request path.",
-      "reason": "No fixed release exists: braces 3.0.3 is both the latest version and the vulnerable one (advisory reports patched_versions '<0.0.0'). micromatch 4.0.8 is the latest micromatch and depends on braces ^3.0.2, and fast-glob - at any version - depends on micromatch. The only way to remove the package is to drop eslint-config-next entirely, which removes the Next lint layer agreed in DQ-004.",
-      "exploitability": "An attacker would need to control the glob patterns passed to the linter on a developer machine or in CI. No user input reaches this code path.",
-      "owner": "Developer (removal) / Architect (renewal)",
-      "reviewBy": "2026-12-29",
-      "revisitWhen": "braces or micromatch ships a fixed release, or Next 16's eslint plugin drops fast-glob"
+      "title": "Zod can exhaust memory while validating oversized constrained collections",
+      "fixedUpstream": true,
+      "chain": "zod@3.25.76, a direct dependency of @markus/config and @markus/llm-gateway (declared but unused in @markus/core)",
+      "runtimeExposure": "No untrusted oversized arrays reach a zod array schema. @markus/config parses operator-controlled environment variables once at process boot - a hostile value kills the process it was fed to, which is not a remotely triggerable denial of service. @markus/llm-gateway validates responses from the first-party configured LLM provider over authenticated TLS (DashScope/OpenAI-compatible); the parsed arrays (choices, embeddings) are bounded by the provider protocol, and exploitation would require a compromised provider endpoint. The exploit primitive (unbounded issue accumulation in array parsing) needs attacker-controlled array lengths, which neither consumer exposes.",
+      "reason": "No fixed release exists on the zod 3 line: the advisory (CVE-2023-54404) is patched only in 4.6.6 and v3 remains vulnerable. Migrating to zod 4 is a breaking change across the env schema and gateway response schemas and is scheduled as its own backlog item rather than bundled into P2.1.",
+      "exploitability": "An attacker must either control the operator's environment (already game over) or the TLS-authenticated LLM provider endpoint. No user request input flows into a zod array schema: the API validates request bodies with hand-rolled strict validators (apps/api/src/auth/routes.ts).",
+      "owner": "Developer (removal via zod 4 migration) / Architect (renewal)",
+      "reviewBy": "2026-12-24",
+      "revisitWhen": "zod 4.6.6 migration lands on the P-track backlog"
     }
   ]
 }

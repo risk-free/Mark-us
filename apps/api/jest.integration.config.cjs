@@ -13,6 +13,7 @@ module.exports = {
   testTimeout: 180_000,
   moduleNameMapper: {
     ...base.moduleNameMapper,
+    "^@markus/core$": "<rootDir>/../../packages/core/src/index.ts",
     "^@markus/tm-data$": "<rootDir>/../../packages/tm-data/src/index.ts",
   },
 };
