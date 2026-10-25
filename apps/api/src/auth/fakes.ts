@@ -7,6 +7,7 @@
 
 import { InMemoryRateLimiter, type RateLimiter } from "../rate-limit.js";
 import type { ApplicationItem, ClientStore, TimelineEvent } from "../client.js";
+import type { NotificationPage, NotificationRecord, NotificationStore } from "../notifications.js";
 import { InMemoryKeyValueStore, type KeyValueStore } from "./kv.js";
 import {
   MagicLinkService,
@@ -140,6 +141,111 @@ export class RecordingMagicLinkDeliverer implements MagicLinkDeliverer {
   }
 }
 
+interface StoredNotification {
+  id: string;
+  contactId: string;
+  kind: string;
+  title: string;
+  body: string | null;
+  link: string | null;
+  entityType: string | null;
+  entityId: string | null;
+  readAt: Date | null;
+  createdAt: Date;
+}
+
+/** In-memory double of the notification store port (tests and DB-free dev). */
+export class InMemoryNotificationStore implements NotificationStore {
+  readonly notifications = new Map<string, StoredNotification>();
+
+  constructor() {}
+
+  addNotification(
+    contactId: string,
+    input: {
+      kind: string;
+      title?: string;
+      body?: string;
+      link?: string;
+      entityType?: string;
+      entityId?: string;
+      createdAt?: Date;
+      readAt?: Date;
+    },
+  ): string {
+    const id = `not_${this.notifications.size + 1}`;
+    this.notifications.set(id, {
+      id,
+      contactId,
+      kind: input.kind,
+      title: input.title ?? input.kind,
+      body: input.body ?? null,
+      link: input.link ?? null,
+      entityType: input.entityType ?? null,
+      entityId: input.entityId ?? null,
+      readAt: input.readAt ?? null,
+      createdAt: input.createdAt ?? new Date(),
+    });
+    return id;
+  }
+
+  async listNotifications(input: {
+    actorType: "STAFF" | "CONTACT";
+    contactId?: string;
+    cursor?: string;
+    limit?: number;
+    unreadOnly?: boolean;
+    kind?: string;
+  }): Promise<NotificationPage> {
+    const limit = input.limit ?? 25;
+    let rows = [...this.notifications.values()].filter(
+      (n) => input.actorType === "STAFF" || n.contactId === input.contactId,
+    );
+    if (input.kind !== undefined) rows = rows.filter((n) => n.kind === input.kind);
+    if (input.unreadOnly === true) rows = rows.filter((n) => n.readAt === null);
+    rows.sort(
+      (a, b) =>
+        b.createdAt.getTime() - a.createdAt.getTime() || (b.id < a.id ? 1 : b.id > a.id ? -1 : 0),
+    );
+    let start = 0;
+    if (input.cursor) {
+      const found = rows.findIndex((n) => n.id === input.cursor);
+      start = found < 0 ? 0 : found + 1;
+    }
+    const page = rows.slice(start, start + limit + 1);
+    const items = page.slice(0, limit).map((n) => ({
+      id: n.id,
+      kind: n.kind,
+      title: n.title,
+      body: n.body,
+      link: n.link,
+      entityType: n.entityType,
+      entityId: n.entityId,
+      readAt: n.readAt?.toISOString() ?? null,
+      createdAt: n.createdAt.toISOString(),
+    }));
+    return {
+      items,
+      unreadCount: rows.filter((n) => n.readAt === null).length,
+      nextCursor: page.length > limit ? page[limit]?.id ?? null : null,
+    };
+  }
+
+  async markRead(notificationId: string, contactId?: string): Promise<boolean> {
+    const n = this.notifications.get(notificationId);
+    if (n === undefined) return false;
+    if (contactId !== undefined && n.contactId !== contactId) return false;
+    if (n.readAt !== null) return true;
+    n.readAt = new Date();
+    return true;
+  }
+
+  async get(notificationId: string): Promise<NotificationRecord | null> {
+    const n = this.notifications.get(notificationId);
+    return n === undefined ? null : { id: n.id, contactId: n.contactId, readAt: n.readAt };
+  }
+}
+
 interface OrderRow {
   id: string;
   contactId: string;
@@ -264,6 +370,7 @@ export interface InMemoryAuth {
   staffAuth: StaffAuthService;
   magicLinks: MagicLinkService;
   client: InMemoryClientStore;
+  notifications: InMemoryNotificationStore;
   kv: KeyValueStore;
   index: SessionIndexStore;
   staffStore: InMemoryStaffCredentialStore;
@@ -301,6 +408,7 @@ export function createInMemoryAuth(options: InMemoryAuthOptions = {}): InMemoryA
     now: () => now(),
   });
   const client = new InMemoryClientStore(options.publicBaseUrl ?? "https://portal.test");
+  const notifications = new InMemoryNotificationStore();
   const magicLinks = new MagicLinkService({
     store: magicStore,
     sessions,
@@ -316,6 +424,7 @@ export function createInMemoryAuth(options: InMemoryAuthOptions = {}): InMemoryA
     staffAuth,
     magicLinks,
     client,
+    notifications,
     kv,
     index,
     staffStore,

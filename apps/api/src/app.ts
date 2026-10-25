@@ -35,6 +35,7 @@ import {
 } from "./auth/index.js";
 import { METRICS_CONTENT_TYPE, type MetricsRegistry } from "./metrics.js";
 import { createClientRoutes, type ClientStore } from "./client.js";
+import { createNotificationRoutes, type NotificationStore } from "./notifications.js";
 import { clientIp, type RateLimiter } from "./rate-limit.js";
 
 export interface CorpusSearcher {
@@ -92,6 +93,8 @@ export interface AppServices {
   auth: AuthServices;
   /** Client self-service read surface (P2.2); absent disables the client routes. */
   client?: ClientStore;
+  /** Client notifications (P2.3); absent disables the notification routes. */
+  notifications?: NotificationStore;
   /** Optional RAG assistant (P6.3); degrades to cited references when absent. */
   assistant?: AssistantService;
   /** Optional 24 h result cache (M8.1); active only with both versions set. */
@@ -207,6 +210,10 @@ export function createApp(services: AppServices, options: AppOptions): Hono {
 
   if (services.client) {
     app.route("/", createClientRoutes({ store: services.client }));
+  }
+
+  if (services.notifications) {
+    app.route("/", createNotificationRoutes({ store: services.notifications }));
   }
 
   app.get("/health", (c) =>

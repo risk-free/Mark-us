@@ -96,7 +96,7 @@ const build = async (): Promise<MatrixContext> => {
   });
 
   const app = createApp(
-    { ...fakeCorpus, auth: { sessions: auth.sessions, staffAuth: auth.staffAuth, magicLinks: auth.magicLinks }, client: auth.client },
+    { ...fakeCorpus, auth: { sessions: auth.sessions, staffAuth: auth.staffAuth, magicLinks: auth.magicLinks }, client: auth.client, notifications: auth.notifications },
     { freshnessSlaHours: 26, secureCookies: true },
   );
   return { app, auth };
@@ -466,5 +466,91 @@ describe("auth matrix — CONTACT (client portal)", () => {
     expect(staffList.status).toBe(403);
     const staffDownload = await app.request("/documents/doc-own/download", { headers: { cookie: staffCookie } });
     expect(staffDownload.status).toBe(403);
+  });
+
+  test("client notifications: own only, mark read idempotent, foreign 404, staff unchanged", async () => {
+    const { app, auth } = await build();
+
+    auth.notifications.addNotification("contact-1", {
+      kind: "FILING",
+      title: "Filing deadline approaching",
+      body: "Your trademark filing deadline is in 7 days.",
+      createdAt: new Date("2026-10-01T00:00:00Z"),
+    });
+    auth.notifications.addNotification("contact-1", {
+      kind: "PAYMENT",
+      title: "Invoice ready",
+      readAt: new Date("2026-10-02T00:00:00Z"),
+    });
+    const foreignId = auth.notifications.addNotification("contact-2", {
+      kind: "FILING",
+      title: "Foreign notice",
+      createdAt: new Date("2026-10-03T00:00:00Z"),
+    });
+
+    // Portal session for contact-1.
+    await json(app, "/auth/magic-link", { email: "client@example.cn" });
+    const token = auth.deliverer.tokenOf(0);
+    const verify = await json(app, "/auth/magic-link/verify", { token });
+    expect(verify.status).toBe(200);
+    const verifyBody = await verify.json();
+    const cookie = cookieFrom(verify, "mkus_portal");
+    const csrf = verifyBody.csrfToken as string;
+
+    // List: own notifications only, unreadCount correct.
+    const list = await app.request("/notifications", { headers: { cookie } });
+    expect(list.status).toBe(200);
+    const listBody = await list.json();
+    expect(listBody.items.map((item: { kind: string; title: string }) => `${item.kind}:${item.title}`)).toEqual(
+      expect.arrayContaining(["FILING:Filing deadline approaching", "PAYMENT:Invoice ready"]),
+    );
+    expect(listBody.items.map((item: { title: string }) => item.title)).not.toContain("Foreign notice");
+    expect(listBody.unreadCount).toBe(1);
+    expect(listBody.nextCursor).toBeNull();
+
+    // unreadOnly filter.
+    const unread = await app.request("/notifications?unreadOnly=true", { headers: { cookie } });
+    expect(unread.status).toBe(200);
+    expect((await unread.json()).items.map((item: { title: string }) => item.title)).toEqual([
+      "Filing deadline approaching",
+    ]);
+
+    // Mark own read: idempotent (204, then 204).
+    const filing = listBody.items.find((item: { title: string }) => item.title === "Filing deadline approaching");
+    const first = await app.request(`/notifications/${filing.id}/read`, {
+      method: "POST",
+      headers: { cookie, "x-csrf-token": csrf },
+    });
+    expect(first.status).toBe(204);
+    const replay = await app.request(`/notifications/${filing.id}/read`, {
+      method: "POST",
+      headers: { cookie, "x-csrf-token": csrf },
+    });
+    expect(replay.status).toBe(204);
+
+    // Foreign notification: 404, no existence confirmation.
+    const foreign = await app.request(`/notifications/${foreignId}/read`, {
+      method: "POST",
+      headers: { cookie, "x-csrf-token": csrf },
+    });
+    expect(foreign.status).toBe(404);
+    expect((await foreign.json()).code).toBe("NOT_FOUND");
+
+    // Staff actors unchanged: permission-gated, see all, can mark any read.
+    const { cookie: staffCookie, csrf: staffCsrf } = await loginStaff(app, "admin@markus.example", ADMIN_SEED);
+    const staffList = await app.request("/notifications", { headers: { cookie: staffCookie } });
+    expect(staffList.status).toBe(200);
+    expect((await staffList.json()).items.map((item: { title: string }) => item.title)).toEqual(
+      expect.arrayContaining(["Filing deadline approaching", "Foreign notice"]),
+    );
+    const staffRead = await app.request(`/notifications/${foreignId}/read`, {
+      method: "POST",
+      headers: { cookie: staffCookie, "x-csrf-token": staffCsrf },
+    });
+    expect(staffRead.status).toBe(204);
+
+    // Staff surfaces elsewhere are untouched.
+    const staffIngest = await app.request("/tm/ingest/runs", { headers: { cookie: staffCookie } });
+    expect(staffIngest.status).toBe(200);
   });
 });

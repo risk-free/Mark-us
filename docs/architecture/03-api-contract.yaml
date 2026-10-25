@@ -2006,9 +2006,15 @@ paths:
       operationId: listNotifications
       tags: [notifications]
       summary: Notification inbox for the actor
+      description: |
+        CONTACT actors (role: null) see only their own contactId-scoped
+        notifications, cursor-paginated; foreign contactIds return an empty
+        page — never 404, never 403, never an existence leak. Staff actors are
+        gated by notification.read and see all notifications (unchanged).
       x-contract-status: provisional
       x-phase: P1
       x-permission: notification.read
+      x-scope: own-contact
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
@@ -2044,9 +2050,14 @@ paths:
       operationId: markNotificationRead
       tags: [notifications]
       summary: Mark a notification read (idempotent)
+      description: |
+        CONTACT actors can only mark their own notifications; any other
+        notificationId returns 404 and confirms nothing. Staff actors are
+        gated by notification.write (unchanged).
       x-contract-status: final
       x-phase: P1
       x-permission: notification.write
+      x-scope: own-contact
       responses:
         "204": { description: Marked read }
         "401": { $ref: "#/components/responses/Unauthorized" }
