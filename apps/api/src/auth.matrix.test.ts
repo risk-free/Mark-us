@@ -96,7 +96,7 @@ const build = async (): Promise<MatrixContext> => {
   });
 
   const app = createApp(
-    { ...fakeCorpus, auth: { sessions: auth.sessions, staffAuth: auth.staffAuth, magicLinks: auth.magicLinks }, client: auth.client, notifications: auth.notifications },
+    { ...fakeCorpus, auth: { sessions: auth.sessions, staffAuth: auth.staffAuth, magicLinks: auth.magicLinks }, client: auth.client, documents: auth.documents, notifications: auth.notifications },
     { freshnessSlaHours: 26, secureCookies: true },
   );
   return { app, auth };
@@ -451,21 +451,10 @@ describe("auth matrix — CONTACT (client portal)", () => {
     const foreignTimeline = await app.request("/contacts/contact-2/timeline", { headers: { cookie } });
     expect(foreignTimeline.status).toBe(404);
 
-    // Own document download: 200 presigned URL shape; foreign document: 404.
-    const download = await app.request("/documents/doc-own/download", { headers: { cookie } });
-    expect(download.status).toBe(200);
-    const downloadBody = await download.json();
-    expect(downloadBody.url).toMatch(/^https?:\/\//);
-    expect(new Date(downloadBody.expiresAt).getTime() - Date.now()).toBeLessThanOrEqual(5 * 60_000);
-    const foreignDownload = await app.request("/documents/doc-foreign/download", { headers: { cookie } });
-    expect(foreignDownload.status).toBe(404);
-
     // Staff actors are denied on client self-service surfaces.
     const { cookie: staffCookie } = await loginStaff(app, "admin@markus.example", ADMIN_SEED);
     const staffList = await app.request("/applications", { headers: { cookie: staffCookie } });
     expect(staffList.status).toBe(403);
-    const staffDownload = await app.request("/documents/doc-own/download", { headers: { cookie: staffCookie } });
-    expect(staffDownload.status).toBe(403);
   });
 
   test("client notifications: own only, mark read idempotent, foreign 404, staff unchanged", async () => {
@@ -548,6 +537,120 @@ describe("auth matrix — CONTACT (client portal)", () => {
       headers: { cookie: staffCookie, "x-csrf-token": staffCsrf },
     });
     expect(staffRead.status).toBe(204);
+
+    // Staff surfaces elsewhere are untouched.
+    const staffIngest = await app.request("/tm/ingest/runs", { headers: { cookie: staffCookie } });
+    expect(staffIngest.status).toBe(200);
+  });
+
+  test("client documents: own only, get/download own 200, foreign 404, upload own 201, staff unchanged", async () => {
+    const { app, auth } = await build();
+
+    // Seed documents for contact-1 (self) and contact-2 (foreign).
+    const docOwnId = auth.documents.addDocument("contact-1", {
+      filename: "own.pdf",
+      kind: "INVOICE",
+      currentVersion: 1,
+      applicationId: "app-own",
+    });
+    auth.documents.addDocument("contact-2", {
+      filename: "foreign.pdf",
+      kind: "INVOICE",
+      currentVersion: 1,
+      applicationId: "app-foreign",
+    });
+
+    // Portal session for contact-1.
+    await json(app, "/auth/magic-link", { email: "client@example.cn" });
+    const token = auth.deliverer.tokenOf(0);
+    const verify = await json(app, "/auth/magic-link/verify", { token });
+    expect(verify.status).toBe(200);
+    const verifyBody = await verify.json();
+    const cookie = cookieFrom(verify, "mkus_portal");
+    const csrf = verifyBody.csrfToken as string;
+
+    // List: own documents only.
+    const list = await app.request("/documents", { headers: { cookie } });
+    expect(list.status).toBe(200);
+    const listBody = await list.json();
+    expect(listBody.items.map((item: { id: string; filename: string }) => `${item.id}:${item.filename}`)).toEqual(
+      expect.arrayContaining([`${docOwnId}:own.pdf`]),
+    );
+    expect(listBody.items.map((item: { filename: string }) => item.filename)).not.toContain("foreign.pdf");
+    expect(listBody.nextCursor).toBeNull();
+
+    // Get own document: 200.
+    const ownDoc = await app.request(`/documents/${docOwnId}`, { headers: { cookie } });
+    expect(ownDoc.status).toBe(200);
+    expect((await ownDoc.json()).id).toBe(docOwnId);
+
+    // Foreign document get: 404.
+    const foreignId = [...auth.documents.documents.entries()].find(([, d]) => d.contactId === "contact-2")?.[0];
+    expect(foreignId).toBeDefined();
+    const foreignDoc = await app.request(`/documents/${foreignId}`, { headers: { cookie } });
+    expect(foreignDoc.status).toBe(404);
+    expect((await foreignDoc.json()).code).toBe("NOT_FOUND");
+
+    // Download own document: 200 presigned URL shape.
+    const download = await app.request(`/documents/${docOwnId}/download`, { headers: { cookie } });
+    expect(download.status).toBe(200);
+    const downloadBody = await download.json();
+    expect(downloadBody.url).toMatch(/^https?:\/\//);
+    expect(new Date(downloadBody.expiresAt).getTime() - Date.now()).toBeLessThanOrEqual(5 * 60_000);
+
+    // Foreign document download: 404.
+    const foreignDownload = await app.request(`/documents/${foreignId}/download`, { headers: { cookie } });
+    expect(foreignDownload.status).toBe(404);
+
+    // Upload own document: 201.
+    const upload = await app.request("/documents", {
+      method: "POST",
+      headers: { cookie, "x-csrf-token": csrf, "content-type": "application/json" },
+      body: JSON.stringify({
+        filename: "new-filing.pdf",
+        kind: "OA_RESPONSE",
+        sizeBytes: 1024,
+        mimeType: "application/pdf",
+        sha256: "a".repeat(64),
+      }),
+    });
+    expect(upload.status).toBe(201);
+    const uploadBody = await upload.json();
+    expect(uploadBody.documentId).toBeDefined();
+    expect(uploadBody.uploadUrl).toMatch(/^https?:\/\//);
+    expect(new Date(uploadBody.expiresAt).getTime() - Date.now()).toBeLessThanOrEqual(5 * 60_000);
+
+    // Uploaded document shows in list.
+    const list2 = await app.request("/documents", { headers: { cookie } });
+    expect(list2.status).toBe(200);
+    expect((await list2.json()).items.map((item: { filename: string }) => item.filename)).toContain("new-filing.pdf");
+
+    // Staff actors unchanged: permission-gated, see all, can get/download foreign.
+    const { cookie: staffCookie, csrf: staffCsrf } = await loginStaff(app, "admin@markus.example", ADMIN_SEED);
+    const staffList = await app.request("/documents", { headers: { cookie: staffCookie } });
+    expect(staffList.status).toBe(200);
+    expect((await staffList.json()).items.map((item: { filename: string }) => item.filename)).toEqual(
+      expect.arrayContaining(["own.pdf", "foreign.pdf", "new-filing.pdf"]),
+    );
+    const staffGetForeign = await app.request(`/documents/${foreignId}`, { headers: { cookie: staffCookie } });
+    expect(staffGetForeign.status).toBe(200);
+    const staffDownloadForeign = await app.request(`/documents/${foreignId}/download`, { headers: { cookie: staffCookie } });
+    expect(staffDownloadForeign.status).toBe(200);
+
+    // Staff can create documents (document.create).
+    const staffUpload = await app.request("/documents", {
+      method: "POST",
+      headers: { cookie: staffCookie, "x-csrf-token": staffCsrf, "content-type": "application/json" },
+      body: JSON.stringify({
+        filename: "staff-doc.pdf",
+        kind: "INVOICE",
+        sizeBytes: 512,
+        mimeType: "application/pdf",
+        sha256: "b".repeat(64),
+        contactId: "contact-2",
+      }),
+    });
+    expect(staffUpload.status).toBe(201);
 
     // Staff surfaces elsewhere are untouched.
     const staffIngest = await app.request("/tm/ingest/runs", { headers: { cookie: staffCookie } });

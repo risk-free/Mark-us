@@ -7,6 +7,7 @@
 
 import { InMemoryRateLimiter, type RateLimiter } from "../rate-limit.js";
 import type { ApplicationItem, ClientStore, TimelineEvent } from "../client.js";
+import type { DocumentPage, DocumentRecord, DocumentStore, UploadTicket } from "../documents.js";
 import type { NotificationPage, NotificationRecord, NotificationStore } from "../notifications.js";
 import { InMemoryKeyValueStore, type KeyValueStore } from "./kv.js";
 import {
@@ -354,12 +355,121 @@ export class InMemoryClientStore implements ClientStore {
       nextCursor: page.length > limit ? page[limit]?.id ?? null : null,
     };
   }
+}
 
-  async getDocumentDownload(documentId: string, contactId: string): Promise<{ url: string; expiresAt: Date } | null> {
-    const doc = [...this.documents.values()].find((d) => d.id === documentId && d.contactId === contactId && d.applicationId !== null);
-    if (!doc) return null;
+interface StoredDocument {
+  id: string;
+  contactId: string;
+  filename: string;
+  kind: string;
+  currentVersion: number;
+  applicationId: string | null;
+  trademarkId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** In-memory double of the document store port (tests and DB-free dev). */
+export class InMemoryDocumentStore implements DocumentStore {
+  readonly documents = new Map<string, StoredDocument>();
+
+  constructor() {}
+
+  addDocument(contactId: string, input: Partial<StoredDocument> & { filename: string; kind: string }): string {
+    const id = `doc_${this.documents.size + 1}`;
+    this.documents.set(id, {
+      id,
+      contactId,
+      filename: input.filename,
+      kind: input.kind,
+      currentVersion: input.currentVersion ?? 1,
+      applicationId: input.applicationId ?? null,
+      trademarkId: input.trademarkId ?? null,
+      createdAt: input.createdAt ?? new Date(),
+      updatedAt: input.updatedAt ?? new Date(),
+    });
+    return id;
+  }
+
+  async listDocuments(input: {
+    actorType: "STAFF" | "CONTACT";
+    contactId?: string;
+    cursor?: string;
+    limit?: number;
+  }): Promise<DocumentPage> {
+    const limit = input.limit ?? 25;
+    const rows = [...this.documents.values()].filter(
+      (d) => input.actorType === "STAFF" || d.contactId === input.contactId,
+    );
+    rows.sort(
+      (a, b) =>
+        b.createdAt.getTime() - a.createdAt.getTime() || (b.id < a.id ? 1 : b.id > a.id ? -1 : 0),
+    );
+    let start = 0;
+    if (input.cursor) {
+      const found = rows.findIndex((d) => d.id === input.cursor);
+      start = found < 0 ? 0 : found + 1;
+    }
+    const page = rows.slice(start, start + limit + 1);
+    const items = page.slice(0, limit).map((d) => ({
+      id: d.id,
+      contactId: d.contactId,
+      filename: d.filename,
+      kind: d.kind,
+      currentVersion: d.currentVersion,
+      applicationId: d.applicationId,
+      trademarkId: d.trademarkId,
+      createdAt: d.createdAt.toISOString(),
+      updatedAt: d.updatedAt.toISOString(),
+    }));
     return {
-      url: `${this.publicBaseUrl}/documents/${documentId}/content?version=${doc.currentVersion}`,
+      items,
+      nextCursor: page.length > limit ? page[limit]?.id ?? null : null,
+    };
+  }
+
+  async getDocument(documentId: string, contactId?: string): Promise<DocumentRecord | null> {
+    const d = this.documents.get(documentId);
+    if (d === undefined) return null;
+    if (contactId !== undefined && d.contactId !== contactId) return null;
+    return { id: d.id, contactId: d.contactId, applicationId: d.applicationId, currentVersion: d.currentVersion, filename: d.filename };
+  }
+
+  async getDocumentDownload(documentId: string, contactId?: string): Promise<{ url: string; expiresAt: Date } | null> {
+    const d = this.documents.get(documentId);
+    if (d === undefined) return null;
+    if (contactId !== undefined && d.contactId !== contactId) return null;
+    return {
+      url: `https://portal.test/documents/${documentId}/content?version=${d.currentVersion}`,
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    };
+  }
+
+  async createDocumentUpload(input: {
+    contactId: string;
+    filename: string;
+    kind: string;
+    sizeBytes: number;
+    mimeType: string;
+    sha256: string;
+    trademarkId?: string | null;
+    applicationId?: string | null;
+  }): Promise<UploadTicket> {
+    const id = `doc_${this.documents.size + 1}`;
+    this.documents.set(id, {
+      id,
+      contactId: input.contactId,
+      filename: input.filename,
+      kind: input.kind,
+      currentVersion: 1,
+      applicationId: input.applicationId ?? null,
+      trademarkId: input.trademarkId ?? null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    return {
+      documentId: id,
+      uploadUrl: `https://portal.test/documents/${id}/upload`,
       expiresAt: new Date(Date.now() + 5 * 60 * 1000),
     };
   }
@@ -370,6 +480,7 @@ export interface InMemoryAuth {
   staffAuth: StaffAuthService;
   magicLinks: MagicLinkService;
   client: InMemoryClientStore;
+  documents: InMemoryDocumentStore;
   notifications: InMemoryNotificationStore;
   kv: KeyValueStore;
   index: SessionIndexStore;
@@ -408,6 +519,7 @@ export function createInMemoryAuth(options: InMemoryAuthOptions = {}): InMemoryA
     now: () => now(),
   });
   const client = new InMemoryClientStore(options.publicBaseUrl ?? "https://portal.test");
+  const documents = new InMemoryDocumentStore();
   const notifications = new InMemoryNotificationStore();
   const magicLinks = new MagicLinkService({
     store: magicStore,
@@ -424,6 +536,7 @@ export function createInMemoryAuth(options: InMemoryAuthOptions = {}): InMemoryA
     staffAuth,
     magicLinks,
     client,
+    documents,
     notifications,
     kv,
     index,

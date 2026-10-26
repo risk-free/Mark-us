@@ -1606,6 +1606,36 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
 
   /documents:
+    get:
+      operationId: listDocuments
+      tags: [documents]
+      summary: List the CONTACT actor's own documents, cursor-paginated
+      description: |
+        CONTACT actors (role: null) see only their own contactId-scoped documents; foreign
+        documents return an empty page and confirm nothing. Staff actors keep the
+        contract-default gate (document.read) and see all documents.
+      x-contract-status: final
+      x-phase: P2
+      x-permission: document.read
+      x-scope: own-contact
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Document list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Document" }
+                  nextCursor: { type: ["string", "null"] }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
     post:
       operationId: createDocumentUpload
       tags: [documents]
@@ -1615,10 +1645,12 @@ paths:
         `PENDING_UPLOAD`; the client uploads to R2 without the API seeing the bytes; then
         `POST /documents/{id}/complete` finalises the version. Only after an antivirus scan and a
         SHA-256 check does the version become `READY` and enter the proofread queue.
+        CONTACT actors (role: null) can only create documents on their own contactId; staff
+        actors keep the contract-default gate (document.create).
       x-contract-status: final
       x-phase: P2
       x-permission: document.create
-      x-scope: owner-or-all
+      x-scope: own-contact
       x-idempotent: true
       x-audit: DOCUMENT_CREATED
       requestBody:
@@ -1652,7 +1684,7 @@ paths:
       x-contract-status: final
       x-phase: P2
       x-permission: document.read
-      x-scope: owner-or-all
+      x-scope: own-contact
       responses:
         "200":
           description: Document
@@ -1672,7 +1704,7 @@ paths:
       x-contract-status: final
       x-phase: P2
       x-permission: document.create
-      x-scope: owner-or-all
+      x-scope: own-contact
       x-idempotent: true
       requestBody:
         required: true
@@ -1741,7 +1773,7 @@ paths:
       x-contract-status: provisional
       x-phase: P2
       x-permission: document.read
-      x-scope: owner-or-all
+      x-scope: own-contact
       responses:
         "200":
           description: Proofread result
@@ -1762,7 +1794,7 @@ paths:
       x-contract-status: provisional
       x-phase: P2
       x-permission: document.proofread
-      x-scope: owner-or-all
+      x-scope: own-contact
       x-audit: DOCUMENT_PROOFREADED
       requestBody:
         required: true

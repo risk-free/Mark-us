@@ -48,10 +48,6 @@ export interface ClientStore {
     items: TimelineEvent[];
     nextCursor: string | null;
   }>;
-  getDocumentDownload(documentId: string, contactId: string): Promise<{
-    url: string;
-    expiresAt: Date;
-  } | null>;
 }
 
 const DEFAULT_LIMIT = 25;
@@ -204,23 +200,6 @@ export class PrismaClientStore implements ClientStore {
     const nextCursor = page.length > limit ? page[limit]?.id ?? null : null;
     return { items, nextCursor };
   }
-
-  async getDocumentDownload(documentId: string, contactId: string) {
-    const doc = await this.prisma.document.findFirst({
-      where: { id: documentId, contactId },
-      select: { id: true, currentVersion: true, applicationId: true },
-    });
-    if (!doc || !doc.applicationId) return null;
-    const owned = await this.prisma.order.findFirst({
-      where: { contactId, applicationId: doc.applicationId },
-      select: { id: true },
-    });
-    if (!owned) return null;
-    return {
-      url: `${this.publicBaseUrl}/documents/${documentId}/content?version=${doc.currentVersion}`,
-      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
-    };
-  }
 }
 
 function contactOnly(c: Context, next: Next): Response | Promise<void> {
@@ -258,15 +237,6 @@ export function createClientRoutes(deps: { store: ClientStore }): Hono {
     const { cursor, limit } = parsePagination(c);
     const { items, nextCursor } = await store.getTimeline(session.record.actorId, { cursor, limit });
     return c.json({ items, nextCursor });
-  });
-
-  app.get("/documents/:documentId/download", contactOnly, async (c) => {
-    const session = c.get("session") as ResolvedSession;
-    const documentId = c.req.param("documentId");
-    if (!documentId) return problem(c, 400, "VALIDATION_FAILED", "missing documentId");
-    const result = await store.getDocumentDownload(documentId, session.record.actorId);
-    if (result === null) return problem(c, 404, "NOT_FOUND", "Document not found or not visible to this actor");
-    return c.json(result);
   });
 
   return app;

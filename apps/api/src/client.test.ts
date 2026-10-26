@@ -70,20 +70,4 @@ describe("InMemoryClientStore", () => {
     expect(page.items.every((e) => e.contactId === "contact-1")).toBe(true);
     expect(await s.getTimeline("contact-2")).toEqual({ items: [], nextCursor: null });
   });
-
-  test("getDocumentDownload requires a document on an own application", async () => {
-    const s = store();
-    s.addApplication("contact-1", baseItem());
-    s.addOrder("contact-1", "app-1");
-    s.addDocument("contact-1", "app-1", { id: "doc-1" });
-    s.addDocument("contact-1", null, { id: "doc-orphan" });
-    s.addDocument("contact-2", "app-2", { id: "doc-foreign" });
-
-    const own = await s.getDocumentDownload("doc-1", "contact-1");
-    expect(own).toMatchObject({ url: /^https?:\/\//, expiresAt: expect.any(Date) });
-
-    expect(await s.getDocumentDownload("doc-orphan", "contact-1")).toBeNull(); // not on an application
-    expect(await s.getDocumentDownload("doc-foreign", "contact-1")).toBeNull(); // foreign contact
-    expect(await s.getDocumentDownload("doc-1", "contact-2")).toBeNull(); // foreign contact
-  });
 });

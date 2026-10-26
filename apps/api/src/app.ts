@@ -35,6 +35,7 @@ import {
 } from "./auth/index.js";
 import { METRICS_CONTENT_TYPE, type MetricsRegistry } from "./metrics.js";
 import { createClientRoutes, type ClientStore } from "./client.js";
+import { createDocumentRoutes, type DocumentStore } from "./documents.js";
 import { createNotificationRoutes, type NotificationStore } from "./notifications.js";
 import { clientIp, type RateLimiter } from "./rate-limit.js";
 
@@ -93,6 +94,8 @@ export interface AppServices {
   auth: AuthServices;
   /** Client self-service read surface (P2.2); absent disables the client routes. */
   client?: ClientStore;
+  /** Client documents (P2.4); absent disables the document routes. */
+  documents?: DocumentStore;
   /** Client notifications (P2.3); absent disables the notification routes. */
   notifications?: NotificationStore;
   /** Optional RAG assistant (P6.3); degrades to cited references when absent. */
@@ -210,6 +213,10 @@ export function createApp(services: AppServices, options: AppOptions): Hono {
 
   if (services.client) {
     app.route("/", createClientRoutes({ store: services.client }));
+  }
+
+  if (services.documents) {
+    app.route("/", createDocumentRoutes({ store: services.documents }));
   }
 
   if (services.notifications) {
