@@ -290,6 +290,18 @@ jobs:
           [ "${#body}" -ge 40 ] \
             || { echo "health payload too small: ${#body} B < 40" >&2; exit 1; }
 
+      # P2.6: the client-portal surfaces must be mounted on the production entry
+      # (index.ts). Composition-root drift once shipped green while the routes
+      # were not mounted at all; an unauthenticated GET /applications must
+      # answer 401 UNAUTHENTICATED, proving the surface exists and enforces.
+      - name: Client-portal surface mounted (401 without session)
+        run: |
+          code=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --retry 20 --retry-connrefused --retry-delay 3 --retry-all-errors \
+            http://127.0.0.1:3001/applications)
+          [ "$code" = "401" ] \
+            || { echo "expected 401 from /applications without a session, got $code" >&2; exit 1; }
+
       # SCHEDULE 1.2: `localePrefix: "always"` means `/` is a redirect to a
       # concrete locale (prefix > cookie > IP > Accept-Language > zh-CN), so the
       # probe must follow it -- `--fail` alone would read the empty 307 body and

@@ -243,5 +243,71 @@
     "degradedNotice": "指引暂不可用，请参阅下方参考来源。",
     "noReferences": "未返回参考来源。",
     "referencesHeading": "参考来源"
+  },
+  "portal": {
+    "nav": {
+      "home": "我的申请",
+      "notifications": "通知",
+      "unreadBadgeLabel": "{count} 条未读通知",
+      "signedInAs": "已登录：{name}"
+    },
+    "signIn": {
+      "title": "客户门户登录",
+      "intro": "请输入您在 MarkUS 使用的邮箱地址。如果该地址已登记，登录链接将会发送至您的邮箱。",
+      "emailLabel": "邮箱地址",
+      "submit": "发送登录链接",
+      "sentTitle": "请查收邮件",
+      "sentBody": "如果该地址已登记，登录链接将会发送至您的邮箱。链接有效期为 15 分钟。",
+      "invalidLink": "该登录链接已失效，请在下方重新获取。",
+      "unavailable": "登录服务暂时不可用，请稍后再试。"
+    },
+    "home": {
+      "title": "我的申请",
+      "empty": "暂无申请。",
+      "serial": "序列号",
+      "status": "状态",
+      "filed": "提交日期",
+      "deadline": "答复期限",
+      "notFiled": "尚未提交",
+      "view": "查看",
+      "next": "下一页"
+    },
+    "detail": {
+      "back": "全部申请",
+      "timelineTitle": "动态",
+      "timelineEmpty": "暂无动态。",
+      "eventOrder": "订单",
+      "eventConversation": "消息",
+      "eventDocument": "文件",
+      "documentsTitle": "文件",
+      "documentsEmpty": "暂无文件。",
+      "next": "更多"
+    },
+    "documents": {
+      "download": "下载",
+      "uploadLabel": "上传文件",
+      "upload": "上传",
+      "requesting": "正在申请上传通道…",
+      "uploading": "正在上传…",
+      "completing": "正在完成…",
+      "done": "已收到上传文件，处理完成后将显示在列表中。",
+      "failed": "上传失败，请重试。",
+      "retry": "重试",
+      "categorySpecimen": "使用证据",
+      "categoryDesign": "设计图样",
+      "categoryPowerOfAttorney": "授权委托书",
+      "categoryOaResponse": "审查意见答复"
+    },
+    "notifications": {
+      "title": "通知",
+      "empty": "暂无通知。",
+      "markRead": "标为已读",
+      "read": "已读",
+      "next": "更多"
+    },
+    "error": {
+      "title": "出现问题",
+      "body": "页面暂时无法加载，请稍后再试。"
+    }
   }
 }

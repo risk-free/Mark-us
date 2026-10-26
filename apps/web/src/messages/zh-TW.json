@@ -243,5 +243,71 @@
     "degradedNotice": "指引暫不可用，請參閱下方參考來源。",
     "noReferences": "未返回參考來源。",
     "referencesHeading": "參考來源"
+  },
+  "portal": {
+    "nav": {
+      "home": "我的申請",
+      "notifications": "通知",
+      "unreadBadgeLabel": "{count} 則未讀通知",
+      "signedInAs": "已登入：{name}"
+    },
+    "signIn": {
+      "title": "客戶入口登入",
+      "intro": "請輸入您在 MarkUS 使用的電郵地址。如該地址已登記，登入連結將會發送至您的電郵。",
+      "emailLabel": "電郵地址",
+      "submit": "發送登入連結",
+      "sentTitle": "請查收郵件",
+      "sentBody": "如該地址已登記，登入連結將會發送至您的電郵。連結有效期為 15 分鐘。",
+      "invalidLink": "該登入連結已失效，請在下方重新獲取。",
+      "unavailable": "登入服務暫時不可用，請稍後再試。"
+    },
+    "home": {
+      "title": "我的申請",
+      "empty": "暫無申請。",
+      "serial": "序列號",
+      "status": "狀態",
+      "filed": "提交日期",
+      "deadline": "答覆期限",
+      "notFiled": "尚未提交",
+      "view": "查看",
+      "next": "下一頁"
+    },
+    "detail": {
+      "back": "全部申請",
+      "timelineTitle": "動態",
+      "timelineEmpty": "暫無動態。",
+      "eventOrder": "訂單",
+      "eventConversation": "訊息",
+      "eventDocument": "文件",
+      "documentsTitle": "文件",
+      "documentsEmpty": "暫無文件。",
+      "next": "更多"
+    },
+    "documents": {
+      "download": "下載",
+      "uploadLabel": "上傳文件",
+      "upload": "上傳",
+      "requesting": "正在申請上傳通道…",
+      "uploading": "正在上傳…",
+      "completing": "正在完成…",
+      "done": "已收到上傳文件，處理完成後將顯示在列表中。",
+      "failed": "上傳失敗，請重試。",
+      "retry": "重試",
+      "categorySpecimen": "使用證據",
+      "categoryDesign": "設計圖樣",
+      "categoryPowerOfAttorney": "授權委託書",
+      "categoryOaResponse": "審查意見答覆"
+    },
+    "notifications": {
+      "title": "通知",
+      "empty": "暫無通知。",
+      "markRead": "標為已讀",
+      "read": "已讀",
+      "next": "更多"
+    },
+    "error": {
+      "title": "出現問題",
+      "body": "頁面暫時無法載入，請稍後再試。"
+    }
   }
 }

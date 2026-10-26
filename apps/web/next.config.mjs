@@ -25,6 +25,15 @@ try {
 }
 
 /**
+ * Portal API calls are proxied same-origin (P2.6): the browser only ever talks
+ * to the web origin at `/api/*`, and Next forwards to the API service. That
+ * keeps the host-only `mkus_portal` session cookie first-party (the API sets no
+ * Domain attribute) and means portal pages never need the API origin in
+ * connect-src. The assessment/assistant GATE surfaces still fetch cross-origin,
+ * so apiOrigin stays in the CSP for them alone.
+ */
+
+/**
  * Content Security Policy (BUG-035, 01-system-design.md §11.3).
  *
  * `frame-ancestors 'none'` is expressed here rather than as a separate
@@ -88,6 +97,10 @@ const nextConfig = {
         headers: securityHeaders,
       },
     ];
+  },
+  async rewrites() {
+    // See the apiBaseUrl note above: same-origin proxy for the client portal.
+    return [{ source: "/api/:path*", destination: `${apiBaseUrl}/:path*` }];
   },
   ...(standalone ? { output: "standalone", outputFileTracingRoot: monorepoRoot } : {}),
 };

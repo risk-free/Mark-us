@@ -243,5 +243,71 @@
     "degradedNotice": "guidance unavailable — see references below",
     "noReferences": "No references returned.",
     "referencesHeading": "References"
+  },
+  "portal": {
+    "nav": {
+      "home": "My applications",
+      "notifications": "Notifications",
+      "unreadBadgeLabel": "{count} unread notifications",
+      "signedInAs": "Signed in as {name}"
+    },
+    "signIn": {
+      "title": "Client portal sign-in",
+      "intro": "Enter the email address you use with MarkUS. If the address is known, a sign-in link is on its way.",
+      "emailLabel": "Email address",
+      "submit": "Email me a sign-in link",
+      "sentTitle": "Check your inbox",
+      "sentBody": "If the address is known, a sign-in link is on its way. The link stays valid for 15 minutes.",
+      "invalidLink": "That sign-in link is no longer valid. Request a new one below.",
+      "unavailable": "Sign-in is temporarily unavailable. Try again in a moment."
+    },
+    "home": {
+      "title": "My applications",
+      "empty": "No applications yet.",
+      "serial": "Serial number",
+      "status": "Status",
+      "filed": "Filed",
+      "deadline": "Response deadline",
+      "notFiled": "Not filed yet",
+      "view": "View",
+      "next": "Next page"
+    },
+    "detail": {
+      "back": "All applications",
+      "timelineTitle": "Activity",
+      "timelineEmpty": "No activity yet.",
+      "eventOrder": "Order",
+      "eventConversation": "Message",
+      "eventDocument": "Document",
+      "documentsTitle": "Documents",
+      "documentsEmpty": "No documents yet.",
+      "next": "More"
+    },
+    "documents": {
+      "download": "Download",
+      "uploadLabel": "Upload a document",
+      "upload": "Upload",
+      "requesting": "Reserving an upload slot…",
+      "uploading": "Uploading…",
+      "completing": "Finalising…",
+      "done": "Upload received. It will appear in the list once processing finishes.",
+      "failed": "Upload failed. Try again.",
+      "retry": "Try again",
+      "categorySpecimen": "Specimen",
+      "categoryDesign": "Design drawing",
+      "categoryPowerOfAttorney": "Power of attorney",
+      "categoryOaResponse": "Office action response"
+    },
+    "notifications": {
+      "title": "Notifications",
+      "empty": "No notifications yet.",
+      "markRead": "Mark as read",
+      "read": "Read",
+      "next": "More"
+    },
+    "error": {
+      "title": "Something went wrong",
+      "body": "This page could not be loaded. Try again in a moment."
+    }
   }
 }
