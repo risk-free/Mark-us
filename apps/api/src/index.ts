@@ -29,11 +29,14 @@ import {
   SessionService,
   StaffAuthService,
   argon2Passwords,
-  type MagicLinkDeliverer,
   type TotpSeedVault,
 } from "./auth/index.js";
 import { RedisAssessmentCache } from "./assessment-cache.js";
+import { PrismaClientStore } from "./client.js";
+import { PrismaDocumentStore } from "./documents.js";
+import { MagicLinkEmailDeliverer, mailSenderFromEnv } from "./mail.js";
 import { MetricsRegistry } from "./metrics.js";
+import { PrismaNotificationStore } from "./notifications.js";
 import { RedisRateLimiter } from "./rate-limit.js";
 
 if (process.env.NODE_ENV !== "production") {
@@ -155,17 +158,12 @@ const staffAuth = new StaffAuthService({
 });
 
 /**
- * Interim deliverer (P2.1): the AliCloud DirectMail adapter (DQ-017) lands
- * with the notifications module. Metadata only — the token/URL is never
- * logged (R-005).
+ * P2.5 (DQ-017): DirectMail when configured (required in production — fail
+ * closed in packages/config), otherwise the metadata-only logger (dev/test,
+ * or staging with the explicit DIRECTMAIL_ALLOW_LOGGER_FALLBACK opt-in).
  */
-const magicLinkDeliverer: MagicLinkDeliverer = {
-  async deliver({ contactId, expiresAt }) {
-    console.log(
-      `[auth] magic link issued contact=${contactId} expiresAt=${expiresAt.toISOString()}`,
-    );
-  },
-};
+const mailSender = mailSenderFromEnv(env);
+const magicLinkDeliverer = new MagicLinkEmailDeliverer({ mail: mailSender });
 
 const magicLinks = new MagicLinkService({
   store: new PrismaMagicLinkStore(prisma),
@@ -190,6 +188,10 @@ const app = createApp(
     cache: new RedisAssessmentCache(redis),
     rateLimiter,
     metrics: new MetricsRegistry(),
+    // P2.2–P2.4 client portal surfaces (wired into the production entry here).
+    client: new PrismaClientStore(prisma, env.PUBLIC_BASE_URL),
+    documents: new PrismaDocumentStore(prisma, env.PUBLIC_BASE_URL),
+    notifications: new PrismaNotificationStore(prisma),
   },
   {
     freshnessSlaHours: env.TM_CORPUS_FRESHNESS_HOURS,

@@ -129,9 +129,9 @@ export class InMemoryTotpSeedVault implements TotpSeedVault {
 }
 
 export class RecordingMagicLinkDeliverer implements MagicLinkDeliverer {
-  readonly deliveries: { contactId: string; url: string; expiresAt: Date }[] = [];
+  readonly deliveries: { contactId: string; email: string; url: string; expiresAt: Date }[] = [];
 
-  async deliver(input: { contactId: string; url: string; expiresAt: Date }): Promise<void> {
+  async deliver(input: { contactId: string; email: string; url: string; expiresAt: Date }): Promise<void> {
     this.deliveries.push(input);
   }
 

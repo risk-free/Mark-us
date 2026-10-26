@@ -57,12 +57,13 @@ export interface MagicLinkStore {
 }
 
 /**
- * Delivery port. The AliCloud DirectMail adapter (DQ-017) lands with the
- * notifications module; P2.1 wires a metadata-only logger. Delivery failure
- * never changes the neutral 202 response.
+ * Delivery port. The AliCloud DirectMail adapter (DQ-017) landed in P2.5
+ * (mail.ts); dev/test wire a metadata-only logger. `email` is the contact's
+ * address resolved at issuance — deliverers must never log it or the URL.
+ * Delivery failure never changes the neutral 202 response.
  */
 export interface MagicLinkDeliverer {
-  deliver(input: { contactId: string; url: string; expiresAt: Date }): Promise<void>;
+  deliver(input: { contactId: string; email: string; url: string; expiresAt: Date }): Promise<void>;
 }
 
 export interface MagicLinkRequestInput {
@@ -150,7 +151,7 @@ export class MagicLinkService {
 
     const url = `${this.#publicBaseUrl}/portal/auth?token=${token}`;
     try {
-      await this.#deliverer.deliver({ contactId: contact.id, url, expiresAt });
+      await this.#deliverer.deliver({ contactId: contact.id, email: contact.email, url, expiresAt });
     } catch {
       // Delivery is best-effort until the notification module lands; the
       // response stays neutral either way (never log the token or the URL).

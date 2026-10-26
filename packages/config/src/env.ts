@@ -163,6 +163,18 @@ export const envSchema = z.object({
   LLM_FALLBACK_MODEL: optionalSecret,
   BGE_EMBED_URL: optionalUrl(),
 
+  // Transactional email — AliCloud DirectMail (DQ-017/R). Magic links are the
+  // only client login path, so production fails closed without these (see
+  // assertProductionSafety); dev/test default to a metadata-only logger.
+  DIRECTMAIL_ACCESS_KEY_ID: optionalSecret,
+  DIRECTMAIL_ACCESS_KEY_SECRET: optionalSecret,
+  // Sender address on the verified mail.<domain> domain (AliCloud AccountName).
+  DIRECTMAIL_ACCOUNT_NAME: optionalSecret,
+  DIRECTMAIL_REGION: z.string().min(1).default("ap-southeast-1"),
+  // Staging-only explicit opt-in to the metadata-only logger (runbook:
+  // docs/runbooks/magic-links.md). Never honored in production.
+  DIRECTMAIL_ALLOW_LOGGER_FALLBACK: envBoolean("false"),
+
   // Observability (P0.4)
   SENTRY_DSN: optionalUrl(),
   POSTHOG_HOST: optionalUrl(),
@@ -226,6 +238,22 @@ export function assertProductionSafety(env: Env): void {
   }
   if (env.REDIS_URL === DEV_REDIS_URL) {
     problems.push("REDIS_URL is still the local development connection string");
+  }
+  // DQ-017: email is mandatory — magic links are the only client login path.
+  const directMailConfigured =
+    env.DIRECTMAIL_ACCESS_KEY_ID !== undefined &&
+    env.DIRECTMAIL_ACCESS_KEY_SECRET !== undefined &&
+    env.DIRECTMAIL_ACCOUNT_NAME !== undefined;
+  if (!directMailConfigured) {
+    if (env.NODE_ENV === "production") {
+      problems.push(
+        "DIRECTMAIL_ACCESS_KEY_ID, DIRECTMAIL_ACCESS_KEY_SECRET and DIRECTMAIL_ACCOUNT_NAME are required in production (DQ-017: magic links are the only client login path)",
+      );
+    } else if (!env.DIRECTMAIL_ALLOW_LOGGER_FALLBACK) {
+      problems.push(
+        "DIRECTMAIL_* is not configured in staging; set DIRECTMAIL_ALLOW_LOGGER_FALLBACK=true to explicitly opt into the metadata-only logger (see docs/runbooks/magic-links.md)",
+      );
+    }
   }
   if (problems.length > 0) throw new EnvValidationError(problems);
 }

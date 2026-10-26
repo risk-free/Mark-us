@@ -33,6 +33,9 @@ const productionOverrides: NodeJS.ProcessEnv = {
   VAULT_MASTER_KEY: "wrapped-data-key",
   DATABASE_URL: "postgresql://user:pass@db.markus.hk:5432/markus",
   REDIS_URL: "rediss://cache.markus.hk:6379",
+  DIRECTMAIL_ACCESS_KEY_ID: "dm-access-key-id",
+  DIRECTMAIL_ACCESS_KEY_SECRET: "dm-access-key-secret",
+  DIRECTMAIL_ACCOUNT_NAME: "no-reply@mail.markus.hk",
 };
 
 describe("loadEnv", () => {
@@ -189,6 +192,39 @@ describe("assertProductionSafety (D-01)", () => {
 
   test("loadEnv applies the same gate at boot time", () => {
     expect(() => loadEnv({ ...validEnv(), NODE_ENV: "production" })).toThrow(EnvValidationError);
+  });
+
+  // DQ-017: magic links are the only client login path — no silent logger fallback in prod.
+  test("production requires DirectMail config (fail closed)", () => {
+    const { DIRECTMAIL_ACCESS_KEY_ID, ...missingOne } = productionOverrides;
+    void DIRECTMAIL_ACCESS_KEY_ID;
+    expect(() => loadEnv({ ...validEnv(), ...missingOne })).toThrow(/DIRECTMAIL/);
+    expect(() =>
+      loadEnv({ ...validEnv(), ...missingOne, DIRECTMAIL_ALLOW_LOGGER_FALLBACK: "true" }),
+    ).toThrow(/DIRECTMAIL/);
+  });
+
+  test("staging requires DirectMail config unless the logger fallback is explicitly opted in", () => {
+    const staging: NodeJS.ProcessEnv = {
+      ...productionOverrides,
+      NODE_ENV: "staging",
+      DIRECTMAIL_ACCESS_KEY_ID: undefined,
+      DIRECTMAIL_ACCESS_KEY_SECRET: undefined,
+      DIRECTMAIL_ACCOUNT_NAME: undefined,
+    };
+    expect(() => loadEnv({ ...validEnv(), ...staging })).toThrow(/DIRECTMAIL_ALLOW_LOGGER_FALLBACK/);
+    const optedIn = loadEnv({ ...validEnv(), ...staging, DIRECTMAIL_ALLOW_LOGGER_FALLBACK: "true" });
+    expect(optedIn.DIRECTMAIL_ALLOW_LOGGER_FALLBACK).toBe(true);
+    expect(optedIn.DIRECTMAIL_ACCESS_KEY_ID).toBeUndefined();
+  });
+
+  test("development and test default to the metadata-only logger without a flag", () => {
+    expect(loadEnv({ ...validEnv(), NODE_ENV: "development" }).DIRECTMAIL_ACCESS_KEY_ID).toBeUndefined();
+    expect(loadEnv({ ...validEnv(), NODE_ENV: "test" }).DIRECTMAIL_ALLOW_LOGGER_FALLBACK).toBe(false);
+  });
+
+  test("defaults the DirectMail region to the Singapore intl region", () => {
+    expect(loadEnv(validEnv()).DIRECTMAIL_REGION).toBe("ap-southeast-1");
   });
 
   test("does not enforce production rules in development or test", () => {
