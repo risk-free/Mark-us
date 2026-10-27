@@ -28,7 +28,7 @@ import type { Worker } from "bullmq";
 import {
   DAILY_CRON,
   isTmIngestSkip,
-  runTmIngest,
+  runNightlyTmIngest,
   TM_INGEST_QUEUE,
   type TmIngestJobPayload,
 } from "./tm-ingest.js";
@@ -115,12 +115,13 @@ async function main(): Promise<void> {
     tmIngestWorker = new Worker<string, unknown>(
       TM_INGEST_QUEUE,
       async (job) => {
-        const result = await runTmIngest((job.data as TmIngestJobPayload) ?? {}, {
+        const result = await runNightlyTmIngest((job.data as TmIngestJobPayload) ?? {}, {
           store: new PrismaCorpusStore(prisma as unknown as CorpusTransactionHost),
           env,
         });
-        // A gated source (FA-011) already logged its skip-with-reason inside
-        // runTmIngest; the job completes without failure or retry.
+        // A researcher-only or gated source (FA-011) already logged its
+        // skip-with-reason inside runNightlyTmIngest; the job completes
+        // without failure or retry.
         if (isTmIngestSkip(result)) return;
         console.log(
           `[tm-ingest] run=${result.ingestRunId} imported=${result.marksImported} updated=${result.marksUpdated} skipped=${result.marksSkipped} rejected=${result.marksRejected}`,

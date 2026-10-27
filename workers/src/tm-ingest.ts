@@ -2,16 +2,18 @@
  * Nightly USPTO trademark corpus ingest (mandate M7.1).
  *
  * The `tm-ingest` queue holds one BullMQ repeatable job that runs at 03:00 UTC
- * (`DAILY_CRON`) for the previous UTC day, plus ad-hoc backfill jobs enqueued
- * through `POST /admin/jobs` (P5.2). It wires the `@markus/tm-data` ingest
- * engine (`runCorpusIngest`) to the persistence seam (`CorpusStore`) and the
- * collector sources; the wiring is kept here, out of the worker bootstrap, so
- * the job can be unit-tested without Redis or PostgreSQL.
+ * (`DAILY_CRON`) for the previous UTC day; ad-hoc backfills run in-process via
+ * the `ingest:backfill` CLI (P5.2) — no Redis dependency, no HTTP surface. The
+ * wiring lives here, out of the worker bootstrap, so the job can be
+ * unit-tested without Redis or PostgreSQL.
  *
- * The nightly feed is the ODP TDXF product, which is gated (FA-011); until it
- * is provisioned the researcher signed-URL backfill (`Trcfeco2Source`) is the
- * only reachable bulk path, so it is the default source. Selecting `tdxf`
- * (job spec or env) yields an honest skip-with-reason, never a failed job.
+ * The nightly feed is the ODP TDXF product, which is gated (FA-011); the
+ * researcher signed-URL snapshot (`Trcfeco2Source`) is a static one-time
+ * backfill, so while the effective source set is researcher-only the nightly
+ * tick skips with reason instead of re-ingesting the static snapshot every
+ * night. The cron registration stays for the `OdpTdxfSource` swap-in day.
+ * Selecting `tdxf` (job spec or env) before FA-011 clears likewise yields an
+ * honest skip-with-reason, never a failed job.
  */
 
 import { OdpTdxfSource, runCorpusIngest, SourceUnavailableError, Trcfeco2Source } from "@markus/tm-data";
@@ -138,4 +140,33 @@ export async function runTmIngest(
     }
     throw error;
   }
+}
+
+/** Skip reason logged by the nightly tick while FA-011 keeps the feed researcher-only. */
+export const RESEARCHER_ONLY_NIGHTLY_REASON =
+  "researcher snapshot static; TDXF nightly pending FA-011";
+
+/**
+ * The 03:00 UTC nightly tick (P5.2). While the effective source set is
+ * researcher-only — the static TRCFECO2 snapshot is a one-time backfill, not a
+ * nightly feed — the tick logs {@link RESEARCHER_ONLY_NIGHTLY_REASON} and
+ * completes without opening a ledger run. Once FA-011 clears and `tdxf` is
+ * selected the source set stops being researcher-only and the tick runs the
+ * TDXF feed (still FA-011-honest until the adapter is implemented).
+ */
+export async function runNightlyTmIngest(
+  payload: TmIngestJobPayload,
+  deps: {
+    store: CorpusStore;
+    env: Env;
+    now?: () => Date;
+    sources?: readonly TrademarkSource[];
+  },
+): Promise<IngestReport | TmIngestSkip> {
+  const sources = deps.sources ?? buildCorpusSources(deps.env, payload);
+  if (sources.every((source) => source instanceof Trcfeco2Source)) {
+    console.log(`[tm-ingest] skip-with-reason: ${RESEARCHER_ONLY_NIGHTLY_REASON}`);
+    return { skipped: true, code: "FA-011", reason: RESEARCHER_ONLY_NIGHTLY_REASON };
+  }
+  return runTmIngest(payload, { ...deps, sources });
 }

@@ -197,6 +197,31 @@ jobs:
       - name: Corpus ingest against a real Postgres
         run: pnpm --filter @markus/tm-data test:integration
 
+  backfill-integration:
+    name: corpus backfill runner · PostgreSQL 16 (P5.2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client (the integration test drives @prisma/client)
+        run: pnpm db:generate
+
+      # ARCH-01 §13: the one-off backfill runner (parseBackfillArgs →
+      # runTmIngest → PrismaCorpusStore → TmIngestRun ledger) is verified
+      # against a real PostgreSQL 16 container — no mock database.
+      - name: Corpus backfill runner against a real Postgres
+        run: pnpm --filter @markus/workers test:integration
+
   api-search-integration:
     name: api search · PostgreSQL 16 (M7.2)
     runs-on: ubuntu-latest

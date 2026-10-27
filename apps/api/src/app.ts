@@ -36,7 +36,6 @@ import {
 import { METRICS_CONTENT_TYPE, type MetricsRegistry } from "./metrics.js";
 import { createClientRoutes, type ClientStore } from "./client.js";
 import { createDocumentRoutes, type DocumentStore } from "./documents.js";
-import type { JobsQueue, TmIngestJobSpec } from "./jobs.js";
 import { createNotificationRoutes, type NotificationStore } from "./notifications.js";
 import { clientIp, type RateLimiter } from "./rate-limit.js";
 
@@ -132,8 +131,6 @@ export interface AppOptions {
   metricsEnabled?: boolean;
   /** `Secure` cookie attribute; off only for plain-http local development. */
   secureCookies?: boolean;
-  /** P5.2 enqueue seam for `POST /admin/jobs`; absent → the route 503s. */
-  jobsQueue?: JobsQueue;
 }
 
 const parseLimit = (raw: string | undefined, fallback: number, max: number): number => {
@@ -383,68 +380,6 @@ export function createApp(services: AppServices, options: AppOptions): Hono {
     const limit = parseLimit(c.req.query("limit"), 20, 100);
     const runs = await store.recentRuns(limit);
     return c.json({ runs });
-  });
-
-  // P5.2 (M7.1): minimal corpus-ingest enqueue. Contract registration for
-  // POST /admin/jobs is pending — the contract lists GET only (ARCH-03
-  // 03-api-contract.yaml :2306) — so the route is gated by the contract's
-  // admin.jobs.read x-permission (MASTER_ADMIN only in the matrix). Status is
-  // read from the TmIngestRun ledger (GET /tm/ingest/runs); no replay here.
-  app.post("/admin/jobs", requirePermission("admin.jobs.read"), async (c) => {
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json({ error: "invalid request body" }, 400);
-    }
-    const record = (body ?? {}) as Record<string, unknown>;
-
-    if (record.queue !== "tm-ingest") {
-      return c.json({ error: "queue must be 'tm-ingest' — the only supported queue" }, 400);
-    }
-
-    const spec: TmIngestJobSpec = {};
-    if (record.runDate !== undefined) {
-      if (typeof record.runDate !== "string" || Number.isNaN(new Date(record.runDate).getTime())) {
-        return c.json({ error: "runDate must be an ISO-8601 date-time" }, 400);
-      }
-      spec.runDate = record.runDate;
-    }
-    if (record.years !== undefined) {
-      if (
-        !Array.isArray(record.years) ||
-        record.years.some(
-          (year) => typeof year !== "number" || !Number.isInteger(year) || year < 1900 || year > 2100,
-        )
-      ) {
-        return c.json({ error: "years must be an array of integers between 1900 and 2100" }, 400);
-      }
-      spec.years = record.years;
-    }
-    if (record.table !== undefined) {
-      const table = optionalText(record.table);
-      if (table === undefined) return c.json({ error: "table must be a non-empty string" }, 400);
-      spec.table = table;
-    }
-    if (record.source !== undefined) {
-      if (record.source !== "trcfeco2" && record.source !== "tdxf") {
-        return c.json({ error: "source must be 'trcfeco2' or 'tdxf'" }, 400);
-      }
-      spec.source = record.source;
-    }
-
-    const jobsQueue = options.jobsQueue;
-    if (jobsQueue === undefined) {
-      return c.json({ error: "job queue unavailable" }, 503);
-    }
-
-    try {
-      const job = await jobsQueue.add(optionalText(record.name) ?? "backfill", spec);
-      return c.json({ jobId: String(job.id ?? ""), status: "QUEUED", queue: "tm-ingest" }, 202);
-    } catch (error) {
-      console.error("[api] job enqueue failed:", error instanceof Error ? error.message : error);
-      return c.json({ error: "job queue unavailable" }, 503);
-    }
   });
 
   return app;

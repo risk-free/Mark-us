@@ -48,7 +48,6 @@ const fakeCorpus: Pick<AppServices, "search" | "store" | "assess"> = {
 interface MatrixContext {
   app: ReturnType<typeof createApp>;
   auth: InMemoryAuth;
-  enqueuedJobs: Array<{ name: string; payload: unknown }>;
 }
 
 const build = async (): Promise<MatrixContext> => {
@@ -96,21 +95,11 @@ const build = async (): Promise<MatrixContext> => {
     deletedAt: null,
   });
 
-  const enqueuedJobs: MatrixContext["enqueuedJobs"] = [];
   const app = createApp(
     { ...fakeCorpus, auth: { sessions: auth.sessions, staffAuth: auth.staffAuth, magicLinks: auth.magicLinks }, client: auth.client, documents: auth.documents, notifications: auth.notifications },
-    {
-      freshnessSlaHours: 26,
-      secureCookies: true,
-      jobsQueue: {
-        async add(name: string, payload: Record<string, unknown>) {
-          enqueuedJobs.push({ name, payload });
-          return { id: "job-1" };
-        },
-      },
-    },
+    { freshnessSlaHours: 26, secureCookies: true },
   );
-  return { app, auth, enqueuedJobs };
+  return { app, auth };
 };
 
 const json = (
@@ -758,61 +747,5 @@ describe("auth matrix — CONTACT (client portal)", () => {
       body: JSON.stringify({ sha256: "b".repeat(64) }),
     });
     expect(staffComplete.status).toBe(200);
-  });
-});
-
-describe("P5.2 auth matrix — POST /admin/jobs (x-permission admin.jobs.read)", () => {
-  test("anonymous principal → 401 UNAUTHENTICATED", async () => {
-    const { app, enqueuedJobs } = await build();
-
-    const response = await json(app, "/admin/jobs", { queue: "tm-ingest" });
-
-    expect(response.status).toBe(401);
-    expect(enqueuedJobs).toHaveLength(0);
-  });
-
-  test("SALESPERSON and EXPERT → 403 FORBIDDEN", async () => {
-    const { app, enqueuedJobs } = await build();
-
-    const sales = await loginStaff(app, "sales@markus.example");
-    const expert = await loginStaff(app, "expert@markus.example", EXPERT_SEED);
-    for (const { cookie, csrf } of [sales, expert]) {
-      const response = await json(
-        app,
-        "/admin/jobs",
-        { queue: "tm-ingest" },
-        { cookie, "x-csrf-token": csrf },
-      );
-      expect(response.status).toBe(403);
-    }
-    expect(enqueuedJobs).toHaveLength(0);
-  });
-
-  test("MASTER_ADMIN → 202 QUEUED with the job spec passed through", async () => {
-    const { app, enqueuedJobs } = await build();
-
-    const { cookie, csrf } = await loginStaff(app, "admin@markus.example", ADMIN_SEED);
-    const response = await json(
-      app,
-      "/admin/jobs",
-      { queue: "tm-ingest", runDate: "2026-10-26", years: [2025, 2026] },
-      { cookie, "x-csrf-token": csrf },
-    );
-
-    expect(response.status).toBe(202);
-    expect(await response.json()).toEqual({ jobId: "job-1", status: "QUEUED", queue: "tm-ingest" });
-    expect(enqueuedJobs).toEqual([
-      { name: "backfill", payload: { runDate: "2026-10-26", years: [2025, 2026] } },
-    ]);
-  });
-
-  test("the ingest ledger route is unchanged: admin 200, anonymous 401", async () => {
-    const { app } = await build();
-
-    expect((await app.request("/tm/ingest/runs")).status).toBe(401);
-    const { cookie } = await loginStaff(app, "admin@markus.example", ADMIN_SEED);
-    const runs = await app.request("/tm/ingest/runs", { headers: { cookie } });
-    expect(runs.status).toBe(200);
-    expect(await runs.json()).toEqual({ runs: [] });
   });
 });

@@ -2,7 +2,14 @@ import type { Env } from "@markus/config";
 import { OdpTdxfSource, SourceUnavailableError } from "@markus/tm-data";
 import type { CorpusMarkInput, CorpusStore, FinishRunInput, ParseOutcome, TrademarkSource, UpsertAction } from "@markus/tm-data";
 
-import { buildCorpusSources, isTmIngestSkip, resolveIngestSpec, runTmIngest } from "./tm-ingest.js";
+import {
+  buildCorpusSources,
+  isTmIngestSkip,
+  RESEARCHER_ONLY_NIGHTLY_REASON,
+  resolveIngestSpec,
+  runNightlyTmIngest,
+  runTmIngest,
+} from "./tm-ingest.js";
 
 /** Hand-built Env: only the fields the source builder reads. */
 const fakeEnv = {
@@ -209,5 +216,67 @@ describe("runTmIngest", () => {
     await expect(
       runTmIngest({ runDate: "2026-10-13" }, { store, env: fakeEnv, sources: [failing] }),
     ).rejects.toMatchObject({ code: "HTTP_ERROR" });
+  });
+});
+
+describe("runNightlyTmIngest (P5.2 researcher-only nightly skip)", () => {
+  test("default researcher-only source set: skips with reason, never opens a run", async () => {
+    const store = new FakeStore();
+
+    const result = await runNightlyTmIngest({}, { store, env: fakeEnv });
+
+    expect(isTmIngestSkip(result)).toBe(true);
+    if (isTmIngestSkip(result)) {
+      expect(result.reason).toBe("researcher snapshot static; TDXF nightly pending FA-011");
+      expect(result.reason).toBe(RESEARCHER_ONLY_NIGHTLY_REASON);
+    }
+    expect(store.startedWith).toBeUndefined();
+    expect(store.finished).toBeUndefined();
+  });
+
+  test("a non-researcher source in the set runs the ingest", async () => {
+    const store = new FakeStore();
+    const tdxfLike: TrademarkSource = {
+      name: "future-tdxf",
+      async *fetchRecords() {
+        yield record("1");
+      },
+    };
+
+    const result = await runNightlyTmIngest(
+      { runDate: "2026-10-13" },
+      { store, env: fakeEnv, sources: [tdxfLike] },
+    );
+
+    expect(isTmIngestSkip(result)).toBe(false);
+    if (!isTmIngestSkip(result)) {
+      expect(result.marksImported).toBe(1);
+    }
+    expect(store.startedWith?.toISOString()).toBe(new Date("2026-10-13").toISOString());
+  });
+
+  test("tdxf selected while still gated: FA-011 skip-with-reason, no ledger run opened", async () => {
+    const store = new FakeStore();
+
+    const result = await runNightlyTmIngest(
+      { source: "tdxf" },
+      { store, env: { ...fakeEnv, TM_CORPUS_INGEST_SOURCE: "tdxf" } as Env },
+    );
+
+    expect(isTmIngestSkip(result)).toBe(true);
+    if (isTmIngestSkip(result)) {
+      expect(result.code).toBe("FA-011");
+      expect(result.reason).not.toBe(RESEARCHER_ONLY_NIGHTLY_REASON);
+    }
+    expect(store.startedWith).toBeUndefined();
+  });
+
+  test("an explicitly empty source set is researcher-only (vacuous) and skips", async () => {
+    const store = new FakeStore();
+
+    const result = await runNightlyTmIngest({}, { store, env: fakeEnv, sources: [] });
+
+    expect(isTmIngestSkip(result)).toBe(true);
+    expect(store.startedWith).toBeUndefined();
   });
 });

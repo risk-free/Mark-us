@@ -20,7 +20,6 @@
     "@markus/tm-data": "workspace:*",
     "@prisma/client": "^6.19.3",
     "argon2": "^0.45.1",
-    "bullmq": "^5.81.5",
     "dotenv": "^16.6.1",
     "hono": "^4.13.13",
     "ioredis": "^5.11.1"
