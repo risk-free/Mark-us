@@ -131,7 +131,8 @@ describe("P5.2 corpus backfill runner against PostgreSQL 16", () => {
     expect("skipped" in report).toBe(false);
     if ("skipped" in report) return;
     expect(report).toMatchObject({
-      filesProcessed: 2,
+      // filesProcessed counts collector sources, not per-year archives.
+      filesProcessed: 1,
       marksImported: 4,
       marksUpdated: 0,
       marksRejected: 0,
@@ -144,7 +145,7 @@ describe("P5.2 corpus backfill runner against PostgreSQL 16", () => {
       runDate: new Date("2024-06-01T00:00:00.000Z"),
       marksImported: 4,
       marksUpserted: 4,
-      filesProcessed: 2,
+      filesProcessed: 1,
     });
     expect(await prisma.tmCorpusMark.count()).toBe(4);
   });
