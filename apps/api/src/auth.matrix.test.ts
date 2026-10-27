@@ -165,6 +165,11 @@ describe("auth matrix — anonymous principal", () => {
     expect(runs.status).toBe(401);
     expect((await runs.json()).code).toBe("UNAUTHENTICATED");
 
+    const applications = await app.request("/applications");
+    expect(applications.status).toBe(401);
+    expect(applications.headers.get("content-type")).toContain("application/problem+json");
+    expect((await applications.json()).code).toBe("UNAUTHENTICATED");
+
     // Logout is idempotent: 204 with no session (contract).
     const logout = await json(app, "/auth/staff/logout", undefined as never);
     expect(logout.status).toBe(204);
