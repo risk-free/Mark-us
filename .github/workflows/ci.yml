@@ -18,7 +18,7 @@ jobs:
     name: lint · contract · node-baseline · typecheck · test · build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
 
@@ -102,7 +102,7 @@ jobs:
       # before the scratch databases below can be created or dropped.
       PG_MAINTENANCE_URL: postgresql://markus:markus@localhost:5432/markus
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
 
@@ -151,7 +151,7 @@ jobs:
     name: outbox fault-injection · PostgreSQL 16 (M3.4)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
 
@@ -176,7 +176,7 @@ jobs:
     name: tm ingest · PostgreSQL 16 (M7.1)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
 
@@ -201,7 +201,7 @@ jobs:
     name: corpus backfill runner · PostgreSQL 16 (P5.2)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
 
@@ -226,7 +226,7 @@ jobs:
     name: api search · PostgreSQL 16 (M7.2)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
 
@@ -250,7 +250,7 @@ jobs:
     name: dependency audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
 
@@ -275,7 +275,7 @@ jobs:
       matrix:
         image: [api, web, worker]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: docker/setup-buildx-action@v3
 
@@ -293,7 +293,7 @@ jobs:
     name: compose smoke
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build api image for the production-gate test
         run: docker build -f infra/Dockerfile.api -t markus-api:ci .
