@@ -50,7 +50,21 @@ describe("loadEnv", () => {
     expect(env.USPTO_RESEARCHER_PRODUCT_ID).toBe("TRCFECO2");
     expect(env.TM_CORPUS_FRESHNESS_HOURS).toBe(26);
     expect(env.TM_CORPUS_INGEST_ENABLED).toBe(false);
+    expect(env.TM_CORPUS_INGEST_SOURCE).toBe("trcfeco2");
+    expect(env.TM_CORPUS_INGEST_YEARS).toBeUndefined();
     expect(env.USPTO_ASSISTED_LOGIN_ENABLED).toBe(false);
+  });
+
+  test("parses TM_CORPUS_INGEST_YEARS and TM_CORPUS_INGEST_SOURCE", () => {
+    const env = loadEnv({ ...validEnv(), TM_CORPUS_INGEST_YEARS: "2024, 2025", TM_CORPUS_INGEST_SOURCE: "tdxf" });
+    expect(env.TM_CORPUS_INGEST_YEARS).toEqual([2024, 2025]);
+    expect(env.TM_CORPUS_INGEST_SOURCE).toBe("tdxf");
+  });
+
+  test("rejects malformed TM_CORPUS_INGEST_YEARS", () => {
+    expect(() => loadEnv({ ...validEnv(), TM_CORPUS_INGEST_YEARS: "2024,not-a-year" })).toThrow(
+      EnvValidationError,
+    );
   });
 
   test("requires NODE_ENV so the production gate cannot be skipped by omission", () => {

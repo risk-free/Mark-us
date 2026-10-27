@@ -34,6 +34,7 @@ import {
 import { RedisAssessmentCache } from "./assessment-cache.js";
 import { PrismaClientStore } from "./client.js";
 import { PrismaDocumentStore } from "./documents.js";
+import { createTmIngestQueue } from "./jobs.js";
 import { MagicLinkEmailDeliverer, mailSenderFromEnv } from "./mail.js";
 import { MetricsRegistry } from "./metrics.js";
 import { PrismaNotificationStore } from "./notifications.js";
@@ -204,6 +205,10 @@ const app = createApp(
     disclaimerVersion: DISCLAIMER_VERSION,
     metricsEnabled: true,
     secureCookies: env.NODE_ENV === "production",
+    // P5.2: enqueue seam for POST /admin/jobs onto the shared Redis connection.
+    // The ingest itself runs in the worker process (RUN_WORKER); a queue outage
+    // degrades this route to 503 and never crashes the API.
+    jobsQueue: createTmIngestQueue(redis),
   },
 );
 

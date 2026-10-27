@@ -25,7 +25,13 @@ import type { CorpusTransactionHost } from "@markus/tm-data";
 import { PrismaClient } from "@prisma/client";
 import type { Worker } from "bullmq";
 
-import { DAILY_CRON, runTmIngest, TM_INGEST_QUEUE, type TmIngestJobPayload } from "./tm-ingest.js";
+import {
+  DAILY_CRON,
+  isTmIngestSkip,
+  runTmIngest,
+  TM_INGEST_QUEUE,
+  type TmIngestJobPayload,
+} from "./tm-ingest.js";
 
 if (process.env.NODE_ENV !== "production") {
   await import("dotenv/config");
@@ -109,12 +115,15 @@ async function main(): Promise<void> {
     tmIngestWorker = new Worker<string, unknown>(
       TM_INGEST_QUEUE,
       async (job) => {
-        const report = await runTmIngest((job.data as TmIngestJobPayload) ?? {}, {
+        const result = await runTmIngest((job.data as TmIngestJobPayload) ?? {}, {
           store: new PrismaCorpusStore(prisma as unknown as CorpusTransactionHost),
           env,
         });
+        // A gated source (FA-011) already logged its skip-with-reason inside
+        // runTmIngest; the job completes without failure or retry.
+        if (isTmIngestSkip(result)) return;
         console.log(
-          `[tm-ingest] run=${report.ingestRunId} imported=${report.marksImported} updated=${report.marksUpdated} skipped=${report.marksSkipped} rejected=${report.marksRejected}`,
+          `[tm-ingest] run=${result.ingestRunId} imported=${result.marksImported} updated=${result.marksUpdated} skipped=${result.marksSkipped} rejected=${result.marksRejected}`,
         );
       },
       { connection, concurrency: 1, lockDuration: 120_000 },

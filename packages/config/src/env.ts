@@ -144,6 +144,26 @@ export const envSchema = z.object({
   // Nightly corpora ingest job in the worker; off by default so dev never
   // downloads the full researcher archive.
   TM_CORPUS_INGEST_ENABLED: envBoolean("false"),
+  // Comma-separated years the nightly ingest backfills; defaults to the run's
+  // own year when unset.
+  TM_CORPUS_INGEST_YEARS: z
+    .string()
+    .optional()
+    .transform((value) =>
+      value === undefined
+        ? undefined
+        : value.split(",").map((part) => Number.parseInt(part.trim(), 10)),
+    )
+    .refine(
+      (value) =>
+        value === undefined ||
+        value.every((year) => Number.isInteger(year) && year >= 1900 && year <= 2100),
+      { message: "TM_CORPUS_INGEST_YEARS must be comma-separated years between 1900 and 2100" },
+    ),
+  // Corpus ingest source for the nightly job. `tdxf` is gated by FA-011 until
+  // the firm's ODP account is provisioned; the tick logs a skip-with-reason
+  // and does not fail until then.
+  TM_CORPUS_INGEST_SOURCE: z.enum(["trcfeco2", "tdxf"]).default("trcfeco2"),
   USPTO_ASSISTED_LOGIN_ENABLED: envBoolean("false"),
 
   // Anonymous assessment (M8.1/M8.2): 24 h result cache and abuse limits.

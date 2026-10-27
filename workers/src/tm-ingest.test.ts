@@ -1,12 +1,14 @@
 import type { Env } from "@markus/config";
+import { OdpTdxfSource, SourceUnavailableError } from "@markus/tm-data";
 import type { CorpusMarkInput, CorpusStore, FinishRunInput, ParseOutcome, TrademarkSource, UpsertAction } from "@markus/tm-data";
 
-import { buildCorpusSources, runTmIngest } from "./tm-ingest.js";
+import { buildCorpusSources, isTmIngestSkip, resolveIngestSpec, runTmIngest } from "./tm-ingest.js";
 
-/** Hand-built Env: only the two fields the source builder reads. */
+/** Hand-built Env: only the fields the source builder reads. */
 const fakeEnv = {
   USPTO_BULK_BASE_URL: "https://data.uspto.gov",
   USPTO_RESEARCHER_PRODUCT_ID: "TRCFECO2",
+  TM_CORPUS_INGEST_SOURCE: "trcfeco2",
 } as Env;
 
 const mark = (serialNumber: string): CorpusMarkInput => ({
@@ -63,6 +65,53 @@ describe("buildCorpusSources", () => {
     expect(sources[0]?.name).toBe("uspto-researcher-trcfeco2");
     expect(typeof sources[0]?.fetchRecords).toBe("function");
   });
+
+  test("selects the ODP TDXF source from the job spec (P5.2)", () => {
+    const sources = buildCorpusSources(fakeEnv, { source: "tdxf" });
+
+    expect(sources).toHaveLength(1);
+    expect(sources[0]?.name).toBe("uspto-odp-tdxf");
+  });
+
+  test("selects the ODP TDXF source from env config when the spec is silent", () => {
+    const env = { ...fakeEnv, TM_CORPUS_INGEST_SOURCE: "tdxf" } as Env;
+
+    expect(buildCorpusSources(env)[0]?.name).toBe("uspto-odp-tdxf");
+  });
+});
+
+describe("resolveIngestSpec (job-spec / env config precedence)", () => {
+  test("payload fields win over env config", () => {
+    const env = {
+      ...fakeEnv,
+      TM_CORPUS_INGEST_YEARS: [2024],
+      TM_CORPUS_INGEST_SOURCE: "tdxf",
+    } as unknown as Env;
+
+    expect(resolveIngestSpec(env, { years: [2025, 2026], table: "assignment", source: "trcfeco2" })).toEqual({
+      source: "trcfeco2",
+      years: [2025, 2026],
+      table: "assignment",
+    });
+  });
+
+  test("env config fills fields the payload leaves unset", () => {
+    const env = { ...fakeEnv, TM_CORPUS_INGEST_YEARS: [2024] } as unknown as Env;
+
+    expect(resolveIngestSpec(env, {})).toEqual({
+      source: "trcfeco2",
+      years: [2024],
+      table: "case_file",
+    });
+  });
+
+  test("defaults: trcfeco2, run-year backfill, case_file table", () => {
+    expect(resolveIngestSpec(fakeEnv, {})).toEqual({
+      source: "trcfeco2",
+      years: undefined,
+      table: "case_file",
+    });
+  });
 });
 
 describe("runTmIngest", () => {
@@ -116,5 +165,49 @@ describe("runTmIngest", () => {
       { reason: "missing-serial-number", raw: "{}" },
     ]);
     expect(await store.recentRuns()).toEqual([]);
+  });
+
+  test("FA-011: a gated ODP TDXF source skips with reason and never opens a run", async () => {
+    const store = new FakeStore();
+
+    const result = await runTmIngest(
+      { source: "tdxf" },
+      { store, env: { ...fakeEnv, TM_CORPUS_INGEST_SOURCE: "tdxf" } as Env },
+    );
+
+    expect(isTmIngestSkip(result)).toBe(true);
+    if (isTmIngestSkip(result)) {
+      expect(result.code).toBe("FA-011");
+      expect(result.reason).toContain("FA-011");
+    }
+    expect(store.startedWith).toBeUndefined();
+    expect(store.finished).toBeUndefined();
+  });
+
+  test("FA-011 thrown mid-run by an injected source also skips without failing", async () => {
+    const store = new FakeStore();
+
+    const result = await runTmIngest(
+      { runDate: "2026-10-13" },
+      { store, env: fakeEnv, sources: [new OdpTdxfSource({ baseUrl: "https://data.uspto.gov" })] },
+    );
+
+    expect(isTmIngestSkip(result)).toBe(true);
+    expect(store.startedWith).toBeUndefined();
+  });
+
+  test("non-FA-011 source failures propagate so BullMQ records the failed job", async () => {
+    const store = new FakeStore();
+    const failing: TrademarkSource = {
+      name: "flaky",
+      // eslint-disable-next-line require-yield
+      async *fetchRecords(): AsyncIterable<ParseOutcome> {
+        throw new SourceUnavailableError("signed-URL endpoint responded 503", "HTTP_ERROR");
+      },
+    };
+
+    await expect(
+      runTmIngest({ runDate: "2026-10-13" }, { store, env: fakeEnv, sources: [failing] }),
+    ).rejects.toMatchObject({ code: "HTTP_ERROR" });
   });
 });
