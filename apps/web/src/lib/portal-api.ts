@@ -80,6 +80,9 @@ export interface UploadTicket {
   documentId: string;
   uploadUrl: string;
   expiresAt: string;
+  method: "PUT";
+  headers: { "Content-Length": string; "Content-Type": string };
+  maxSizeBytes: number;
 }
 
 export interface NotificationItem {

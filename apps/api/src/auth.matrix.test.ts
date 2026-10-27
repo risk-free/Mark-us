@@ -608,7 +608,7 @@ describe("auth matrix — CONTACT (client portal)", () => {
       headers: { cookie, "x-csrf-token": csrf, "content-type": "application/json" },
       body: JSON.stringify({
         filename: "new-filing.pdf",
-        kind: "OA_RESPONSE",
+        category: "OA_RESPONSE",
         sizeBytes: 1024,
         mimeType: "application/pdf",
         sha256: "a".repeat(64),
@@ -643,7 +643,7 @@ describe("auth matrix — CONTACT (client portal)", () => {
       headers: { cookie: staffCookie, "x-csrf-token": staffCsrf, "content-type": "application/json" },
       body: JSON.stringify({
         filename: "staff-doc.pdf",
-        kind: "INVOICE",
+        category: "INVOICE",
         sizeBytes: 512,
         mimeType: "application/pdf",
         sha256: "b".repeat(64),
@@ -655,5 +655,92 @@ describe("auth matrix — CONTACT (client portal)", () => {
     // Staff surfaces elsewhere are untouched.
     const staffIngest = await app.request("/tm/ingest/runs", { headers: { cookie: staffCookie } });
     expect(staffIngest.status).toBe(200);
+  });
+
+  test("client documents complete: own upload 200 READY, foreign 404, checksum mismatch 409, staff may complete", async () => {
+    const { app, auth } = await build();
+
+    // Seed a foreign upload slot for contact-2 (checksum recorded at creation).
+    const foreignId = auth.documents.addDocument("contact-2", {
+      filename: "foreign.pdf",
+      kind: "INVOICE",
+      checksum: "b".repeat(64),
+      currentVersion: 1,
+    });
+
+    // Portal session for contact-1.
+    await json(app, "/auth/magic-link", { email: "client@example.cn" });
+    const token = auth.deliverer.tokenOf(0);
+    const verify = await json(app, "/auth/magic-link/verify", { token });
+    expect(verify.status).toBe(200);
+    const verifyBody = await verify.json();
+    const cookie = cookieFrom(verify, "mkus_portal");
+    const csrf = verifyBody.csrfToken as string;
+
+    // contact-1 creates its own upload slot.
+    const createOwn = await app.request("/documents", {
+      method: "POST",
+      headers: { cookie, "x-csrf-token": csrf, "content-type": "application/json" },
+      body: JSON.stringify({
+        filename: "own.pdf",
+        category: "INVOICE",
+        sizeBytes: 1024,
+        mimeType: "application/pdf",
+        sha256: "a".repeat(64),
+      }),
+    });
+    expect(createOwn.status).toBe(201);
+    const ownId = (await createOwn.json()).documentId as string;
+
+    // Bad sha256 format: 400.
+    const badFormat = await app.request(`/documents/${ownId}/complete`, {
+      method: "POST",
+      headers: { cookie, "x-csrf-token": csrf, "content-type": "application/json" },
+      body: JSON.stringify({ sha256: "not-a-hash" }),
+    });
+    expect(badFormat.status).toBe(400);
+    expect((await badFormat.json()).code).toBe("VALIDATION_FAILED");
+
+    // Checksum mismatch: 409.
+    const mismatch = await app.request(`/documents/${ownId}/complete`, {
+      method: "POST",
+      headers: { cookie, "x-csrf-token": csrf, "content-type": "application/json" },
+      body: JSON.stringify({ sha256: "b".repeat(64) }),
+    });
+    expect(mismatch.status).toBe(409);
+    expect((await mismatch.json()).code).toBe("CHECKSUM_MISMATCH");
+
+    // Foreign document: 404, no existence confirmation.
+    const foreignComplete = await app.request(`/documents/${foreignId}/complete`, {
+      method: "POST",
+      headers: { cookie, "x-csrf-token": csrf, "content-type": "application/json" },
+      body: JSON.stringify({ sha256: "b".repeat(64) }),
+    });
+    expect(foreignComplete.status).toBe(404);
+    expect((await foreignComplete.json()).code).toBe("NOT_FOUND");
+
+    // Own document, correct checksum: 200 READY; replay is idempotent.
+    const completeOwn = await app.request(`/documents/${ownId}/complete`, {
+      method: "POST",
+      headers: { cookie, "x-csrf-token": csrf, "content-type": "application/json" },
+      body: JSON.stringify({ sha256: "a".repeat(64) }),
+    });
+    expect(completeOwn.status).toBe(200);
+    expect((await completeOwn.json()).status).toBe("READY");
+    const replay = await app.request(`/documents/${ownId}/complete`, {
+      method: "POST",
+      headers: { cookie, "x-csrf-token": csrf, "content-type": "application/json" },
+      body: JSON.stringify({ sha256: "a".repeat(64) }),
+    });
+    expect(replay.status).toBe(200);
+
+    // Staff may complete (document.create); foreign document visible to staff.
+    const { cookie: staffCookie, csrf: staffCsrf } = await loginStaff(app, "admin@markus.example", ADMIN_SEED);
+    const staffComplete = await app.request(`/documents/${foreignId}/complete`, {
+      method: "POST",
+      headers: { cookie: staffCookie, "x-csrf-token": staffCsrf, "content-type": "application/json" },
+      body: JSON.stringify({ sha256: "b".repeat(64) }),
+    });
+    expect(staffComplete.status).toBe(200);
   });
 });

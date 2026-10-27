@@ -43,11 +43,67 @@ export interface DocumentRecord {
   filename: string;
 }
 
+export interface DocumentVersionItem {
+  version: number;
+  status: string;
+  sizeBytes: number;
+  mimeType: string | null;
+  sha256: string;
+  objectKey: string;
+  ocrStatus: string;
+  proofreadStatus: string | null;
+  proofreadFindingCount: number | null;
+  uploadedAt: string | null;
+}
+
+export interface DocumentDetail {
+  id: string;
+  contactId: string;
+  trademarkId: string | null;
+  applicationId: string | null;
+  category: string;
+  status: string;
+  currentVersion: number;
+  approvedVersion: number | null;
+  versions: DocumentVersionItem[];
+  proofreadStatus: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface UploadTicket {
   documentId: string;
   uploadUrl: string;
-  expiresAt: Date;
+  expiresAt: string;
+  method: "PUT";
+  headers: { "Content-Length": string; "Content-Type": string };
+  maxSizeBytes: number;
 }
+
+export class ChecksumMismatchError extends Error {
+  constructor() {
+    super("declared sha256 does not match the upload slot");
+    this.name = "ChecksumMismatchError";
+  }
+}
+
+const DOCUMENT_CATEGORIES = new Set([
+  "SPECIMEN",
+  "DESIGN",
+  "POWER_OF_ATTORNEY",
+  "OA_RESPONSE",
+  "USPTO_RECEIPT",
+  "INVOICE",
+  "IDENTITY",
+  "OTHER",
+]);
+
+const DOCUMENT_KIND_BY_CATEGORY: Record<string, DocKind> = {
+  IDENTITY: "IDENTITY",
+  SPECIMEN: "SPECIMEN",
+  POWER_OF_ATTORNEY: "POWER_OF_ATTORNEY",
+  OTHER: "OTHER",
+};
 
 export interface DocumentStore {
   listDocuments(input: {
@@ -64,13 +120,18 @@ export interface DocumentStore {
   createDocumentUpload(input: {
     contactId: string;
     filename: string;
-    kind: string;
+    category: string;
     sizeBytes: number;
     mimeType: string;
     sha256: string;
     trademarkId?: string | null;
     applicationId?: string | null;
   }): Promise<UploadTicket>;
+  completeDocumentUpload(input: {
+    documentId: string;
+    contactId?: string;
+    sha256: string;
+  }): Promise<DocumentDetail | null>;
 }
 
 function pageLimit(raw: string | number | undefined): number {
@@ -178,7 +239,7 @@ export class PrismaDocumentStore implements DocumentStore {
   async createDocumentUpload(input: {
     contactId: string;
     filename: string;
-    kind: string;
+    category: string;
     sizeBytes: number;
     mimeType: string;
     sha256: string;
@@ -189,7 +250,7 @@ export class PrismaDocumentStore implements DocumentStore {
       data: {
         contactId: input.contactId,
         filename: input.filename,
-        kind: input.kind as DocKind,
+        kind: DOCUMENT_KIND_BY_CATEGORY[input.category] ?? "OTHER",
         currentVersion: 1,
         version: 1,
         checksum: input.sha256,
@@ -201,7 +262,37 @@ export class PrismaDocumentStore implements DocumentStore {
     return {
       documentId: document.id,
       uploadUrl: `${this.publicBaseUrl}/documents/${document.id}/upload`,
-      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      method: "PUT",
+      headers: { "Content-Length": String(input.sizeBytes), "Content-Type": input.mimeType },
+      maxSizeBytes: 26_214_400,
+    };
+  }
+
+  async completeDocumentUpload(input: {
+    documentId: string;
+    contactId?: string;
+    sha256: string;
+  }): Promise<DocumentDetail | null> {
+    const document = await this.prisma.document.findUnique({
+      where: { id: input.documentId },
+    });
+    if (document === null) return null;
+    if (input.contactId !== undefined && document.contactId !== input.contactId) return null;
+    if (document.checksum !== input.sha256) throw new ChecksumMismatchError();
+    return {
+      id: document.id,
+      contactId: document.contactId,
+      trademarkId: document.trademarkId,
+      applicationId: document.applicationId,
+      category: document.kind,
+      status: "READY",
+      currentVersion: document.currentVersion,
+      approvedVersion: null,
+      versions: [],
+      proofreadStatus: null,
+      createdAt: document.createdAt.toISOString(),
+      updatedAt: document.updatedAt.toISOString(),
     };
   }
 }
@@ -269,15 +360,15 @@ export function createDocumentRoutes(deps: { store: DocumentStore }): Hono {
     }
     const record = (body ?? {}) as Record<string, unknown>;
     const filename = record.filename;
-    const category = record.kind;
+    const category = record.category;
     const sizeBytes = record.sizeBytes;
     const mimeType = record.mimeType;
     const sha256 = record.sha256;
     if (typeof filename !== "string" || filename.length === 0) {
       return problem(c, 400, "VALIDATION_FAILED", "missing filename");
     }
-    if (typeof category !== "string" || category.length === 0) {
-      return problem(c, 400, "VALIDATION_FAILED", "missing category");
+    if (typeof category !== "string" || !DOCUMENT_CATEGORIES.has(category)) {
+      return problem(c, 400, "VALIDATION_FAILED", "invalid category");
     }
     if (typeof sizeBytes !== "number" || sizeBytes < 1 || sizeBytes > 26_214_400) {
       return problem(c, 400, "VALIDATION_FAILED", "sizeBytes must be 1..26214400");
@@ -293,7 +384,7 @@ export function createDocumentRoutes(deps: { store: DocumentStore }): Hono {
     const ticket = await store.createDocumentUpload({
       contactId,
       filename,
-      kind: category,
+      category,
       sizeBytes,
       mimeType,
       sha256,
@@ -301,6 +392,33 @@ export function createDocumentRoutes(deps: { store: DocumentStore }): Hono {
       applicationId: record.applicationId as string | undefined,
     });
     return c.json(ticket, 201);
+  });
+
+  app.post("/documents/:documentId/complete", (c, next) => contactOrStaff(c, "document.create", next), async (c) => {
+    const session = c.get("session") as ResolvedSession;
+    const documentId = c.req.param("documentId");
+    if (!documentId) return problem(c, 400, "VALIDATION_FAILED", "missing documentId");
+    let body: { sha256?: unknown };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "invalid request body" }, 400);
+    }
+    const sha256 = body.sha256;
+    if (typeof sha256 !== "string" || !/^[0-9a-f]{64}$/.test(sha256)) {
+      return problem(c, 400, "VALIDATION_FAILED", "sha256 must be a 64-char hex string");
+    }
+    const contactId = session.record.actorType === "CONTACT" ? session.record.actorId : undefined;
+    try {
+      const document = await store.completeDocumentUpload({ documentId, contactId, sha256 });
+      if (document === null) return problem(c, 404, "NOT_FOUND", "Document not found or not visible to this actor");
+      return c.json(document, 200);
+    } catch (error) {
+      if (error instanceof ChecksumMismatchError) {
+        return problem(c, 409, "CHECKSUM_MISMATCH", "declared sha256 does not match the upload slot");
+      }
+      throw error;
+    }
   });
 
   return app;

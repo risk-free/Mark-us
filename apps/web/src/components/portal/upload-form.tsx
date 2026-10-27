@@ -72,7 +72,7 @@ export function UploadForm({
       method: "POST",
       body: {
         filename: file.name,
-        kind: category,
+        category,
         sizeBytes: file.size,
         mimeType: file.type || "application/octet-stream",
         sha256,
@@ -87,8 +87,8 @@ export function UploadForm({
 
     try {
       const upload = await fetch(ticket.data.uploadUrl, {
-        method: "PUT",
-        headers: { "content-type": file.type || "application/octet-stream" },
+        method: ticket.data.method,
+        headers: ticket.data.headers,
         body: bytes,
       });
       if (!upload.ok) {

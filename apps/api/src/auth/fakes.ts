@@ -7,7 +7,8 @@
 
 import { InMemoryRateLimiter, type RateLimiter } from "../rate-limit.js";
 import type { ApplicationItem, ClientStore, TimelineEvent } from "../client.js";
-import type { DocumentPage, DocumentRecord, DocumentStore, UploadTicket } from "../documents.js";
+import { ChecksumMismatchError } from "../documents.js";
+import type { DocumentDetail, DocumentPage, DocumentRecord, DocumentStore, UploadTicket } from "../documents.js";
 import type { NotificationPage, NotificationRecord, NotificationStore } from "../notifications.js";
 import { InMemoryKeyValueStore, type KeyValueStore } from "./kv.js";
 import {
@@ -362,6 +363,7 @@ interface StoredDocument {
   contactId: string;
   filename: string;
   kind: string;
+  checksum: string | null;
   currentVersion: number;
   applicationId: string | null;
   trademarkId: string | null;
@@ -382,6 +384,7 @@ export class InMemoryDocumentStore implements DocumentStore {
       contactId,
       filename: input.filename,
       kind: input.kind,
+      checksum: input.checksum ?? null,
       currentVersion: input.currentVersion ?? 1,
       applicationId: input.applicationId ?? null,
       trademarkId: input.trademarkId ?? null,
@@ -448,7 +451,7 @@ export class InMemoryDocumentStore implements DocumentStore {
   async createDocumentUpload(input: {
     contactId: string;
     filename: string;
-    kind: string;
+    category: string;
     sizeBytes: number;
     mimeType: string;
     sha256: string;
@@ -460,7 +463,8 @@ export class InMemoryDocumentStore implements DocumentStore {
       id,
       contactId: input.contactId,
       filename: input.filename,
-      kind: input.kind,
+      kind: input.category,
+      checksum: input.sha256,
       currentVersion: 1,
       applicationId: input.applicationId ?? null,
       trademarkId: input.trademarkId ?? null,
@@ -470,7 +474,35 @@ export class InMemoryDocumentStore implements DocumentStore {
     return {
       documentId: id,
       uploadUrl: `https://portal.test/documents/${id}/upload`,
-      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      method: "PUT",
+      headers: { "Content-Length": String(input.sizeBytes), "Content-Type": input.mimeType },
+      maxSizeBytes: 26_214_400,
+    };
+  }
+
+  async completeDocumentUpload(input: {
+    documentId: string;
+    contactId?: string;
+    sha256: string;
+  }): Promise<DocumentDetail | null> {
+    const d = this.documents.get(input.documentId);
+    if (d === undefined) return null;
+    if (input.contactId !== undefined && d.contactId !== input.contactId) return null;
+    if (d.checksum !== input.sha256) throw new ChecksumMismatchError();
+    return {
+      id: d.id,
+      contactId: d.contactId,
+      trademarkId: d.trademarkId,
+      applicationId: d.applicationId,
+      category: d.kind,
+      status: "READY",
+      currentVersion: d.currentVersion,
+      approvedVersion: null,
+      versions: [],
+      proofreadStatus: null,
+      createdAt: d.createdAt.toISOString(),
+      updatedAt: d.updatedAt.toISOString(),
     };
   }
 }

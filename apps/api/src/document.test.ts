@@ -1,3 +1,4 @@
+import { ChecksumMismatchError } from "./documents.js";
 import { InMemoryDocumentStore } from "./auth/fakes.js";
 
 const store = (): InMemoryDocumentStore => new InMemoryDocumentStore();
@@ -93,17 +94,81 @@ describe("InMemoryDocumentStore", () => {
     const ticket = await s.createDocumentUpload({
       contactId: "contact-1",
       filename: "filing.pdf",
-      kind: "OA_RESPONSE",
+      category: "OA_RESPONSE",
       sizeBytes: 2048,
       mimeType: "application/pdf",
       sha256: "c".repeat(64),
     });
     expect(ticket.documentId).toBeDefined();
     expect(ticket.uploadUrl).toMatch(/^https?:\/\//);
+    expect(ticket.method).toBe("PUT");
+    expect(ticket.headers).toEqual({ "Content-Length": "2048", "Content-Type": "application/pdf" });
+    expect(ticket.maxSizeBytes).toBe(26_214_400);
     expect(new Date(ticket.expiresAt).getTime() - Date.now()).toBeLessThanOrEqual(5 * 60_000);
 
     const doc = await s.getDocument(ticket.documentId, "contact-1");
     expect(doc).not.toBeNull();
     expect(doc!.filename).toBe("filing.pdf");
+  });
+
+  test("completeDocumentUpload finalises the contact's own upload", async () => {
+    const s = store();
+    const ticket = await s.createDocumentUpload({
+      contactId: "contact-1",
+      filename: "filing.pdf",
+      category: "INVOICE",
+      sizeBytes: 2048,
+      mimeType: "application/pdf",
+      sha256: "d".repeat(64),
+    });
+
+    const complete = await s.completeDocumentUpload({
+      documentId: ticket.documentId,
+      contactId: "contact-1",
+      sha256: "d".repeat(64),
+    });
+    expect(complete).not.toBeNull();
+    expect(complete!.id).toBe(ticket.documentId);
+    expect(complete!.status).toBe("READY");
+    expect(complete!.category).toBe("INVOICE");
+  });
+
+  test("completeDocumentUpload rejects a foreign contact", async () => {
+    const s = store();
+    const ticket = await s.createDocumentUpload({
+      contactId: "contact-1",
+      filename: "filing.pdf",
+      category: "INVOICE",
+      sizeBytes: 2048,
+      mimeType: "application/pdf",
+      sha256: "d".repeat(64),
+    });
+
+    const complete = await s.completeDocumentUpload({
+      documentId: ticket.documentId,
+      contactId: "contact-2",
+      sha256: "d".repeat(64),
+    });
+    expect(complete).toBeNull();
+  });
+
+  test("completeDocumentUpload rejects a checksum mismatch and an unknown document", async () => {
+    const s = store();
+    const ticket = await s.createDocumentUpload({
+      contactId: "contact-1",
+      filename: "filing.pdf",
+      category: "INVOICE",
+      sizeBytes: 2048,
+      mimeType: "application/pdf",
+      sha256: "d".repeat(64),
+    });
+
+    await expect(
+      s.completeDocumentUpload({ documentId: ticket.documentId, contactId: "contact-1", sha256: "e".repeat(64) }),
+    ).rejects.toThrow(ChecksumMismatchError);
+
+    expect(
+      await s.completeDocumentUpload({ documentId: "missing", contactId: "contact-1", sha256: "d".repeat(64) }),
+    ).toBeNull();
   });
 });
