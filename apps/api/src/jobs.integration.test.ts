@@ -44,8 +44,15 @@ const FIXTURE_ROWS = [
   "22222222,BIG CO,600,2024-02-01,2023-01-01,,,,3000,,2",
 ];
 
-const archiveBytes = (): Uint8Array =>
-  new Uint8Array(zipSync({ "case_file.csv": strToU8([HEADERS, ...FIXTURE_ROWS].join("\n")) }));
+/** Distinct serials for the resume test — re-upserting test 1's rows would
+ *  read as `skipped`, not `imported`. */
+const FIXTURE_ROWS_RESUME = [
+  "33333333,RESUME ONE,700,2024-02-01,2021-03-04,2022-06-07,6789013,,4000,Y,1",
+  "44444444,RESUME TWO,600,2024-02-01,2023-01-01,,,,3000,,2",
+];
+
+const archiveBytes = (rows: readonly string[]): Uint8Array =>
+  new Uint8Array(zipSync({ "case_file.csv": strToU8([HEADERS, ...rows].join("\n")) }));
 
 /** CI uses testcontainers; Windows Dev can point API_TEST_DATABASE_URL at a real PG. */
 const EXTERNAL_DATABASE_URL = process.env.API_TEST_DATABASE_URL;
@@ -117,14 +124,17 @@ describe("P5.2 corpus-ingest job enqueue against PostgreSQL 16", () => {
   };
 
   /** Run the captured spec exactly as the worker would wire it. */
-  const runCaptured = async (spec: TmIngestJobSpec): Promise<IngestReport> => {
+  const runCaptured = async (
+    spec: TmIngestJobSpec,
+    rows: readonly string[] = FIXTURE_ROWS,
+  ): Promise<IngestReport> => {
     const source = new Trcfeco2Source({
       baseUrl: "https://data.uspto.gov",
       years: spec.years ?? [2024],
       table: spec.table ?? "case_file",
       http: {
         getJson: async () => ({ Location: "https://cdn.example/signed/TRCFECO2/2024/case_file.csv.zip" }),
-        getBytes: async () => archiveBytes(),
+        getBytes: async () => archiveBytes(rows),
       },
       decode: defaultArchiveDecoder,
     });
@@ -170,7 +180,7 @@ describe("P5.2 corpus-ingest job enqueue against PostgreSQL 16", () => {
     // Simulate the crash: a run row was opened and never finished.
     const crashedRunId = await store.startRun(runDate);
 
-    const report = await runCaptured({ runDate: "2024-06-02", years: [2024] });
+    const report = await runCaptured({ runDate: "2024-06-02", years: [2024] }, FIXTURE_ROWS_RESUME);
 
     expect(report.ingestRunId).toBe(crashedRunId);
     const runs = await store.recentRuns(10);
