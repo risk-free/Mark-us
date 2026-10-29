@@ -12,7 +12,7 @@
     "test:integration": "jest --config jest.integration.config.cjs"
   },
   "dependencies": {
-    "@hono/node-server": "^1.19.17",
+    "@hono/node-server": "^2.1.5",
     "@markus/config": "workspace:*",
     "@markus/core": "workspace:*",
     "@markus/kb": "workspace:*",

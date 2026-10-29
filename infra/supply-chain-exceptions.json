@@ -28,6 +28,20 @@
       "owner": "Developer (removal via zod 4 migration) / Architect (renewal)",
       "reviewBy": "2026-12-24",
       "revisitWhen": "zod 4.6.6 migration lands on the P-track backlog"
+    },
+    {
+      "ghsa": "GHSA-gcqx-w48m-w2h4",
+      "package": "deepmerge",
+      "severity": "low",
+      "title": "deepmerge mergeObject() allows prototype poisoning of returned objects",
+      "fixedUpstream": false,
+      "chain": "deepmerge@4.3.1 via jest-config@29.7.0 (development/test dependency only)",
+      "runtimeExposure": "deepmerge is reachable only through Jest's development/test configuration loader and is not imported by production entrypoints. Jest merges repository-owned static configuration, not HTTP requests, corpus records, or other attacker-controlled objects. Exploitation would require write access to the test configuration, which already permits arbitrary code execution in the developer or CI context.",
+      "reason": "deepmerge@4.3.1 is the latest npm release and has no patched successor. The latest jest-config@30.5.2 still depends on deepmerge ^4.3.1, so a Jest major upgrade would not remove the advisory. Accept the dev-only exposure temporarily rather than pinning an unreviewed source commit or suppressing the audit globally.",
+      "exploitability": "An attacker must already be able to modify repository-owned Jest configuration or another trusted input to the test runner; no production request path reaches this package.",
+      "owner": "Developer (remove on a patched deepmerge release or Jest dependency change)",
+      "reviewBy": "2026-11-30",
+      "revisitWhen": "a deepmerge release newer than 4.3.1 is published or Jest removes the dependency"
     }
   ]
 }
