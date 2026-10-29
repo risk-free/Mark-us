@@ -24,7 +24,7 @@ describe("scoreCandidates", () => {
     expect(result.modelVersion).toBe(BOOTSTRAP_MODEL.version);
     expect(result.disclaimerVersion).toBe(DISCLAIMER_VERSION);
     expect(result.isLegalAdvice).toBe(false);
-    expect(result.method).toBe("trigram");
+    expect(result.method).toBe("hybrid");
     expect(result.disclaimer.length).toBeGreaterThan(20);
     expect(result.disclaimers.en.length).toBeGreaterThan(20);
     expect(result.disclaimers["zh-CN"].length).toBeGreaterThan(5);

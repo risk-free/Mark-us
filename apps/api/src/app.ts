@@ -18,6 +18,7 @@ import {
   DISCLAIMER_VERSION,
   normalizeMarkText,
   type AssessmentScore,
+  type CorpusSearchOptions,
   type CorpusSearchResult,
   type QueryMark,
 } from "@markus/tm-data";
@@ -40,7 +41,7 @@ import { createNotificationRoutes, type NotificationStore } from "./notification
 import { clientIp, type RateLimiter } from "./rate-limit.js";
 
 export interface CorpusSearcher {
-  search(query: string, options?: { limit?: number }): Promise<CorpusSearchResult>;
+  search(query: string, options?: CorpusSearchOptions): Promise<CorpusSearchResult>;
 }
 
 export interface Assessor {
@@ -146,6 +147,13 @@ const parseClassCodes = (raw: string | undefined): number[] => {
   return [parsed];
 };
 
+/** Optional composite-score floor; the search layer owns clamping to `0..1`. */
+const parseMinScore = (raw: string | undefined): number | undefined => {
+  if (raw === undefined || raw.trim().length === 0) return undefined;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
 const ASSISTANT_LOCALES = ["en", "zh-CN", "zh-TW"] as const;
 
 /** Assistant answer locale; an unknown tag falls back to `zh-CN`, never an error. */
@@ -242,8 +250,12 @@ export function createApp(services: AppServices, options: AppOptions): Hono {
     }
 
     const limit = parseLimit(c.req.query("limit"), defaultSearchLimit, maxSearchLimit);
+    const niceClass = parseClassCodes(c.req.query("niceClass"))[0];
+    const rawStatus = c.req.query("statusCode");
+    const statusCode = rawStatus === "600" || rawStatus === "700" ? rawStatus : undefined;
+    const minScore = parseMinScore(c.req.query("minScore"));
     const [result, lastCompletedAt] = await Promise.all([
-      search.search(q, { limit }),
+      search.search(q, { limit, niceClass, statusCode, minScore }),
       store.lastCompletedRunAt(),
     ]);
 

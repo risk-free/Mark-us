@@ -12,6 +12,7 @@
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { performance } from "node:perf_hooks";
 
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { PrismaClient } from "@prisma/client";
@@ -72,6 +73,24 @@ describe("USPTO corpus search API against PostgreSQL 16 (M7.2)", () => {
         ...overrides,
       },
     });
+
+  const attachClass = async (markId: string, niceClass: number) => {
+    const classId = String(niceClass).padStart(3, "0");
+    await prisma.tmCorpusClass.upsert({
+      where: { id: classId },
+      create: { id: classId, label: `Nice class ${niceClass}` },
+      update: {},
+    });
+    await prisma.tmCorpusMarkClass.create({ data: { markId, classId } });
+  };
+
+  const seedClassComparison = async () => {
+    const distant = await seedMark("CLASS ADJACENCY SIGNAL", { serialNumber: "91000001" });
+    const related = await seedMark("CLASS ADJACENCY SIGNAL", { serialNumber: "91000002" });
+    await attachClass(distant.id, 25);
+    await attachClass(related.id, 42);
+    return { distant, related };
+  };
 
   beforeAll(async () => {
     let url = EXTERNAL_DATABASE_URL;
@@ -152,7 +171,7 @@ describe("USPTO corpus search API against PostgreSQL 16 (M7.2)", () => {
       const body = await response.json();
 
       // M7.2 contract: never an opinion.
-      expect(body.method).toBe("trigram");
+      expect(body.method).toBe("hybrid");
       expect(body.isLegalAdvice).toBe(false);
       expect(body.disclaimer.length).toBeGreaterThan(20);
       expect(body.minScore).toBe(0.3);
@@ -172,6 +191,78 @@ describe("USPTO corpus search API against PostgreSQL 16 (M7.2)", () => {
       const scores = hits.map((h) => h.score);
       expect([...scores].sort((a, b) => b - a)).toEqual(scores);
     }
+  });
+
+  it("P5.3: a phonetic variant outranks a pure-trigram near-miss", async () => {
+    await seedMark("HAWTHORX", { serialNumber: "91000001" });
+    await seedMark("HAWTHORNE APOTHECARY", { serialNumber: "91000002" });
+
+    const response = await app.request("/tm/search?q=HAWTHORN");
+    expect(response.status).toBe(200);
+    const body = await response.json();
+
+    expect(body.candidates.map((candidate: { markText: string }) => candidate.markText)).toEqual([
+      "HAWTHORNE APOTHECARY",
+      "HAWTHORX",
+    ]);
+    expect(body.candidates[0].score).toBeGreaterThan(body.candidates[1].score);
+  });
+
+  it("P5.3: class adjacency breaks equal-text similarity in favour of the related class", async () => {
+    await seedClassComparison();
+
+    const response = await app.request("/tm/search?q=CLASS%20ADJACENCY%20SIGNAL&niceClass=9");
+    expect(response.status).toBe(200);
+    const body = await response.json();
+
+    expect(body.candidates.map((candidate: { classCodes: number[] }) => candidate.classCodes)).toEqual([
+      [42],
+      [25],
+    ]);
+    expect(body.candidates[0].score).toBeCloseTo(0.95, 12);
+    expect(body.candidates[1].score).toBeCloseTo(0.9, 12);
+  });
+
+  it("P5.3: minScore filters the fused composite rather than the trigram feature", async () => {
+    await seedClassComparison();
+
+    const response = await app.request(
+      "/tm/search?q=CLASS%20ADJACENCY%20SIGNAL&niceClass=9&minScore=0.95",
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+
+    expect(body.minScore).toBe(0.95);
+    expect(body.candidates).toHaveLength(1);
+    expect(body.candidates[0]).toMatchObject({ serialNumber: "91000002", classCodes: [42] });
+    expect(body.candidates[0].score).toBeGreaterThanOrEqual(body.minScore);
+  });
+
+  it("P5.3: top-20 hybrid search stays below the 1 s p95 gate", async () => {
+    await Promise.all(
+      Array.from({ length: 25 }, (_, index) =>
+        seedMark(`PERFORMANCE SIGNAL ${index}`, { serialNumber: `92000${String(index).padStart(3, "0")}` }),
+      ),
+    );
+    const path = "/tm/search?q=PERFORMANCE%20SIGNAL&limit=20";
+
+    const warmup = await app.request(path);
+    expect(warmup.status).toBe(200);
+    expect((await warmup.json()).candidates).toHaveLength(20);
+
+    const durations: number[] = [];
+    for (let sample = 0; sample < 21; sample += 1) {
+      const startedAt = performance.now();
+      const response = await app.request(path);
+      const body = await response.json();
+      durations.push(performance.now() - startedAt);
+      expect(response.status).toBe(200);
+      expect(body.candidates).toHaveLength(20);
+    }
+
+    durations.sort((left, right) => left - right);
+    const p95 = durations[Math.ceil(durations.length * 0.95) - 1]!;
+    expect(p95).toBeLessThan(1_000);
   });
 
   it("reports unknown freshness with no completed run, fresh within 26 h, stale beyond it", async () => {

@@ -80,12 +80,22 @@ export type {
   RunCounters,
   UpsertAction,
 } from "./store.js";
-export { PrismaCorpusSearcher, SEARCH_DISCLAIMER, SEARCH_METHOD, SEARCH_MIN_SCORE } from "./search.js";
+export {
+  HYBRID_NO_CLASS_WEIGHTS,
+  HYBRID_WEIGHTS,
+  hybridSearchScore,
+  PrismaCorpusSearcher,
+  SEARCH_CANDIDATE_POOL_SIZE,
+  SEARCH_DISCLAIMER,
+  SEARCH_METHOD,
+  SEARCH_MIN_SCORE,
+} from "./search.js";
 export type {
   CorpusSearchCandidate,
   CorpusSearchOptions,
   CorpusSearchResult,
   CorpusSqlClient,
+  HybridScoreFeatures,
 } from "./search.js";
 export { CorpusAssessmentScorer, INSUFFICIENT_DATA, scoreCandidates } from "./score.js";
 export type {

@@ -2,9 +2,9 @@
  * Phonetic similarity for the similarity engine (P5.3).
  *
  * American Soundex over the alphabetic characters of a mark. The engine treats
- * phonetic agreement as a **feature**, not a ranking method: `/tm/search` still
- * reports `method: "trigram"` (M7.2); a phonetic-affinity candidate set feeds the
- * scoring model alongside trigram, class adjacency and goods similarity.
+ * phonetic agreement as one weighted **feature** in the `/tm/search` hybrid,
+ * alongside trigram and Nice-class adjacency; assessment scoring can also reuse
+ * it as a non-probabilistic sub-signal.
  */
 
 const CODES: Record<string, string> = {

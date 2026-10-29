@@ -1,7 +1,7 @@
 /**
  * Feature extraction for the probability model (P5.4).
  *
- * The candidate set from `/tm/search` (trigram) is enriched with phonetic
+ * The candidate set from `/tm/search` (hybrid) is enriched with phonetic
  * affinity, Nice-class adjacency and goods/services overlap into a compact,
  * deterministic feature vector. Features are **non-probabilistic** — the model
  * converts them to `P(eventual registration)`; they are surfaced as sub-signals
@@ -23,7 +23,7 @@ export interface FeatureCandidate {
   serialNumber: string;
   markText: string;
   normalizedText?: string;
-  /** Trigram similarity in `0..1` from the corpus search. */
+  /** Corpus-search similarity in `0..1` (the hybrid composite from P5.3). */
   score: number;
   classCodes: readonly number[];
   goodsSummary: string | null;

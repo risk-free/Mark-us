@@ -3,8 +3,8 @@
  *
  * Trademark conflicts cluster by the **relatedness of the goods/services**, which
  * the Nice class codes approximate. The group table below is a curated heuristic
- * (a data judgement, tunable without a model-version change — it feeds a feature,
- * not a score): classes in the same group are "related" (distance 1), identical
+ * (a data judgement, tunable without a model-version change — it feeds one
+ * weighted similarity feature): classes in the same group are "related" (distance 1), identical
  * classes are distance 0, everything else is distance 2. It is deliberately
  * conservative and is expected to be refined against attorney spot-checks.
  */

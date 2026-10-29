@@ -19,7 +19,7 @@ const now = new Date();
 const assessment: AssessmentScore = {
   status: "scored",
   pRegistration: 0.62,
-  method: "trigram",
+  method: "hybrid",
   isLegalAdvice: false,
   disclaimer: "not legal advice",
   disclaimers: { en: "not legal advice", "zh-CN": "非法律意见", "zh-TW": "非法律意見" },
@@ -53,7 +53,7 @@ const fakeAssess = (): FakeAssessor => {
 
 const searchResult = (query: string): CorpusSearchResult => ({
   query,
-  method: "trigram",
+  method: "hybrid",
   minScore: 0.3,
   isLegalAdvice: false,
   disclaimer: "not legal advice",
@@ -186,12 +186,29 @@ describe("createApp /tm/search (M7.2)", () => {
     const body = await response.json();
     expect(body).toMatchObject({
       query: "ACME",
-      method: "trigram",
+      method: "hybrid",
       isLegalAdvice: false,
       disclaimer: "not legal advice",
       candidates: [],
       corpusFreshness: { status: "fresh", ageHours: expect.any(Number), slaHours: 26 },
     });
+  });
+
+  test("passes hybrid ranking options through the contract query parameters", async () => {
+    let received: Parameters<AppServices["search"]["search"]>[1];
+    const search: AppServices["search"] = {
+      async search(query, options) {
+        received = options;
+        return searchResult(query);
+      },
+    };
+
+    const response = await app(search, new FakeStore()).request(
+      "/tm/search?q=ACME&limit=7&niceClass=9&statusCode=600&minScore=0.85",
+    );
+
+    expect(response.status).toBe(200);
+    expect(received).toEqual({ limit: 7, niceClass: 9, statusCode: "600", minScore: 0.85 });
   });
 
   test("reports stale past the SLA (M7.1 gate)", async () => {

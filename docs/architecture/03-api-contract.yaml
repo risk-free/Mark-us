@@ -1207,9 +1207,10 @@ paths:
       tags: [trademarks]
       summary: Search the local USPTO corpus for similar marks (P5)
       description: |
-        Candidates are narrowed by Nice class, then ranked by trigram similarity (BGE embeddings when
-        A3 is enabled; the method is reported). Results are a similarity signal, never a legal opinion
-        and never a registration probability.
+        Candidates are retrieved by trigram similarity, then ranked by a hybrid of trigram,
+        phonetic similarity and Nice-class adjacency (BGE embeddings when A3 is enabled; the
+        method is reported). Results are a similarity signal, never a legal opinion and never
+        a registration probability.
       x-contract-status: PENDING-P5
       x-phase: P5
       x-permission: tm.search
