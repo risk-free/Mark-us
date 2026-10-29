@@ -82,6 +82,7 @@ This document is the **single, living register of defects and latent production 
 | BUG-041 | `COPY --chown` writes 0-byte files into the runtime image (Linux-only smoke declared) | High | REPRODUCED | CLEARED |
 | BUG-042 | `docker compose --profile app up` hangs on Docker Desktop/Windows — containers stuck `Created` | Medium | REPRODUCED | OPEN |
 | BUG-043 | Accepted zod advisory (GHSA-mrhx-c7xc-m3w5) expires 2026-12-24 — migrate to zod 4 before the gate fails closed | Medium | STATIC | OPEN |
+| BUG-044 | Worker image build fails when a lockfile refresh pulls native deps (ssh2/cpu-features) — python3/make/g++ absent in Dockerfile.worker build stage | Low | REPRODUCED | OPEN |
 
 ---
 
@@ -1491,6 +1492,27 @@ Host ports locally remapped (Supabase owns 5432/3000): postgres 55433 · redis 5
 
 **Recommended fix.** Migrate `@markus/config` and `@markus/llm-gateway` to zod 4.6.6+ (breaking change across the env schema and gateway response schemas) before 2026-12-24, then delete the exception entry. If the migration slips, renewal with a named owner and a new reviewBy is the fallback — never an unlisted advisory.
 
+### BUG-044 - Worker image build fails when a lockfile refresh pulls native deps (ssh2/cpu-features) — python3/make/g++ absent in Dockerfile.worker build stage
+
+| Field | Value |
+|---|---|
+| **Raised by** | Architect (memo 0025, 2026-10-29); logged by Debugger |
+| **Raised at** | 2026-10-29 |
+| **Severity** | Low — conditional build hygiene; no current production impact |
+| **Evidence** | REPRODUCED (CI) — dependabot "typescript group" run 40537763172 on the parked branch failed the worker-image build: `cpu-features` install reported "Unable to detect compiler type", followed by `ssh2@1.17.0` node-gyp "find Python / Python is not set". The log was inspected directly by the Debugger; no local Docker build was run. |
+| **Location** | `infra/Dockerfile.worker:3-19` — Alpine `deps`/`build` stages; `pnpm install --frozen-lockfile` at line 12 has no native-build toolchain |
+| **Blocks** | — (latent until a dependency/lockfile refresh introduces native install scripts) |
+| **Status** | OPEN — hygiene; no action until the hygiene pass / dependabot batch uptake |
+| **Discussion** | Owner: Developer (Dockerfile toolchain fix). The failing run was on a parked dependabot branch; main was not implicated by this observation. |
+| **Answered by / Answered at** | ARCH 2026-10-29 (memo 0025) — register as Low hygiene; defer action until dependency maintenance resumes |
+| **Verified by / Verified at** | Debugger 2026-10-29 — direct read of failed CI log (run 40537763172) and `infra/Dockerfile.worker`; current file confirms no `python3`, `make`, or `g++` installation in the install/build stages |
+
+**Issue.** The worker image build fails when a lockfile refresh pulls native dependencies such as `ssh2`/`cpu-features`: the Alpine dependency-install stage has no `python3`, `make`, or `g++`, so node-gyp cannot compile native install scripts. The observed signature is `cpu-features` reporting "Unable to detect compiler type", followed by `ssh2@1.17.0` node-gyp reporting "find Python / Python is not set".
+
+**Impact.** A future dependabot or manual dependency refresh can turn the worker image and dependent CI jobs red even though the current main-branch dependency set builds. This is latent build fragility, not a current runtime defect; keeping the parked failure registered prevents it from being rediscovered during the next dependency batch.
+
+**Recommended fix.** During the hygiene pass, add `RUN apk add --no-cache python3 make g++` to the worker `deps` stage before `pnpm install` (the separate runtime stage remains unchanged), then verify with a lockfile/dependency set that exercises the native install scripts and re-run the worker-image and dependent CI jobs. Do not broaden the runtime image or change dependency versions solely for this entry.
+
 ---
 
 ## 3. Patterns worth watching
@@ -1563,6 +1585,7 @@ pnpm build       # not run by the Debugger (see note)
 | 2026-10-12 (Architect) | BUG-041 ruling-3 residual **done** at `12fc3cf` — compose-smoke now asserts `<!DOCTYPE html>` + `MarkUS` markers and a 3000-byte floor on web, `"ok":true` + 40-byte floor on api `/health` (zero false-green from an empty shell); CI run `38266680404` green. BUG-041 fully closed. | Architect |
 | 2026-10-21 (Debugger) | Public-visibility reconciliation against HEAD a4b9d3b: all 40 OPEN rows re-verified against HEAD and CI run 39469269982 (all green, 10/10 jobs). 31 rows marked CLEARED with HEAD/CI evidence; 2 composite rows amended in place (BUG-014 currency landed, per-class line-item dimension unverified; BUG-038 root + mandatory lockfile fixed, devDependencies still shipped); 7 remain genuinely OPEN (BUG-015, BUG-017, BUG-018, BUG-030, BUG-037, BUG-039, BUG-042). D-31 floor closure recorded in DECISIONS.md (run 39469269982: web body 42905 B vs floor 34000). | Debugger |
 | 2026-10-25 (Debugger) | BUG-043 opened — zod GHSA-mrhx-c7xc-m3w5 accepted as an EXPIRING exception (`infra/supply-chain-exceptions.json`, reviewBy 2026-12-24, D-19 mechanism). Hygiene item "migrate to zod 4 before exception expiry" logged OPEN; the supply-chain gate fails closed at expiry, so 2026-12-24 is a hard deadline. Raised by the Architect (memo 0018); facts independently verified by the Debugger (exception entry, gate expiry branch at scripts/check-supply-chain.mjs:86-95, patch boundary zod 4.6.6). | Debugger |
+| 2026-10-29 (Debugger) | BUG-044 opened — Low hygiene for the worker image's missing native-build toolchain (`python3`/`make`/`g++`) when a lockfile refresh introduces `ssh2`/`cpu-features`. Evidence: dependabot "typescript group" CI run 40537763172 on a parked branch, with the compiler-detection and node-gyp Python failure signatures inspected directly. Owner: Developer; no action until the hygiene pass / dependabot batch uptake, per Architect memo 0025. | Debugger |
 | | | |
 | | | |
 
