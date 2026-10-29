@@ -62,6 +62,12 @@ const options = (overrides: Partial<TrainCorpusModelOptions> = {}): TrainCorpusM
   modelVersion: "fixture-logistic-1",
   trainingCutoff: new Date("2020-01-01T00:00:00.000Z"),
   censusAt: new Date("2022-01-01T00:00:00.000Z"),
+  corpus: {
+    cohort: "unit-fixture",
+    seed: 17,
+    batchSize: 3,
+    maxExamples: 1_000,
+  },
   horizonMonths: 12,
   releaseThresholds: thresholds,
   ...overrides,
@@ -118,6 +124,15 @@ describe("trainCorpusModel", () => {
     expect(artifact.releaseGate).toEqual({ releasable: true, reasons: [], thresholds });
     expect(artifact.trainingCutoff).toBe("2020-01-01T00:00:00.000Z");
     expect(artifact.featureOrder).toEqual(["trigram", "phonetic", "classAdjacency", "goods", "crowdedness"]);
+    expect(artifact.corpus).toEqual({
+      cohort: "unit-fixture",
+      seed: 17,
+      samplingAlgorithm: "hash-top-n-v1",
+      sampleSize: 24,
+      batchSize: 3,
+      maxExamples: 1_000,
+      historicalReconstruction: "current-corpus-not-point-in-time",
+    });
   });
 
   test("round-trips a versioned JSON artifact into a ScoringModel", () => {
@@ -180,6 +195,15 @@ describe("trainCorpusModel", () => {
     );
   });
 
+  test("rejects invalid corpus settings and samples larger than the declared cap", () => {
+    expect(() =>
+      trainCorpusModel(fixture(), options({ corpus: { ...options().corpus, batchSize: 0 } })),
+    ).toThrow(/batchSize must be an integer/);
+    expect(() =>
+      trainCorpusModel(fixture(), options({ corpus: { ...options().corpus, maxExamples: 23 } })),
+    ).toThrow(/training sample size 24 exceeds maxExamples 23/);
+  });
+
   test("rejects an artifact with an incompatible feature order", () => {
     const artifact = trainCorpusModel(fixture(), options());
     const malformed = { ...artifact, featureOrder: [...artifact.featureOrder].reverse() };
@@ -190,6 +214,19 @@ describe("trainCorpusModel", () => {
     const artifact = trainCorpusModel(fixture(), options());
     const malformed: Array<[unknown, RegExp]> = [
       [{ ...artifact, labelHorizonMonths: 0 }, /labelHorizonMonths must be positive/],
+      [{ ...artifact, corpus: undefined }, /corpus must be an object/],
+      [
+        { ...artifact, corpus: { ...artifact.corpus, sampleSize: 23 } },
+        /corpus\.sampleSize does not match label counts/,
+      ],
+      [
+        { ...artifact, corpus: { ...artifact.corpus, samplingAlgorithm: "first-n" } },
+        /unsupported corpus\.samplingAlgorithm/,
+      ],
+      [
+        { ...artifact, corpus: { ...artifact.corpus, historicalReconstruction: "point-in-time" } },
+        /must disclose current-corpus reconstruction/,
+      ],
       [{ ...artifact, trainingCutoff: "01/01/2020" }, /canonical ISO timestamp/],
       [{ ...artifact, trainer: { converged: true } }, /unsupported trainer algorithm/],
       [{ ...artifact, releaseGate: { releasable: false } }, /only a releasable artifact/],

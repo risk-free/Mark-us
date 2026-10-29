@@ -134,8 +134,27 @@ export type {
   SplitLabelCounts,
   TrainCorpusModelOptions,
 } from "./train.js";
+export {
+  CURRENT_CORPUS_RECONSTRUCTION_LIMITATION,
+  DEFAULT_TRAINING_BATCH_SIZE,
+  DEFAULT_TRAINING_COHORT,
+  DEFAULT_TRAINING_CORPUS_CONFIG,
+  DEFAULT_TRAINING_MAX_EXAMPLES,
+  DEFAULT_TRAINING_SEED,
+  MAX_TRAINING_BATCH_SIZE,
+  TRAINING_SAMPLING_ALGORITHM,
+  trainingSampleRank,
+  validateTrainingCorpusConfig,
+} from "./training-config.js";
+export type { TrainingCorpusArtifactMetadata, TrainingCorpusConfig } from "./training-config.js";
 export { PrismaCorpusTrainingSource, TRAINING_CANDIDATE_LIMIT } from "./training-corpus.js";
-export type { TrainingCorpusSearcher } from "./training-corpus.js";
+export type {
+  TrainingCorpusInstrumentation,
+  TrainingCorpusPageMetric,
+  TrainingCorpusSearcher,
+  TrainingCorpusSqlClient,
+  TrainingCorpusTransactionOptions,
+} from "./training-corpus.js";
 export type { CorpusMarkInput, ParseOutcome } from "./types.js";
 
 /** TSDR per-mark lookup (M7.3) — status only, daily T+1 batch. Lands in P5. */

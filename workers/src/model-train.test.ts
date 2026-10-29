@@ -1,4 +1,4 @@
-import { DEFAULT_RELEASE_THRESHOLDS } from "@markus/tm-data";
+import { DEFAULT_RELEASE_THRESHOLDS, DEFAULT_TRAINING_CORPUS_CONFIG } from "@markus/tm-data";
 
 import { parseModelTrainArgs, requireDatabaseUrl } from "./model-train.js";
 
@@ -21,6 +21,7 @@ describe("parseModelTrainArgs (P5.4 offline trainer)", () => {
       censusAt: new Date("2022-01-01T00:00:00.000Z"),
       output: "artifacts/logistic-fixture-1.json",
       horizonMonths: 12,
+      corpus: DEFAULT_TRAINING_CORPUS_CONFIG,
       releaseThresholds: DEFAULT_RELEASE_THRESHOLDS,
     });
   });
@@ -49,6 +50,27 @@ describe("parseModelTrainArgs (P5.4 offline trainer)", () => {
     });
   });
 
+  test("accepts explicit bounded cohort, seed, sample and keyset batch controls", () => {
+    const result = parseModelTrainArgs([
+      ...required,
+      "--cohort",
+      "live-2026.01",
+      "--seed",
+      "4294967295",
+      "--max-examples",
+      "12345",
+      "--batch-size",
+      "17",
+    ]);
+
+    expect(result.corpus).toEqual({
+      cohort: "live-2026.01",
+      seed: 4_294_967_295,
+      maxExamples: 12_345,
+      batchSize: 17,
+    });
+  });
+
   test.each(["--model-version", "--cutoff", "--census", "--output"])(
     "requires %s",
     (flag) => {
@@ -69,7 +91,27 @@ describe("parseModelTrainArgs (P5.4 offline trainer)", () => {
     expect(() => parseModelTrainArgs([...required, "--horizon-months", "0"])).toThrow(/must be positive/);
     expect(() => parseModelTrainArgs([...required, "--min-resolved-labels", "1.5"])).toThrow(/an integer/);
     expect(() => parseModelTrainArgs([...required, "--min-auc"])).toThrow(/requires a value/);
+    expect(() => parseModelTrainArgs([...required, "--min-auc", "1.1"])).toThrow(/must be in 0\.\.1/);
+    expect(() => parseModelTrainArgs([...required, "--min-auc", ""])).toThrow(/a number/);
     expect(() => parseModelTrainArgs([...required, "--activate", "yes"])).toThrow(/unknown argument/);
+  });
+
+  test.each([
+    ["--cohort", "", /cohort must be/],
+    ["--cohort", "bad cohort", /cohort must be/],
+    ["--seed", "-1", /seed must be an unsigned 32-bit integer/],
+    ["--seed", "4294967296", /seed must be an unsigned 32-bit integer/],
+    ["--seed", "1.5", /an integer/],
+    ["--seed", "", /a number|an integer/],
+    ["--seed", "   ", /a number|an integer/],
+    ["--max-examples", "", /a number|an integer/],
+    ["--max-examples", "0", /maxExamples must be a positive safe integer/],
+    ["--max-examples", "1.5", /an integer/],
+    ["--batch-size", "0", /batchSize must be an integer/],
+    ["--batch-size", "5001", /batchSize must be an integer/],
+    ["--batch-size", "1.5", /an integer/],
+  ])("rejects invalid %s values", (flag, value, error) => {
+    expect(() => parseModelTrainArgs([...required, flag, value])).toThrow(error);
   });
 
   test("rejects a cutoff that is not earlier than the census", () => {

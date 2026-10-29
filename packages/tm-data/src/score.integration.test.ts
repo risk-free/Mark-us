@@ -23,8 +23,13 @@ import { BOOTSTRAP_MODEL } from "./model.js";
 import { DEFAULT_RELEASE_THRESHOLDS, buildCalibrationReport, evaluateRelease, type EvalSample } from "./eval.js";
 import { CorpusAssessmentScorer } from "./score.js";
 import { PrismaCorpusSearcher, type CorpusSqlClient } from "./search.js";
-import { loadModelArtifact, serializeModelArtifact, trainCorpusModel } from "./train.js";
-import { PrismaCorpusTrainingSource } from "./training-corpus.js";
+import { loadModelArtifact, serializeModelArtifact, trainCorpusModel, type CorpusTrainingRow } from "./train.js";
+import { trainingSampleRank, type TrainingCorpusConfig } from "./training-config.js";
+import {
+  PrismaCorpusTrainingSource,
+  type TrainingCorpusPageMetric,
+  type TrainingCorpusSqlClient,
+} from "./training-corpus.js";
 
 jest.setTimeout(180_000);
 
@@ -48,7 +53,22 @@ interface SeedMark {
   classCodes: string[];
 }
 
-describe("corpus assessment + calibration against PostgreSQL 16 (P5.4)", () => {
+const collectTrainingRows = async (
+  source: PrismaCorpusTrainingSource,
+  censusAt: Date,
+  corpus: TrainingCorpusConfig,
+  metrics?: TrainingCorpusPageMetric[],
+): Promise<CorpusTrainingRow[]> => {
+  const rows: CorpusTrainingRow[] = [];
+  for await (const row of source.stream(censusAt, corpus, {
+    onPage: (metric) => metrics?.push(metric),
+  })) {
+    rows.push(row);
+  }
+  return rows;
+};
+
+describe("corpus assessment + calibration against PostgreSQL 16 (P5.4/P5.4.1)", () => {
   let container: StartedPostgreSqlContainer | undefined;
   let prisma: PrismaClient;
   let sql: ReturnType<typeof postgres>;
@@ -214,10 +234,12 @@ describe("corpus assessment + calibration against PostgreSQL 16 (P5.4)", () => {
       });
     }
 
-    const sqlClient = prisma as unknown as CorpusSqlClient;
+    const sqlClient = prisma as unknown as TrainingCorpusSqlClient;
     const searcher = new PrismaCorpusSearcher(sqlClient);
-    const rows = await new PrismaCorpusTrainingSource(sqlClient, searcher).assemble(
+    const rows = await collectTrainingRows(
+      new PrismaCorpusTrainingSource(sqlClient, searcher),
       new Date("2023-01-01T00:00:00.000Z"),
+      { cohort: "live-v1", seed: 0, batchSize: 4, maxExamples: 100 },
     );
     const query = rows.find((row) => row.serialNumber === "query")!;
 
@@ -258,17 +280,85 @@ describe("corpus assessment + calibration against PostgreSQL 16 (P5.4)", () => {
       });
     }
 
-    const sqlClient = prisma as unknown as CorpusSqlClient;
+    // One of these five same-day rows ends page five and the other four start
+    // page six. They make the eligible set larger than the sample cap without
+    // adding resolved labels, exercising both keyset ties and heap eviction.
+    const fillerSerials = Array.from({ length: 5 }, (_, index) => `filler-${index}`);
+    for (const [index, serialNumber] of fillerSerials.entries()) {
+      await seed({
+        serialNumber,
+        markText: `FILLER ${index}`,
+        normalizedText: `filler ${index}`,
+        statusCode: "600",
+        filingDate: new Date("2021-01-01T00:00:00.000Z"),
+        goodsSummary: null,
+        classCodes: ["042"],
+      });
+    }
+    const eligibleSerials = [
+      ...families.flatMap((_, index) => [`negative-${index}`, `positive-${index}`]),
+      ...fillerSerials,
+    ];
+
+    await seed({
+      serialNumber: "dead-excluded",
+      markText: "DEAD EXCLUDED",
+      normalizedText: "dead excluded",
+      statusCode: "800",
+      filingDate: new Date("2019-01-01T00:00:00.000Z"),
+      goodsSummary: null,
+      classCodes: ["009"],
+    });
+    await seed({
+      serialNumber: "after-census-excluded",
+      markText: "AFTER CENSUS",
+      normalizedText: "after census",
+      statusCode: "700",
+      filingDate: new Date("2023-01-01T00:00:00.000Z"),
+      registrationDate: new Date("2023-06-01T00:00:00.000Z"),
+      goodsSummary: null,
+      classCodes: ["009"],
+    });
+
+    const sqlClient = prisma as unknown as TrainingCorpusSqlClient;
     const searcher = new PrismaCorpusSearcher(sqlClient);
-    const rows = await new PrismaCorpusTrainingSource(sqlClient, searcher).assemble(
+    const corpus: TrainingCorpusConfig = {
+      cohort: "live-v1",
+      seed: 23,
+      batchSize: 5,
+      maxExamples: 24,
+    };
+    const metrics: TrainingCorpusPageMetric[] = [];
+    const rows = await collectTrainingRows(
+      new PrismaCorpusTrainingSource(sqlClient, searcher),
       new Date("2022-01-01T00:00:00.000Z"),
+      corpus,
+      metrics,
     );
     expect(rows).toHaveLength(24);
+    expect(new Set(rows.map((row) => row.serialNumber))).toEqual(
+      new Set(
+        [...eligibleSerials]
+          .sort(
+            (left, right) =>
+              trainingSampleRank(left, corpus.seed) - trainingSampleRank(right, corpus.seed) ||
+              left.localeCompare(right),
+          )
+          .slice(0, corpus.maxExamples),
+      ),
+    );
+    expect(rows.some((row) => row.serialNumber.includes("excluded"))).toBe(false);
+    expect(metrics.map((metric) => metric.pageOutcomeRows)).toEqual([5, 5, 5, 5, 5, 4]);
+    expect(Math.max(...metrics.map((metric) => metric.bufferedOutcomeRows))).toBe(29);
+    expect(metrics.every((metric) => metric.bufferedOutcomeRows <= corpus.batchSize + corpus.maxExamples)).toBe(
+      true,
+    );
 
     const artifact = trainCorpusModel(rows, {
       modelVersion: "postgres-fixture-logistic-1",
       trainingCutoff: new Date("2020-01-01T00:00:00.000Z"),
       censusAt: new Date("2022-01-01T00:00:00.000Z"),
+      corpus,
       horizonMonths: 12,
       releaseThresholds: {
         minResolvedLabels: 4,
@@ -279,14 +369,28 @@ describe("corpus assessment + calibration against PostgreSQL 16 (P5.4)", () => {
     });
 
     expect(artifact.releaseGate.releasable).toBe(true);
-    expect(artifact.labelCounts.train).toEqual({ positive: 6, negative: 6 });
-    expect(artifact.labelCounts.holdout).toEqual({ positive: 6, negative: 6 });
+    expect(artifact.labelCounts.train.positive).toBeGreaterThan(0);
+    expect(artifact.labelCounts.train.negative).toBeGreaterThan(0);
+    expect(artifact.labelCounts.holdout.positive).toBeGreaterThan(0);
+    expect(artifact.labelCounts.holdout.negative).toBeGreaterThan(0);
     expect(artifact.evalReport.auc).toBeGreaterThanOrEqual(0.8);
     expect(artifact.evalReport.accuracyLiftPp).toBeGreaterThanOrEqual(10);
+    expect(artifact.corpus).toEqual({
+      ...corpus,
+      samplingAlgorithm: "hash-top-n-v1",
+      sampleSize: 24,
+      historicalReconstruction: "current-corpus-not-point-in-time",
+    });
 
     const loaded = loadModelArtifact(serializeModelArtifact(artifact));
-    const positive = rows.find((row) => row.serialNumber === "positive-8")!;
-    const negative = rows.find((row) => row.serialNumber === "negative-8")!;
+    expect(loaded.artifact.corpus).toEqual(artifact.corpus);
+    const holdoutStart = new Date("2020-01-01T00:00:00.000Z").getTime();
+    const positive = rows.find(
+      (row) => row.serialNumber.startsWith("positive-") && row.filingDate.getTime() >= holdoutStart,
+    )!;
+    const negative = rows.find(
+      (row) => row.serialNumber.startsWith("negative-") && row.filingDate.getTime() >= holdoutStart,
+    )!;
     expect(loaded.version).toBe("postgres-fixture-logistic-1");
     expect(loaded.score(positive.features)).toBeGreaterThan(loaded.score(negative.features));
     expect(loaded.score(positive.features)).toBe(loaded.score(positive.features));

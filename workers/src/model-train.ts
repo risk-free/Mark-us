@@ -16,12 +16,16 @@ import path from "node:path";
 import {
   DEFAULT_LABEL_HORIZON_MONTHS,
   DEFAULT_RELEASE_THRESHOLDS,
+  DEFAULT_TRAINING_CORPUS_CONFIG,
   PrismaCorpusSearcher,
   PrismaCorpusTrainingSource,
   serializeModelArtifact,
   trainCorpusModel,
-  type CorpusSqlClient,
+  validateTrainingCorpusConfig,
+  type CorpusTrainingRow,
   type ReleaseThresholds,
+  type TrainingCorpusConfig,
+  type TrainingCorpusSqlClient,
 } from "@markus/tm-data";
 import { PrismaClient } from "@prisma/client";
 
@@ -31,7 +35,11 @@ const USAGE =
   "  --min-resolved-labels <n>  holdout floor (default: 500)\n" +
   "  --max-ci-half-width-pp <n> accuracy 95% CI bound (default: 5)\n" +
   "  --min-auc <n>              holdout AUC floor (default: 0.7)\n" +
-  "  --min-lift-pp <n>          accuracy lift over baseline (default: 10)";
+  "  --min-lift-pp <n>          accuracy lift over baseline (default: 10)\n" +
+  "  --cohort <name>            logical live-corpus cohort (default: live-v1)\n" +
+  "  --seed <n>                 unsigned 32-bit sampling seed (default: 0)\n" +
+  "  --max-examples <n>         bounded global hash-sample size (default: 50000)\n" +
+  "  --batch-size <n>           keyset page size, 1..5000 (default: 500)";
 
 export interface ModelTrainArgs {
   modelVersion: string;
@@ -39,6 +47,7 @@ export interface ModelTrainArgs {
   censusAt: Date;
   output: string;
   horizonMonths: number;
+  corpus: TrainingCorpusConfig;
   releaseThresholds: ReleaseThresholds;
 }
 
@@ -55,7 +64,7 @@ const parseDate = (raw: string, flag: string): Date => {
 
 const parseNumber = (raw: string, flag: string, integer = false): number => {
   const value = Number(raw);
-  if (!Number.isFinite(value) || (integer && !Number.isInteger(value))) {
+  if (raw.trim().length === 0 || !Number.isFinite(value) || (integer && !Number.isInteger(value))) {
     throw new Error(`${flag} must be ${integer ? "an integer" : "a number"}\n${USAGE}`);
   }
   return value;
@@ -67,6 +76,7 @@ export function parseModelTrainArgs(argv: readonly string[]): ModelTrainArgs {
   let censusAt: Date | undefined;
   let output: string | undefined;
   let horizonMonths = DEFAULT_LABEL_HORIZON_MONTHS;
+  const corpus: TrainingCorpusConfig = { ...DEFAULT_TRAINING_CORPUS_CONFIG };
   const releaseThresholds = { ...DEFAULT_RELEASE_THRESHOLDS };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -90,6 +100,18 @@ export function parseModelTrainArgs(argv: readonly string[]): ModelTrainArgs {
         horizonMonths = parseNumber(value, flag, true);
         if (horizonMonths <= 0) throw new Error("--horizon-months must be positive");
         break;
+      case "--cohort":
+        corpus.cohort = value;
+        break;
+      case "--seed":
+        corpus.seed = parseNumber(value, flag, true);
+        break;
+      case "--max-examples":
+        corpus.maxExamples = parseNumber(value, flag, true);
+        break;
+      case "--batch-size":
+        corpus.batchSize = parseNumber(value, flag, true);
+        break;
       case "--min-resolved-labels":
         releaseThresholds.minResolvedLabels = parseNumber(value, flag, true);
         if (releaseThresholds.minResolvedLabels < 0) throw new Error(`${flag} must not be negative`);
@@ -100,6 +122,9 @@ export function parseModelTrainArgs(argv: readonly string[]): ModelTrainArgs {
         break;
       case "--min-auc":
         releaseThresholds.minAuc = parseNumber(value, flag);
+        if (releaseThresholds.minAuc < 0 || releaseThresholds.minAuc > 1) {
+          throw new Error(`${flag} must be in 0..1`);
+        }
         break;
       case "--min-lift-pp":
         releaseThresholds.minLiftPp = parseNumber(value, flag);
@@ -119,6 +144,7 @@ export function parseModelTrainArgs(argv: readonly string[]): ModelTrainArgs {
   if (trainingCutoff.getTime() >= censusAt.getTime()) {
     throw new Error("--cutoff must be earlier than --census");
   }
+  validateTrainingCorpusConfig(corpus);
 
   return {
     modelVersion,
@@ -126,6 +152,7 @@ export function parseModelTrainArgs(argv: readonly string[]): ModelTrainArgs {
     censusAt,
     output,
     horizonMonths,
+    corpus,
     releaseThresholds,
   };
 }
@@ -153,13 +180,20 @@ export async function main(argv: readonly string[]): Promise<void> {
 
   const prisma = new PrismaClient();
   try {
-    const sql = prisma as unknown as CorpusSqlClient;
+    const sql = prisma as unknown as TrainingCorpusSqlClient;
     const searcher = new PrismaCorpusSearcher(sql);
-    const rows = await new PrismaCorpusTrainingSource(sql, searcher).assemble(args.censusAt);
+    const rows: CorpusTrainingRow[] = [];
+    for await (const row of new PrismaCorpusTrainingSource(sql, searcher).stream(
+      args.censusAt,
+      args.corpus,
+    )) {
+      rows.push(row);
+    }
     const artifact = trainCorpusModel(rows, {
       modelVersion: args.modelVersion,
       trainingCutoff: args.trainingCutoff,
       censusAt: args.censusAt,
+      corpus: args.corpus,
       horizonMonths: args.horizonMonths,
       releaseThresholds: args.releaseThresholds,
     });
@@ -170,6 +204,7 @@ export async function main(argv: readonly string[]): Promise<void> {
     console.log(
       `[model-train] wrote ${args.output}: ${JSON.stringify({
         modelVersion: artifact.modelVersion,
+        corpus: artifact.corpus,
         labelCounts: artifact.labelCounts,
         evalReport: artifact.evalReport,
         releaseGate: artifact.releaseGate,

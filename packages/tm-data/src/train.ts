@@ -24,8 +24,15 @@ import {
   type LogisticFeatureName,
   type ScoringModel,
 } from "./model.js";
+import {
+  CURRENT_CORPUS_RECONSTRUCTION_LIMITATION,
+  TRAINING_SAMPLING_ALGORITHM,
+  validateTrainingCorpusConfig,
+  type TrainingCorpusArtifactMetadata,
+  type TrainingCorpusConfig,
+} from "./training-config.js";
 
-export const MODEL_ARTIFACT_SCHEMA_VERSION = 1;
+export const MODEL_ARTIFACT_SCHEMA_VERSION = 2;
 export const LOGISTIC_L2_REGULARIZATION = 0.01;
 export const LOGISTIC_MAX_ITERATIONS = 100;
 export const LOGISTIC_CONVERGENCE_TOLERANCE = 1e-9;
@@ -53,6 +60,8 @@ export interface ModelArtifact {
   trainingCutoff: string;
   censusAt: string;
   labelHorizonMonths: number;
+  /** Bounded source/sampling configuration and actual streamed sample size. */
+  corpus: TrainingCorpusArtifactMetadata;
   labelCounts: {
     train: SplitLabelCounts;
     holdout: SplitLabelCounts;
@@ -78,6 +87,7 @@ export interface TrainCorpusModelOptions {
   modelVersion: string;
   trainingCutoff: Date;
   censusAt: Date;
+  corpus: TrainingCorpusConfig;
   horizonMonths?: number;
   releaseThresholds?: ReleaseThresholds;
 }
@@ -281,6 +291,10 @@ export function trainCorpusModel(
   if (!Number.isInteger(horizonMonths) || horizonMonths <= 0) {
     throw new Error("horizonMonths must be a positive integer");
   }
+  validateTrainingCorpusConfig(options.corpus);
+  if (rows.length > options.corpus.maxExamples) {
+    throw new Error(`training sample size ${rows.length} exceeds maxExamples ${options.corpus.maxExamples}`);
+  }
 
   const assembled = assembleLabelSet(rows, options.censusAt, horizonMonths);
   const labeled: LabeledRow[] = assembled.labeled
@@ -323,6 +337,12 @@ export function trainCorpusModel(
     trainingCutoff: options.trainingCutoff.toISOString(),
     censusAt: options.censusAt.toISOString(),
     labelHorizonMonths: horizonMonths,
+    corpus: {
+      ...options.corpus,
+      samplingAlgorithm: TRAINING_SAMPLING_ALGORITHM,
+      sampleSize: rows.length,
+      historicalReconstruction: CURRENT_CORPUS_RECONSTRUCTION_LIMITATION,
+    },
     labelCounts: { train: trainCounts, holdout: holdoutCounts, censored: assembled.censored },
     trainer: {
       algorithm: "batch-newton",
@@ -402,6 +422,40 @@ const validateThresholds = (value: unknown): ReleaseThresholds => {
   };
 };
 
+const validateCorpusMetadata = (value: unknown): TrainingCorpusArtifactMetadata => {
+  if (!isRecord(value)) throw new Error("invalid model artifact: corpus must be an object");
+  if (value.samplingAlgorithm !== TRAINING_SAMPLING_ALGORITHM) {
+    throw new Error("invalid model artifact: unsupported corpus.samplingAlgorithm");
+  }
+  if (value.historicalReconstruction !== CURRENT_CORPUS_RECONSTRUCTION_LIMITATION) {
+    throw new Error("invalid model artifact: corpus.historicalReconstruction must disclose current-corpus reconstruction");
+  }
+  if (typeof value.cohort !== "string") {
+    throw new Error("invalid model artifact: corpus.cohort must be a string");
+  }
+  const config: TrainingCorpusConfig = {
+    cohort: value.cohort,
+    seed: requireCount(value.seed, "corpus.seed"),
+    batchSize: requireCount(value.batchSize, "corpus.batchSize"),
+    maxExamples: requireCount(value.maxExamples, "corpus.maxExamples"),
+  };
+  try {
+    validateTrainingCorpusConfig(config);
+  } catch (error) {
+    throw new Error(`invalid model artifact: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const sampleSize = requireCount(value.sampleSize, "corpus.sampleSize");
+  if (sampleSize > config.maxExamples) {
+    throw new Error("invalid model artifact: corpus.sampleSize exceeds corpus.maxExamples");
+  }
+  return {
+    ...config,
+    samplingAlgorithm: TRAINING_SAMPLING_ALGORITHM,
+    sampleSize,
+    historicalReconstruction: CURRENT_CORPUS_RECONSTRUCTION_LIMITATION,
+  };
+};
+
 const validateArtifact = (value: unknown): ModelArtifact => {
   if (!isRecord(value)) throw new Error("invalid model artifact: expected an object");
   if (value.schemaVersion !== MODEL_ARTIFACT_SCHEMA_VERSION) {
@@ -463,6 +517,12 @@ const validateArtifact = (value: unknown): ModelArtifact => {
   if (train.positive === 0 || train.negative === 0 || holdout.positive === 0 || holdout.negative === 0) {
     throw new Error("invalid model artifact: train and holdout must both contain both label classes");
   }
+  const corpus = validateCorpusMetadata(value.corpus);
+  const resolvedAndCensored =
+    train.positive + train.negative + holdout.positive + holdout.negative + censored;
+  if (corpus.sampleSize !== resolvedAndCensored) {
+    throw new Error("invalid model artifact: corpus.sampleSize does not match label counts");
+  }
 
   const rawReport = value.evalReport;
   if (!isRecord(rawReport)) throw new Error("invalid model artifact: evalReport must be an object");
@@ -518,7 +578,7 @@ const validateArtifact = (value: unknown): ModelArtifact => {
     tolerance !== LOGISTIC_CONVERGENCE_TOLERANCE ||
     maxIterations !== LOGISTIC_MAX_ITERATIONS
   ) {
-    throw new Error("invalid model artifact: trainer settings do not match schema v1");
+    throw new Error("invalid model artifact: trainer settings do not match schema v2");
   }
   const iterations = requireCount(rawTrainer.iterations, "trainer.iterations");
   if (iterations === 0 || iterations > maxIterations) {
@@ -555,6 +615,7 @@ const validateArtifact = (value: unknown): ModelArtifact => {
     trainingCutoff,
     censusAt,
     labelHorizonMonths,
+    corpus,
     labelCounts: { train, holdout, censored },
     trainer: {
       algorithm: "batch-newton",
