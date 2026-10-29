@@ -50,6 +50,20 @@ describe("labelFor", () => {
   test("a future horizon is censored", () => {
     expect(labelFor(row({ filingDate: new Date("2025-06-01T00:00:00.000Z") }), census, 12)).toBe("censored");
   });
+
+  test("an early outcome cannot leak through an immature horizon", () => {
+    const immature = row({
+      filingDate: new Date("2025-06-01T00:00:00.000Z"),
+      registrationDate: new Date("2025-07-01T00:00:00.000Z"),
+      abandonDate: new Date("2025-08-01T00:00:00.000Z"),
+    });
+    expect(labelFor(immature, census, 12)).toBe("censored");
+  });
+
+  test("an outcome at the horizon and census is resolved", () => {
+    const boundary = new Date("2021-01-15T00:00:00.000Z");
+    expect(labelFor(row({ registrationDate: boundary }), boundary, 12)).toBe("positive");
+  });
 });
 
 describe("assembleLabelSet", () => {

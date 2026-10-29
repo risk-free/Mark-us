@@ -94,6 +94,10 @@ export interface CorpusSearchOptions {
   statusCode?: "600" | "700";
   /** Composite-score floor (clamped to `0..1`). */
   minScore?: number;
+  /** Offline training only: exclude the query row before retrieval limits. */
+  excludeSerialNumber?: string;
+  /** Offline training only: require a non-null filing date strictly before this instant. */
+  filedBefore?: Date;
 }
 
 /** Structural view of the raw-SQL surface used by `PrismaCorpusSearcher`. */
@@ -147,6 +151,8 @@ export class PrismaCorpusSearcher {
     const limit = Math.max(1, Math.min(options.limit ?? 20, 100));
     const niceClass = options.niceClass === undefined ? null : normalizeClass(options.niceClass);
     const statusCode = options.statusCode ?? null;
+    const excludeSerialNumber = options.excludeSerialNumber ?? null;
+    const filedBefore = options.filedBefore ?? null;
     const rows = await this.#sql.$queryRaw<CorpusSearchRow[]>`
       SELECT
         m."serialNumber",
@@ -169,6 +175,8 @@ export class PrismaCorpusSearcher {
       FROM "TmCorpusMark" m
       WHERE m."normalizedText" % ${normalized}
         AND (${statusCode}::text IS NULL OR m."statusCode" = ${statusCode})
+        AND (${excludeSerialNumber}::text IS NULL OR m."serialNumber" <> ${excludeSerialNumber})
+        AND (${filedBefore}::date IS NULL OR m."filingDate" < ${filedBefore}::date)
       ORDER BY "trigramScore" DESC, m."serialNumber" ASC
       LIMIT ${SEARCH_CANDIDATE_POOL_SIZE}
     `;

@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "ingest:backfill": "tsx src/backfill.ts",
+    "model:train": "tsx src/model-train.ts",
     "test": "jest",
     "test:integration": "jest --config jest.integration.config.cjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"

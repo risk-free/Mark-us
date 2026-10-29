@@ -90,6 +90,30 @@ describe("PrismaCorpusSearcher", () => {
     expect(calls[0]?.at(-1)).toBe(SEARCH_CANDIDATE_POOL_SIZE);
   });
 
+  test("applies training self/future predicates in SQL before the pool limit", async () => {
+    let statement = "";
+    let values: unknown[] = [];
+    const sql: CorpusSqlClient = {
+      async $queryRaw<T>(strings: TemplateStringsArray, ...parameters: unknown[]): Promise<T> {
+        statement = strings.join("?");
+        values = parameters;
+        return [] as T;
+      },
+    };
+    const filedBefore = new Date("2020-01-01T00:00:00.000Z");
+
+    await new PrismaCorpusSearcher(sql).search("acme", {
+      excludeSerialNumber: "query-serial",
+      filedBefore,
+    });
+
+    expect(statement).toContain('m."serialNumber" <>');
+    expect(statement).toContain('m."filingDate" <');
+    expect(statement.indexOf('m."serialNumber" <>')).toBeLessThan(statement.lastIndexOf("ORDER BY"));
+    expect(statement.indexOf('m."filingDate" <')).toBeLessThan(statement.indexOf("LIMIT"));
+    expect(values).toEqual(expect.arrayContaining(["query-serial", filedBefore]));
+  });
+
   test("clamps the response limit after composite ranking", async () => {
     const rows = Array.from({ length: 105 }, (_, index) =>
       row({

@@ -45,14 +45,19 @@ export interface LogisticCoefficients {
   crowdedness: number;
 }
 
-/** Bounded, model-facing scalars; every input is already in `0..1`. */
-const toScalars = (features: FeatureVector): {
-  trigram: number;
-  phonetic: number;
-  classAdjacency: number;
-  goods: number;
-  crowdedness: number;
-} => ({
+export const LOGISTIC_FEATURE_ORDER = [
+  "trigram",
+  "phonetic",
+  "classAdjacency",
+  "goods",
+  "crowdedness",
+] as const;
+
+export type LogisticFeatureName = (typeof LOGISTIC_FEATURE_ORDER)[number];
+export type LogisticScalars = Record<LogisticFeatureName, number>;
+
+/** Bounded, model-facing scalars shared by training and serving. */
+export const toLogisticScalars = (features: FeatureVector): LogisticScalars => ({
   trigram: clamp01(features.maxTrigram),
   phonetic: clamp01(features.maxPhonetic),
   classAdjacency: features.minClassDistance === 0 ? 1 : features.minClassDistance === 1 ? 0.5 : 0,
@@ -68,14 +73,13 @@ export function createLogisticScorer(coefficients: LogisticCoefficients, version
   return {
     version,
     score: (features) => {
-      const scalars = toScalars(features);
+      const scalars = toLogisticScalars(features);
       const z =
         coefficients.intercept +
-        coefficients.trigram * scalars.trigram +
-        coefficients.phonetic * scalars.phonetic +
-        coefficients.classAdjacency * scalars.classAdjacency +
-        coefficients.goods * scalars.goods +
-        coefficients.crowdedness * scalars.crowdedness;
+        LOGISTIC_FEATURE_ORDER.reduce(
+          (sum, feature) => sum + coefficients[feature] * scalars[feature],
+          0,
+        );
       return clamp01(1 / (1 + Math.exp(-z)));
     },
   };

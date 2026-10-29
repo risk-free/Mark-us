@@ -49,31 +49,34 @@ export function addMonths(date: Date, months: number): Date {
 /** The label for one row at a given horizon; unresolved rows are censored. */
 export function labelFor(row: OutcomeRow, censusAt: Date, horizonMonths: number): Label {
   const horizon = addMonths(row.filingDate, horizonMonths);
-  void censusAt;
+  const censusTime = censusAt.getTime();
+  if (horizon.getTime() > censusTime) return "censored";
 
-  if (row.registrationDate !== null && row.registrationDate.getTime() <= horizon.getTime()) {
+  const registrationTime = row.registrationDate?.getTime();
+  if (registrationTime !== undefined && registrationTime <= horizon.getTime() && registrationTime <= censusTime) {
     return "positive";
   }
-  if (row.abandonDate !== null && row.abandonDate.getTime() <= horizon.getTime()) {
+  const abandonTime = row.abandonDate?.getTime();
+  if (abandonTime !== undefined && abandonTime <= horizon.getTime() && abandonTime <= censusTime) {
     return "negative";
   }
   return "censored";
 }
 
-export interface AssembledLabelSet {
-  labeled: Array<{ row: OutcomeRow; label: "positive" | "negative" }>;
+export interface AssembledLabelSet<T extends OutcomeRow = OutcomeRow> {
+  labeled: Array<{ row: T; label: "positive" | "negative" }>;
   censored: number;
   /** Positives / labeled length (0 when empty). */
   baseRate: number;
 }
 
 /** Partition rows into resolved labels plus a censored count (D-24). */
-export function assembleLabelSet(
-  rows: readonly OutcomeRow[],
+export function assembleLabelSet<T extends OutcomeRow>(
+  rows: readonly T[],
   censusAt: Date,
   horizonMonths: number,
-): AssembledLabelSet {
-  const labeled: AssembledLabelSet["labeled"] = [];
+): AssembledLabelSet<T> {
+  const labeled: AssembledLabelSet<T>["labeled"] = [];
   let censored = 0;
 
   for (const row of rows) {

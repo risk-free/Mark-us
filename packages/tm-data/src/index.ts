@@ -39,8 +39,15 @@ export {
   BOOTSTRAP_MODEL,
   BOOTSTRAP_MODEL_VERSION,
   createLogisticScorer,
+  LOGISTIC_FEATURE_ORDER,
+  toLogisticScalars,
 } from "./model.js";
-export type { LogisticCoefficients, ScoringModel } from "./model.js";
+export type {
+  LogisticCoefficients,
+  LogisticFeatureName,
+  LogisticScalars,
+  ScoringModel,
+} from "./model.js";
 export {
   accuracyAtThreshold,
   auc,
@@ -107,6 +114,28 @@ export type {
 } from "./score.js";
 export { deriveSuggestions } from "./suggest.js";
 export type { AssessmentConfidence, RiskFlag, SuggestionInput, Suggestions } from "./suggest.js";
+export {
+  ArtifactScoringModel,
+  DEFAULT_LABEL_HORIZON_MONTHS,
+  InsufficientTrainingLabelsError,
+  loadModelArtifact,
+  LOGISTIC_CONVERGENCE_TOLERANCE,
+  LOGISTIC_L2_REGULARIZATION,
+  LOGISTIC_MAX_ITERATIONS,
+  MODEL_ARTIFACT_SCHEMA_VERSION,
+  ModelReleaseError,
+  serializeModelArtifact,
+  trainCorpusModel,
+  TrainingConvergenceError,
+} from "./train.js";
+export type {
+  CorpusTrainingRow,
+  ModelArtifact,
+  SplitLabelCounts,
+  TrainCorpusModelOptions,
+} from "./train.js";
+export { PrismaCorpusTrainingSource, TRAINING_CANDIDATE_LIMIT } from "./training-corpus.js";
+export type { TrainingCorpusSearcher } from "./training-corpus.js";
 export type { CorpusMarkInput, ParseOutcome } from "./types.js";
 
 /** TSDR per-mark lookup (M7.3) — status only, daily T+1 batch. Lands in P5. */

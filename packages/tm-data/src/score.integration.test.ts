@@ -23,6 +23,8 @@ import { BOOTSTRAP_MODEL } from "./model.js";
 import { DEFAULT_RELEASE_THRESHOLDS, buildCalibrationReport, evaluateRelease, type EvalSample } from "./eval.js";
 import { CorpusAssessmentScorer } from "./score.js";
 import { PrismaCorpusSearcher, type CorpusSqlClient } from "./search.js";
+import { loadModelArtifact, serializeModelArtifact, trainCorpusModel } from "./train.js";
+import { PrismaCorpusTrainingSource } from "./training-corpus.js";
 
 jest.setTimeout(180_000);
 
@@ -176,5 +178,117 @@ describe("corpus assessment + calibration against PostgreSQL 16 (P5.4)", () => {
     const gate = evaluateRelease(report, DEFAULT_RELEASE_THRESHOLDS);
     expect(gate.releasable).toBe(false);
     expect(gate.reasons.join(" ")).toContain("sampleSize");
+  });
+
+  it("excludes self and future marks before retrieval limits during corpus assembly", async () => {
+    const queryDate = new Date("2020-06-01T00:00:00.000Z");
+    await seed({
+      serialNumber: "earlier",
+      markText: "TEMPORAL",
+      normalizedText: "temporal",
+      statusCode: "600",
+      filingDate: new Date("2019-01-01T00:00:00.000Z"),
+      goodsSummary: null,
+      classCodes: ["009"],
+    });
+    await seed({
+      serialNumber: "query",
+      markText: "TEMPORAL SIGNAL",
+      normalizedText: "temporal signal",
+      statusCode: "600",
+      filingDate: queryDate,
+      goodsSummary: null,
+      classCodes: ["009"],
+    });
+    // These 25 exact matches outrank the valid historical candidate. If they
+    // are filtered only after limit 20/21, the earlier mark is never retrieved.
+    for (let index = 0; index < 25; index += 1) {
+      await seed({
+        serialNumber: `future-${index}`,
+        markText: "TEMPORAL SIGNAL",
+        normalizedText: "temporal signal",
+        statusCode: "600",
+        filingDate: new Date(Date.UTC(2021, 0, index + 1)),
+        goodsSummary: null,
+        classCodes: ["009"],
+      });
+    }
+
+    const sqlClient = prisma as unknown as CorpusSqlClient;
+    const searcher = new PrismaCorpusSearcher(sqlClient);
+    const rows = await new PrismaCorpusTrainingSource(sqlClient, searcher).assemble(
+      new Date("2023-01-01T00:00:00.000Z"),
+    );
+    const query = rows.find((row) => row.serialNumber === "query")!;
+
+    expect(query.features.candidateCount).toBe(1);
+    expect(query.features.maxTrigram).toBeGreaterThan(0);
+    expect(query.features.minClassDistance).toBe(0);
+  });
+
+  it("trains on corpus features, evaluates holdout, loads the artifact and scores", async () => {
+    const families = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet", "kilo", "lima"];
+    for (let index = 0; index < families.length; index += 1) {
+      const year = index < 6 ? 2019 : 2020;
+      const month = index % 6;
+      const negativeFiling = new Date(Date.UTC(year, month, 1));
+      const positiveFiling = new Date(Date.UTC(year, month, 3));
+      const family = families[index]!;
+      // The negative is intentionally earlier and dissimilar to all previous
+      // families; its positive partner has a strong historical text signal.
+      await seed({
+        serialNumber: `negative-${index}`,
+        markText: family.toUpperCase(),
+        normalizedText: family,
+        statusCode: "600",
+        filingDate: negativeFiling,
+        abandonDate: new Date(Date.UTC(year, month + 6, 1)),
+        goodsSummary: null,
+        classCodes: ["009"],
+      });
+      await seed({
+        serialNumber: `positive-${index}`,
+        markText: `${family.toUpperCase()}X`,
+        normalizedText: `${family}x`,
+        statusCode: "700",
+        filingDate: positiveFiling,
+        registrationDate: new Date(Date.UTC(year, month + 6, 3)),
+        goodsSummary: null,
+        classCodes: ["009"],
+      });
+    }
+
+    const sqlClient = prisma as unknown as CorpusSqlClient;
+    const searcher = new PrismaCorpusSearcher(sqlClient);
+    const rows = await new PrismaCorpusTrainingSource(sqlClient, searcher).assemble(
+      new Date("2022-01-01T00:00:00.000Z"),
+    );
+    expect(rows).toHaveLength(24);
+
+    const artifact = trainCorpusModel(rows, {
+      modelVersion: "postgres-fixture-logistic-1",
+      trainingCutoff: new Date("2020-01-01T00:00:00.000Z"),
+      censusAt: new Date("2022-01-01T00:00:00.000Z"),
+      horizonMonths: 12,
+      releaseThresholds: {
+        minResolvedLabels: 4,
+        maxCiHalfWidthPp: 100,
+        minAuc: 0.8,
+        minLiftPp: 10,
+      },
+    });
+
+    expect(artifact.releaseGate.releasable).toBe(true);
+    expect(artifact.labelCounts.train).toEqual({ positive: 6, negative: 6 });
+    expect(artifact.labelCounts.holdout).toEqual({ positive: 6, negative: 6 });
+    expect(artifact.evalReport.auc).toBeGreaterThanOrEqual(0.8);
+    expect(artifact.evalReport.accuracyLiftPp).toBeGreaterThanOrEqual(10);
+
+    const loaded = loadModelArtifact(serializeModelArtifact(artifact));
+    const positive = rows.find((row) => row.serialNumber === "positive-8")!;
+    const negative = rows.find((row) => row.serialNumber === "negative-8")!;
+    expect(loaded.version).toBe("postgres-fixture-logistic-1");
+    expect(loaded.score(positive.features)).toBeGreaterThan(loaded.score(negative.features));
+    expect(loaded.score(positive.features)).toBe(loaded.score(positive.features));
   });
 });
