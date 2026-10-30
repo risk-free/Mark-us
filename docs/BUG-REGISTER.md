@@ -52,7 +52,7 @@ This document is the **single, living register of defects and latent production 
 | BUG-011 | `Document.currentVersion` read-then-write race; no `$transaction` in repo | Critical | STATIC | CLEARED |
 | BUG-012 | No magic-link token model, though it is the client's only credential | Critical | STATIC | CLEARED |
 | BUG-013 | No `Refund` model despite partial-refund statuses and a `refundable` flag | High | STATIC | CLEARED |
-| BUG-014 | `Invoice` has no `currency`; line items have no per-class dimension | High | STATIC | OPEN |
+| BUG-014 | `Invoice` has no `currency`; line items have no per-class dimension | High | STATIC | CLEARED |
 | BUG-015 | No `tm_index` model / `mark_norm` GIN index for the probability corpus | High | STATIC | CLEARED |
 | BUG-016 | `unitAmount × quantity` is unbounded → numeric overflow → 500 | High | STATIC | CLEARED |
 | BUG-017 | `Trademark.probabilityScore` is `Float` for a legally-defensible figure | High | STATIC | OPEN |
@@ -75,9 +75,9 @@ This document is the **single, living register of defects and latent production 
 | BUG-034 | Node 20 is EOL in CI and in the base image | Medium | STATIC | CLEARED |
 | BUG-035 | `apps/web` has no error boundary and no security headers | Low | STATIC | CLEARED |
 | BUG-036 | `workers/package.json` declares `types` that the build never emits | Low | STATIC | CLEARED |
-| BUG-037 | `sourceMap: true` inherited → production image ships `.js.map` | Low | STATIC | OPEN |
+| BUG-037 | `sourceMap: true` inherited → production image ships `.js.map` | Low | STATIC | ACTION REQUIRED |
 | BUG-038 | `Dockerfile.api` runs as root, ships devDependencies, lockfile is optional | Low | STATIC | OPEN |
-| BUG-039 | `pnpm-workspace.yaml` has no `onlyBuiltDependencies` allowlist | Low | STATIC | OPEN |
+| BUG-039 | `pnpm-workspace.yaml` has no `onlyBuiltDependencies` allowlist | Low | STATIC | ACTION REQUIRED |
 | BUG-040 | `turbo.json` declares no `env` allowlist → cache key ignores secrets | Low | STATIC | CLEARED |
 | BUG-041 | `COPY --chown` writes 0-byte files into the runtime image (Linux-only smoke declared) | High | REPRODUCED | CLEARED |
 | BUG-042 | `docker compose --profile app up` hangs on Docker Desktop/Windows — containers stuck `Created` | Medium | REPRODUCED | OPEN |
@@ -613,11 +613,11 @@ There is no `Refund` entity: no amount, no currency, no provider refund id, no r
 | **Evidence** | STATIC |
 | **Location** | `packages/db/prisma/schema.prisma` — `Invoice` model; `Order.currency`; `InvoiceLineItem` model |
 | **Blocks** | P4.1, P4.3 |
-| **Status** | OPEN (amended 2026-10-21) - currency landed on all money models (schema.prisma:583,654,675,711); per-class line-item dimension still unverified |
+| **Status** | CLEARED (narrow schema-absence clearance, Architect memo 0029, 2026-10-31; previously amended 2026-10-21) |
 | **Related** | DQ-007 (invoice currency, FX source, FX lock moment), DQ-008 (order shape for multi-class filings) |
-| **Discussion** | — |
-| **Answered by / Answered at** | — |
-| **Verified by / Verified at** | — |
+| **Discussion** | 2026-10-31 — Architect accepted the read-only triage and directed narrow closure; earlier history and the original finding are retained below. |
+| **Answered by / Answered at** | Architect 2026-10-31 (memo 0029) — CLEARED only for the reported schema-absence finding |
+| **Verified by / Verified at** | Debugger 2026-10-31 — STATIC at HEAD `0485803`: direct schema/migration inspection reconfirmed all cited elements; CI `40904988146` succeeded on the reviewed SHA, including green `schema · migration drift (M3.1)` |
 
 **Issue.** Two independent gaps in the money model.
 
@@ -630,6 +630,8 @@ Also missing: `Order` has no `dueAt`, no `discountAmount`, no `taxAmount`; `Invo
 **Impact.** Blocks the P4 payment wave; multi-class filings cannot be priced or refunded correctly. Cheap to fix before the baseline migration, expensive afterwards.
 
 **Recommended fix.** Resolve DQ-007 and DQ-008 first — these are product decisions, not code decisions. Then: add `currency` to `Invoice` (as an enum mirroring `Order`), add `fxRate Decimal(18,8)?` / `fxRateSource String?` / `fxRateLockedAt DateTime?` to record the locked rate, and add an explicit per-class dimension to `InvoiceLineItem` (e.g. `niceClass Int?` plus `@@unique([orderId, sortOrder])`). Add `CHECK (unitAmount > 0)` and `CHECK (quantity > 0)`.
+
+**Clearance evidence and scope (2026-10-31, HEAD `0485803`).** STATIC re-verification confirmed `Invoice.currency` (`packages/db/prisma/schema.prisma:654`; `packages/db/prisma/migrations/0P3__p0_3_backlog/migration.sql:369`), `InvoiceLineItem.niceClass` (schema `:630`; migration `:353`), ordering uniqueness (schema `:641`; migration `:825`), and positive `unitAmount`/`quantity` checks (migration `:1138`). CI `40904988146` was green on reviewed SHA `04858030224121b2ddde0f87382f8ce33cf35420`, including `schema · migration drift (M3.1)`. This closes the reported schema-absence finding only. It does **not** certify invoice creation, payment, refund, FX, or rendering workflows as runtime-tested.
 
 ---
 
@@ -718,6 +720,8 @@ Related gaps in the same block: `probabilityReviewedAt` exists with **no `probab
 
 **Recommended fix.** Use `Decimal @db.Decimal(5,4)` (0.0000–9.9999) or `Decimal(5,2)` if a whole-number percentage is the contract, plus a `CHECK (probabilityScore >= 0 AND probabilityScore <= 100)`. Add `probabilityReviewedById` → `StaffUser` and a verdict enum. Add a `ProbabilityModel` registry table (`version @unique`, trainedAt, metrics, isActive) so `probabilityModelVersion` is a foreign key rather than a free string, and a `MlLabel`/`EvalRun` pair for D-03's gates.
 
+**Current triage (2026-10-31, HEAD `0485803`).** Remains **OPEN** for residual scoring-schema, design, and provenance work. This was a static disposition; no new runtime reproduction was performed.
+
 ---
 
 ### BUG-018 — `Contact.email`/`phone` are case-sensitive `@unique`; identity splits in two
@@ -750,6 +754,8 @@ For `Contact` it is worse, because of the second half of the problem: all three 
 - Add `citext` for email columns, or functional unique indexes `CREATE UNIQUE INDEX ON "Contact" (lower(email)) WHERE email IS NOT NULL`.
 - Add a **partial** unique index strategy so a missing email cannot create unlimited duplicates, and decide in DQ-006 which channel is the system of record for identity.
 - Add a `Contact.mergedIntoId` self-reference plus a merge procedure, so merges are auditable rather than destructive.
+
+**Current triage (2026-10-31, HEAD `0485803`).** Remains **OPEN** for residual identity-schema work: complete normalization, phone uniqueness/deduplication, and the decided merge structures. Case-insensitive email indexes have landed, but do not clear those residuals. STATIC disposition; no new runtime reproduction was performed.
 
 ---
 
@@ -1108,6 +1114,8 @@ There is also a **contract mismatch**: `Message.contentType String @default("tex
 
 **Recommended fix.** Convert each to an enum, matching the schema's existing convention: `NotificationStatus` (with `PENDING|SENT|FAILED` plus `attemptCount Int` and `lastError String?`), `ProofreadStatus`, `MessageContentType`, `TicketType`, `CampaignChannel`. Keep `AuditLog.action` and `OfficeAction.kind` as strings if they must stay open for vendor-driven values, but constrain them to a documented vocabulary. Whichever route, the `Message`/WeCom media-type union needs aligning as part of P3.
 
+**Current triage (2026-10-31, HEAD `0485803`).** Remains **OPEN** for residual schema and vocabulary work. Reconcile the contract vocabulary before constraints or migration; no new runtime reproduction was performed.
+
 ---
 
 ### BUG-031 — `optionalUrl` accepts `javascript:`/`file:`/`data:`; no https enforcement
@@ -1302,7 +1310,7 @@ Also worth noting: `<html lang="zh-CN">` is hardcoded while ARCHITECTURE §1 tar
 | **Evidence** | STATIC |
 | **Location** | `tsconfig.base.json` (`"sourceMap": true`); `workers/dist/index.js.map` |
 | **Blocks** | — |
-| **Status** | OPEN |
+| **Status** | ACTION REQUIRED — assigned under Architect → Developer 0026 (2026-10-31); not CLEARED |
 | **Discussion** | — |
 | **Answered by / Answered at** | --- |
 | **Verified by / Verified at** | — |
@@ -1312,6 +1320,8 @@ Also worth noting: `<html lang="zh-CN">` is hardcoded while ARCHITECTURE §1 tar
 **Impact.** Source maps reveal original source structure, file paths, and internal symbol names. Combined with the missing error-mapping layer (BUG-011), they also make error messages more legible to an attacker. Individually low; worth fixing because the maps are large and the fix is one line.
 
 **Recommended fix.** Set `"sourceMap": false` at the base and enable it per package for local development, or have the Dockerfile strip `**/*.js.map` in the runtime stage. If Sentry is adopted (P0.4), upload maps at build time and exclude them from the image.
+
+**Current triage (2026-10-31, HEAD `0485803`).** Remains **ACTION REQUIRED**, assigned under **Architect → Developer 0026**. STATIC confirmation only; no fix or new runtime/image verification has landed, so this is not CLEARED.
 
 ---
 
@@ -1344,6 +1354,8 @@ Minor: `COPY tsconfig.base.json ./` appears twice (lines 7 and 12) — a harmles
 
 **Recommended fix.** Rewrite alongside BUG-003/BUG-004: add a `.dockerignore`, a `--prod` install stage, a non-root `USER`, a `HEALTHCHECK` hitting `/health`, `tini` as PID 1, BuildKit cache mounts (`RUN --mount=type=cache,id=pnpm,target=/pnpm/store`), a required lockfile, and removal of the `||` fallback. Pin `node:22-alpine` by digest (BUG-034). **Do not use `COPY --chown`: prohibited repo-wide (BUG-041, `ARCH-01` §12) — use plain `COPY` + `RUN chown -R node:node /app`.**
 
+**Current triage (2026-10-31, HEAD `0485803`).** Remains **OPEN** only for the remaining development-dependency shipment in the runtime image. Root execution and optional-lockfile portions are already resolved (`infra/Dockerfile.api:8,12,30`); this STATIC disposition does not re-open them.
+
 ---
 
 ### BUG-039 — `pnpm-workspace.yaml` has no `onlyBuiltDependencies` allowlist
@@ -1356,7 +1368,7 @@ Minor: `COPY tsconfig.base.json ./` appears twice (lines 7 and 12) — a harmles
 | **Evidence** | STATIC |
 | **Location** | `pnpm-workspace.yaml` |
 | **Blocks** | — |
-| **Status** | OPEN |
+| **Status** | ACTION REQUIRED — assigned under Architect → Developer 0026 (2026-10-31); not CLEARED |
 | **Discussion** | — |
 | **Answered by / Answered at** | --- |
 | **Verified by / Verified at** | — |
@@ -1384,6 +1396,8 @@ onlyBuiltDependencies:
 ```
 
 Verify with `pnpm rebuild` and by checking that a `next build` with image optimisation enabled succeeds. Keep the list explicit rather than using `onlyBuiltDependencies: true`, so a newly-introduced native package requires a deliberate decision.
+
+**Current triage (2026-10-31, HEAD `0485803`).** Remains **ACTION REQUIRED**, assigned under **Architect → Developer 0026**. STATIC configuration-gap confirmation only; no present-day Sharp failure or fix verification is claimed, so this is not CLEARED.
 
 ---
 
@@ -1471,6 +1485,8 @@ Host ports locally remapped (Supabase owns 5432/3000): postgres 55433 · redis 5
 
 **Recommended fix / next check.** Reproduce with `docker compose up -d --verbose` to capture where the start orchestration blocks — candidate is a `depends_on` healthcheck condition that is never scheduled, or a Docker-Desktop start-serialization issue. If it is not product config, file upstream with Docker; otherwise adjust `depends_on`/healthcheck wiring. **Low priority** — CI ubuntu path is green; only our local workflow is affected.
 
+**Current triage (2026-10-31, HEAD `0485803`).** Remains **OPEN** on the historical Windows/Docker reproduction above; the current Windows/Docker result is **environment-inconclusive**, with no new `up` or rebuild performed. Linux `compose smoke` was green in CI `40904988146` on the reviewed SHA; this is not a current-main Linux CI failure.
+
 ### BUG-043 - Accepted zod advisory (GHSA-mrhx-c7xc-m3w5) expires 2026-12-24 — migrate to zod 4 before the gate fails closed
 
 | Field | Value |
@@ -1492,6 +1508,8 @@ Host ports locally remapped (Supabase owns 5432/3000): postgres 55433 · redis 5
 
 **Recommended fix.** Migrate `@markus/config` and `@markus/llm-gateway` to zod 4.6.6+ (breaking change across the env schema and gateway response schemas) before 2026-12-24, then delete the exception entry. If the migration slips, renewal with a named owner and a new reviewBy is the fallback — never an unlisted advisory.
 
+**Current triage (2026-10-31, HEAD `0485803`).** Remains **OPEN** as a scheduled obligation. The zod-4 migration is due before the exception expires on **2026-12-24**; no migration, renewal, or new runtime reproduction was performed in this triage.
+
 ### BUG-044 - Worker image build fails when a lockfile refresh pulls native deps (ssh2/cpu-features) — python3/make/g++ absent in Dockerfile.worker build stage
 
 | Field | Value |
@@ -1512,6 +1530,8 @@ Host ports locally remapped (Supabase owns 5432/3000): postgres 55433 · redis 5
 **Impact.** A future dependabot or manual dependency refresh can turn the worker image and dependent CI jobs red even though the current main-branch dependency set builds. This is latent build fragility, not a current runtime defect; keeping the parked failure registered prevents it from being rediscovered during the next dependency batch.
 
 **Recommended fix.** During the hygiene pass, add `RUN apk add --no-cache python3 make g++` to the worker `deps` stage before `pnpm install` (the separate runtime stage remains unchanged), then verify with a lockfile/dependency set that exercises the native install scripts and re-run the worker-image and dependent CI jobs. Do not broaden the runtime image or change dependency versions solely for this entry.
+
+**Current triage (2026-10-31, HEAD `0485803`).** Remains **OPEN** as conditional historical CI evidence from the parked dependabot branch. No current-HEAD worker-build failure has been established, and no new image build or runtime reproduction was performed.
 
 ---
 
