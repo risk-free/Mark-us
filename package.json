@@ -36,6 +36,12 @@
     "node": ">=22"
   },
   "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "argon2",
+      "esbuild"
+    ],
     "overrides": {
       "postcss": "^8.5.29",
       "sprintf-js": "^1.1.3",
