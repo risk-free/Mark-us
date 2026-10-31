@@ -285,6 +285,7 @@ jobs:
           context: .
           file: infra/Dockerfile.${{ matrix.image }}
           push: false
+          load: true
           tags: markus-${{ matrix.image }}:ci
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
