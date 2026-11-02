@@ -1307,13 +1307,13 @@ Also worth noting: `<html lang="zh-CN">` is hardcoded while ARCHITECTURE §1 tar
 | **Raised by** | Debugger |
 | **Raised at** | 2026-09-27 17:44 CST |
 | **Severity** | Low |
-| **Evidence** | REPRODUCED |
-| **Location** | `tsconfig.base.json:16`; `.github/workflows/ci.yml:293-304` |
+| **Evidence** | REPRODUCED — clean-SHA configuration + CI runtime-image assertions |
+| **Location** | `tsconfig.base.json`; `infra/Dockerfile.api`; `infra/Dockerfile.worker` |
 | **Blocks** | — |
-| **Status** | CLEARED — `sourceMap: false` at `ab6753a`; API/worker runtime-image assertions green in CI 41397948205 |
-| **Discussion** | 2026-11-02 — closure verified on the exact public `main` SHA; web image evidence is not claimed |
+| **Status** | CLEARED — verified at `ab6753a34699e083f0cbd0ba42714953f0477058`; CI `41397948205` green |
+| **Discussion** | — |
 | **Answered by / Answered at** | --- |
-| **Verified by / Verified at** | Debugger 2026-11-02 — clean-SHA config check plus CI 41397948205 (`image · api` and `image · worker` source-map assertions `success`; web assertion `skipped`) |
+| **Verified by / Verified at** | Debugger / 2026-11-02 17:11 CST |
 
 **Issue.** `tsconfig.base.json` sets `"sourceMap": true` and every Node package inherits it. The emitted maps are real — `workers/dist/index.js.map` is present on disk — and `infra/Dockerfile.api` copies the whole `/app` tree into the runtime stage, so the maps ship in the production image.
 
@@ -1321,9 +1321,23 @@ Also worth noting: `<html lang="zh-CN">` is hardcoded while ARCHITECTURE §1 tar
 
 **Recommended fix.** Set `"sourceMap": false` at the base and enable it per package for local development, or have the Dockerfile strip `**/*.js.map` in the runtime stage. If Sentry is adopted (P0.4), upload maps at build time and exclude them from the image.
 
-**Current triage (2026-10-31, HEAD `0485803`).** Remains **ACTION REQUIRED**, assigned under **Architect → Developer 0026**. STATIC confirmation only; no fix or new runtime/image verification has landed, so this is not CLEARED.
+**Final verification (2026-11-02, HEAD `ab6753a34699e083f0cbd0ba42714953f0477058`).** **CLEARED.** A new detached worktree was clean before and after verification. The clean-SHA configuration check was:
 
-**Closure verification (2026-11-02, HEAD `ab6753a34699e083f0cbd0ba42714953f0477058`).** The clean-SHA `tsconfig.base.json:16` now sets `"sourceMap": false`; no tracked JSON tsconfig overrides that setting. The verification command `gh run view 41397948205 --repo risk-free/Mark-us --json headSha,conclusion,jobs` returned the exact SHA above, run conclusion `success`, and 11/11 jobs `success`. In particular, the `Reject first-party runtime source maps` steps were `success` for both `image · api` (job 125123275471) and `image · worker` (job 125123275397). Those steps execute the `.github/workflows/ci.yml:293-304` container assertion: prune `node_modules`, find first-party `*.js.map` under `/app/apps`, `/app/packages`, and `/app/workers`, and exit 1 if the result is non-empty. The same-named web step (job 125123275406) was `skipped`; this clearance therefore rests on the clean-SHA compiler configuration and the API/worker runtime-image assertions only, not on web-image source-map evidence.
+```powershell
+git rev-parse HEAD
+git status --porcelain
+git grep -n '"sourceMap"' -- '*.json'
+```
+
+Material output was the exact SHA above, no status lines, and only `tsconfig.base.json:16:    "sourceMap": false`; no package-level `sourceMap` override exists in tracked JSON.
+
+Final CI was queried with:
+
+```powershell
+gh run view 41397948205 --json databaseId,headSha,status,conclusion,url,jobs
+```
+
+Run `41397948205` is `completed` / `success` on the exact SHA, with all 11 jobs successful. The BUG-037 runtime gates are API image job `125123275471` and worker image job `125123275397`: both `Build ... image` and `Reject first-party runtime source maps` steps passed. Those steps run the built images and fail if any first-party `*.js.map` exists under `/app/apps`, `/app/packages`, or `/app/workers` (with `node_modules` pruned). Web image job `125123275406` also passed its image build; the first-party map assertion is intentionally scoped to API/worker. No local build or historical runtime artifact is used for this closure.
 
 ---
 
@@ -1367,13 +1381,13 @@ Minor: `COPY tsconfig.base.json ./` appears twice (lines 7 and 12) — a harmles
 | **Raised by** | Debugger |
 | **Raised at** | 2026-09-27 17:44 CST |
 | **Severity** | Low |
-| **Evidence** | REPRODUCED |
-| **Location** | `package.json:38-44` (`pnpm.onlyBuiltDependencies`) |
+| **Evidence** | REPRODUCED — clean isolated install + lifecycle inventory + Sharp runtime assertion + CI |
+| **Location** | `package.json` → `pnpm.onlyBuiltDependencies`; `pnpm-lock.yaml` |
 | **Blocks** | — |
-| **Status** | CLEARED — fresh frozen install, lifecycle reconciliation, and real Sharp transformation verified at `ab6753a` |
-| **Discussion** | 2026-11-02 — original Sharp-hook assumption corrected during closure: Sharp uses optional platform binary packages and has no automatic install lifecycle |
+| **Status** | CLEARED — verified at `ab6753a34699e083f0cbd0ba42714953f0477058`; CI `41397948205` green |
+| **Discussion** | — |
 | **Answered by / Answered at** | --- |
-| **Verified by / Verified at** | Debugger 2026-11-02 — Node 22.23.4 / pnpm 9.15.0 fresh install exit 0; `pendingBuilds: []`; Sharp 0.35.5 PNG → 17×9 WebP transformation exit 0 |
+| **Verified by / Verified at** | Debugger / 2026-11-02 17:11 CST |
 
 **Issue.** The workspace file lists only the package globs:
 
@@ -1399,19 +1413,54 @@ onlyBuiltDependencies:
 
 Verify with `pnpm rebuild` and by checking that a `next build` with image optimisation enabled succeeds. Keep the list explicit rather than using `onlyBuiltDependencies: true`, so a newly-introduced native package requires a deliberate decision.
 
-**Current triage (2026-10-31, HEAD `0485803`).** Remains **ACTION REQUIRED**, assigned under **Architect → Developer 0026**. STATIC configuration-gap confirmation only; no present-day Sharp failure or fix verification is claimed, so this is not CLEARED.
+**Final verification (2026-11-02, HEAD `ab6753a34699e083f0cbd0ba42714953f0477058`).** **CLEARED.** The accepted evidence came from a new detached worktree at `C:\Users\franc\AppData\Local\Temp\opencode\debugger-ab6753a-final2`, not from any earlier install attempt. `git rev-parse HEAD` returned the exact SHA and `git status --porcelain` returned no lines. Before installation, `Test-Path` returned `False` independently for the new `debugger-ab6753a-final2-store`, `debugger-ab6753a-final2-cache`, and `debugger-ab6753a-final2-install.log` paths.
 
-**Closure verification (2026-11-02, HEAD `ab6753a34699e083f0cbd0ba42714953f0477058`).** A newly created detached worktree at `C:\Users\franc\AppData\Local\Temp\opencode\markus-bug037-039-closure-ab6753a-fresh` had no `node_modules`; the new store and cache paths below were also absent. Node reported `v22.23.4` and pnpm reported `9.15.0`. From that worktree, the single completed install command was:
+The single install command was:
 
 ```powershell
-& 'C:\Users\franc\AppData\Local\Temp\opencode\node22\node.exe' 'C:\Program Files\nodejs\node_modules\corepack\dist\pnpm.js' install --frozen-lockfile --store-dir 'C:\Users\franc\AppData\Local\Temp\opencode\pnpm-store-closure-ab6753a-fresh' --cache-dir 'C:\Users\franc\AppData\Local\Temp\opencode\pnpm-cache-closure-ab6753a-fresh'
+& pnpm install --frozen-lockfile --registry=https://registry.npmjs.org/ --store-dir "C:\Users\franc\AppData\Local\Temp\opencode\debugger-ab6753a-final2-store" --cache-dir "C:\Users\franc\AppData\Local\Temp\opencode\debugger-ab6753a-final2-cache" --network-concurrency=4 --fetch-retries=5 --reporter=append-only *> "C:\Users\franc\AppData\Local\Temp\opencode\debugger-ab6753a-final2-install.log"; $code = $LASTEXITCODE; Write-Output "INSTALL_EXIT_CODE=$code"; Get-Content "C:\Users\franc\AppData\Local\Temp\opencode\debugger-ab6753a-final2-install.log" -Encoding Unicode -Tail 180; exit $code
 ```
 
-It exited 0 after `Done in 28m 14.4s`: all 14 workspace projects, lockfile up to date, 731 packages added, with fresh-path progress ending `reused 0, downloaded 731, added 731, done`. The install ran `@prisma/client` and `@prisma/engines` `postinstall`, `argon2` `install`, and `esbuild` `postinstall` to `Done`. It reported these ignored build scripts: `@parcel/watcher`, `@swc/core`, `cpu-features`, `eslint-plugin-import`, `minimatch`, `msgpackr-extract`, `prisma`, `protobufjs`, `ssh2`, and `unrs-resolver`.
+Material output:
 
-A graph-wide Node 22 inventory deduplicated real `package.json` paths under `node_modules/.pnpm` and selected `preinstall`/`install`/`postinstall`/`prepare` (63 manifest rows, exit 0). Twelve rows had automatic install-time hooks: the four allowed packages above plus `@parcel/watcher`, `@swc/core`, `cpu-features`, `msgpackr-extract`, `prisma`, `protobufjs`, `ssh2`, and `unrs-resolver`; the other 51 rows were `prepare`-only and are not automatic registry-install hooks. The ignored list therefore reconciles to those eight non-allowlisted lifecycle packages plus the two patched dependencies, `eslint-plugin-import` and `minimatch`. Root `package.json:39-44` explicitly allowlists exactly `@prisma/client`, `@prisma/engines`, `argon2`, and `esbuild`. The generated `node_modules/.modules.yaml` records `packageManager: pnpm@9.15.0` and `pendingBuilds: []` (pnpm 9.15.0 has no `ignored-builds` subcommand, so the ignored-script install output and this current pending-build state are the applicable evidence).
+```text
+INSTALL_EXIT_CODE=0
+Progress: resolved 731, reused 0, downloaded 731, added 731, done
+.../node_modules/@prisma/engines postinstall: Done
+.../argon2@0.45.1/node_modules/argon2 install: Done
+.../esbuild@0.28.2/node_modules/esbuild postinstall: Done
+.../node_modules/@prisma/client postinstall: Done
+The following dependencies have build scripts that were ignored: @parcel/watcher, @swc/core, cpu-features, eslint-plugin-import, minimatch, msgpackr-extract, prisma, protobufjs, ssh2, unrs-resolver
+Done in 44m 36.5s
+```
 
-The original Sharp rationale was also corrected by direct evidence rather than preserved as an assumption. Installed `sharp@0.35.5` has no `preinstall`, `install`, `postinstall`, or `prepare` hook (`sharpLifecycleHooks: []`); it resolves optional platform binaries, here `@img/sharp-win32-x64` range `0.35.5`. Thus no Sharp lifecycle allowlist entry is expected. The command `& 'C:\Users\franc\AppData\Local\Temp\opencode\node22\node.exe' 'C:\Users\franc\AppData\Local\Temp\opencode\closure-ab6753a-sharp.cjs'` exited 0 after creating a 64×32 RGBA PNG entirely in memory (188 bytes, PNG signature `89504e470d0a1a0a`), resizing/reformatting it through Sharp/libvips 8.18.7, and reading the output back. Material output was a 104-byte WebP with RIFF/WEBP signature `52494646600000005745425056503858`, metadata `format=webp width=17 height=9 channels=4 hasAlpha=true`, and SHA-256 `643954c94a7613cc2362046384a92a95ec1eef470ce6c21c11939604e6d7acff`. This is a successful native transformation, not merely a module-resolution check.
+This was one uninterrupted install invocation with `reused 0`; pnpm internally retried one Next.js tarball after `ECONNRESET`. No second install/resume command ran, and no earlier store, cache, log, or `node_modules` was reused. The lockfile and manifest remained unchanged.
+
+The exhaustive installed-package scan was run and preserved with:
+
+```powershell
+node "C:\Users\franc\AppData\Local\Temp\opencode\debugger-ab6753a-final2-lifecycle.cjs" "C:\Users\franc\AppData\Local\Temp\opencode\debugger-ab6753a-final2" | Tee-Object -FilePath "C:\Users\franc\AppData\Local\Temp\opencode\debugger-ab6753a-final2-lifecycle.json"
+```
+
+The scan read only real (non-symlink) package roots under `node_modules/.pnpm/*/node_modules`, including scoped packages, and inspected `preinstall`, `install`, and `postinstall`. It found exactly **731 installed package roots and 12 lifecycle packages**. The four allowlisted packages whose hooks executed were `@prisma/client@6.19.3`, `@prisma/engines@6.19.3`, `argon2@0.45.1`, and `esbuild@0.28.2`. The eight non-allowlisted lifecycle packages whose hooks were ignored were `@parcel/watcher@2.6.0`, `@swc/core@1.16.18`, `cpu-features@0.0.10`, `msgpackr-extract@3.0.4`, `prisma@6.19.3`, `protobufjs@7.6.6`, `ssh2@1.17.0`, and `unrs-resolver@1.12.2`. Thus 4 + 8 accounts for every automatic lifecycle hook in this graph. Patched `eslint-plugin-import@2.32.0` and `minimatch@11.0.1` also appear in pnpm's broader ignored-build warning, but their installed manifests contain no automatic lifecycle hook; they are not additional lifecycle packages.
+
+`node_modules/.modules.yaml` records `nodeLinker: isolated`, `packageManager: pnpm@9.15.0`, the dedicated store above, and **`pendingBuilds: []`**. Sharp `0.35.5` has no `preinstall`, `install`, or `postinstall` hook (its manually invoked `build` script is not an install lifecycle hook), so it needs no allowlist entry. Its optional platform binary `@img/sharp-win32-x64@0.35.5` was installed and also has no automatic hook.
+
+The actual Next.js-anchored Sharp transformation command was:
+
+```powershell
+pnpm --filter @markus/web exec node -e "const assert=require('node:assert/strict');const {createRequire}=require('node:module');const {writeFile}=require('node:fs/promises');const {createHash}=require('node:crypto');const path=require('node:path');const webRequire=createRequire(path.join(process.cwd(),'package.json'));const nextRequire=createRequire(webRequire.resolve('next/package.json'));const sharp=nextRequire('sharp');(async()=>{const {data,info}=await sharp({create:{width:4,height:5,channels:4,background:{r:12,g:34,b:56,alpha:1}}}).resize(2,3).png().toBuffer({resolveWithObject:true});assert.equal(info.width,2);assert.equal(info.height,3);assert.equal(info.format,'png');const metadata=await sharp(data).metadata();assert.equal(metadata.width,2);assert.equal(metadata.height,3);assert.equal(metadata.format,'png');const output='C:\\Users\\franc\\AppData\\Local\\Temp\\opencode\\debugger-ab6753a-final2-sharp.png';await writeFile(output,data);console.log(JSON.stringify({output,bytes:data.length,sha256:createHash('sha256').update(data).digest('hex'),width:info.width,height:info.height,format:info.format,decodedWidth:metadata.width,decodedHeight:metadata.height,decodedFormat:metadata.format,sharp:sharp.versions.sharp,vips:sharp.versions.vips,platform:process.platform,arch:process.arch}));})().catch(error=>{console.error(error);process.exitCode=1});"
+```
+
+It exited `0` after creating a 4×5 RGBA source, resizing to 2×3, encoding PNG, and asserting both encoder output and decoded metadata. Material output (PNG preserved at the stated path):
+
+```json
+{"output":"C:\\Users\\franc\\AppData\\Local\\Temp\\opencode\\debugger-ab6753a-final2-sharp.png","bytes":95,"sha256":"2a2fcf6709145a550ca2519149c303631cf95801e656fbd69a86c38360343a1d","width":2,"height":3,"format":"png","decodedWidth":2,"decodedHeight":3,"decodedFormat":"png","sharp":"0.35.5","vips":"8.18.7","platform":"win32","arch":"x64"}
+```
+
+Final CI `41397948205` supplies the remaining native/runtime corroboration on the same SHA: verification job `125123275236` passed `Unit tests`, including real-Argon2 correct-password session issuance and wrong-password `401 UNAUTHENTICATED` tests (`apps/api/src/auth/staff-auth.test.ts:36-56`; API totals 13 suites / 118 tests). Migration job `125123275326` passed the migrated scratch-PostgreSQL drift step and logged `schema objects all present` plus `authored fragments verified by name: 31 object(s)` from Prisma catalog queries. Compose job `125123275355` passed full-stack startup and assertions, logging API `{"ok":true,...}`, web body `44268 B`, and a running outbox worker. Dependency-audit job `125123275379` and all three image jobs also passed. The local Sharp assertion is Windows/x64 evidence; the green Ubuntu CI jobs are the Linux build/runtime authority.
+
+After installation and Sharp verification, `git status --porcelain` still returned no lines, and `git diff --exit-code -- package.json pnpm-lock.yaml` returned `0`.
 
 ---
 
@@ -1620,7 +1669,7 @@ pnpm build       # not run by the Debugger (see note)
 | 2026-10-21 (Debugger) | Public-visibility reconciliation against HEAD a4b9d3b: all 40 OPEN rows re-verified against HEAD and CI run 39469269982 (all green, 10/10 jobs). 31 rows marked CLEARED with HEAD/CI evidence; 2 composite rows amended in place (BUG-014 currency landed, per-class line-item dimension unverified; BUG-038 root + mandatory lockfile fixed, devDependencies still shipped); 7 remain genuinely OPEN (BUG-015, BUG-017, BUG-018, BUG-030, BUG-037, BUG-039, BUG-042). D-31 floor closure recorded in DECISIONS.md (run 39469269982: web body 42905 B vs floor 34000). | Debugger |
 | 2026-10-25 (Debugger) | BUG-043 opened — zod GHSA-mrhx-c7xc-m3w5 accepted as an EXPIRING exception (`infra/supply-chain-exceptions.json`, reviewBy 2026-12-24, D-19 mechanism). Hygiene item "migrate to zod 4 before exception expiry" logged OPEN; the supply-chain gate fails closed at expiry, so 2026-12-24 is a hard deadline. Raised by the Architect (memo 0018); facts independently verified by the Debugger (exception entry, gate expiry branch at scripts/check-supply-chain.mjs:86-95, patch boundary zod 4.6.6). | Debugger |
 | 2026-10-29 (Debugger) | BUG-044 opened — Low hygiene for the worker image's missing native-build toolchain (`python3`/`make`/`g++`) when a lockfile refresh introduces `ssh2`/`cpu-features`. Evidence: dependabot "typescript group" CI run 40537763172 on a parked branch, with the compiler-detection and node-gyp Python failure signatures inspected directly. Owner: Developer; no action until the hygiene pass / dependabot batch uptake, per Architect memo 0025. | Debugger |
-| 2026-11-02 (Debugger) | BUG-037 and BUG-039 CLEARED at `ab6753a34699e083f0cbd0ba42714953f0477058`. BUG-037: clean-SHA `sourceMap: false` plus green API/worker runtime-image assertions in CI 41397948205 (11/11 jobs green); web's assertion was skipped and is not claimed as evidence. BUG-039: new isolated Node 22.23.4 / pnpm 9.15.0 frozen install exited 0 with new empty store/cache, four allowlisted builds ran, ignored builds reconciled to the graph, `pendingBuilds: []`, and Sharp 0.35.5 completed a real in-memory PNG → 17×9 WebP transformation. Sharp has no automatic install lifecycle and needs no allowlist hook. | Debugger |
+| 2026-11-02 (Debugger) | BUG-037 and BUG-039 CLEARED at `ab6753a34699e083f0cbd0ba42714953f0477058`. BUG-037: clean-SHA `sourceMap: false` plus green API/worker runtime-image assertions in CI 41397948205 (11/11 jobs green); the web assertion is intentionally scoped away and is not claimed as evidence. BUG-039: one uninterrupted cold install with new store/cache exited 0, `reused 0`, 731/731 packages added in 44m 36.5s; the exhaustive inventory found 12 lifecycle packages (4 allowlisted/executed, 8 ignored), `pendingBuilds: []`, and a real 4×5 RGBA → 2×3 PNG Sharp transformation. Sharp has no automatic install lifecycle and needs no allowlist hook. | Debugger |
 | | | |
 | | | |
 
