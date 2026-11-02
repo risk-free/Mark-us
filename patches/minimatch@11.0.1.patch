@@ -1,0 +1,46 @@
+diff --git a/dist/commonjs/index.d.ts b/dist/commonjs/index.d.ts
+index 2247bba1b3d19e4de64150ba4d44bd82de532d5f..c7ef5ef22e1c5ca1aca6c2cb6ca1ae1e0de477ac 100644
+--- a/dist/commonjs/index.d.ts
++++ b/dist/commonjs/index.d.ts
+@@ -182,4 +182,5 @@ export declare class Minimatch {
+ export { escape } from './escape.js';
+ export { unescape } from './unescape.js';
+ export type { Form };
++export default minimatch;
+ //# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
+diff --git a/dist/commonjs/index.js b/dist/commonjs/index.js
+index ec1981d9a738ecf28d63190e27506ff0e600bf79..0423135a3642b1bf6b3abd04aaabfc3c9b1da2d3 100644
+--- a/dist/commonjs/index.js
++++ b/dist/commonjs/index.js
+@@ -1509,4 +1509,7 @@ Object.defineProperty(exports, "unescape", { enumerable: true, get: function ()
+ exports.minimatch.Minimatch = Minimatch;
+ exports.minimatch.escape = escape_js_1.escape;
+ exports.minimatch.unescape = unescape_js_1.unescape;
++// Preserve the callable CommonJS entrypoint used by legacy consumers.
++module.exports = Object.assign(exports.minimatch, exports);
++Object.defineProperty(module.exports, "default", { value: exports.minimatch });
+ //# sourceMappingURL=index.js.map
+\ No newline at end of file
+diff --git a/dist/esm/index.d.ts b/dist/esm/index.d.ts
+index 2247bba1b3d19e4de64150ba4d44bd82de532d5f..c7ef5ef22e1c5ca1aca6c2cb6ca1ae1e0de477ac 100644
+--- a/dist/esm/index.d.ts
++++ b/dist/esm/index.d.ts
+@@ -182,4 +182,5 @@ export declare class Minimatch {
+ export { escape } from './escape.js';
+ export { unescape } from './unescape.js';
+ export type { Form };
++export default minimatch;
+ //# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
+diff --git a/dist/esm/index.js b/dist/esm/index.js
+index ab804c2db6951836630594a59844233756d3957c..fec810b850df945c9637076b568fd289ea721f0e 100644
+--- a/dist/esm/index.js
++++ b/dist/esm/index.js
+@@ -1498,4 +1498,6 @@ export { unescape } from './unescape.js';
+ minimatch.Minimatch = Minimatch;
+ minimatch.escape = escape;
+ minimatch.unescape = unescape;
++// Preserve the default import used by legacy consumers.
++export default minimatch;
+ //# sourceMappingURL=index.js.map

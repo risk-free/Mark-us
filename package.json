@@ -47,7 +47,8 @@
       "sprintf-js": "^1.1.3",
       "deepmerge-ts": "^8.0.0",
       "undici": "^8.12.2",
-      "glob@>=10.2.0 <10.5.0": "10.5.0"
+      "minimatch@<11.0.1": "11.0.1",
+      "glob@>=9.0.0 <=14.0.1": "14.0.2"
     },
     "auditConfig": {
       "ignore": {
@@ -58,6 +59,10 @@
           "GHSA-hp3w-g68c-fv3c"
         ]
       }
+    },
+    "patchedDependencies": {
+      "minimatch@11.0.1": "patches/minimatch@11.0.1.patch",
+      "eslint-plugin-import@2.32.0": "patches/eslint-plugin-import@2.32.0.patch"
     }
   }
 }

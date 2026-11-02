@@ -1,4 +1,4 @@
-// Jest Snapshot v1, https://goo.gl/fbAQLP
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
 
 exports[`formatEvalReport snapshots the real M5b run 1`] = `
 "Mark-us P6.4 offline eval (gate M5b)
