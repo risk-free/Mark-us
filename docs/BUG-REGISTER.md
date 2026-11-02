@@ -75,9 +75,9 @@ This document is the **single, living register of defects and latent production 
 | BUG-034 | Node 20 is EOL in CI and in the base image | Medium | STATIC | CLEARED |
 | BUG-035 | `apps/web` has no error boundary and no security headers | Low | STATIC | CLEARED |
 | BUG-036 | `workers/package.json` declares `types` that the build never emits | Low | STATIC | CLEARED |
-| BUG-037 | `sourceMap: true` inherited → production image ships `.js.map` | Low | STATIC | ACTION REQUIRED |
+| BUG-037 | `sourceMap: true` inherited → production image ships `.js.map` | Low | REPRODUCED | CLEARED |
 | BUG-038 | `Dockerfile.api` runs as root, ships devDependencies, lockfile is optional | Low | STATIC | OPEN |
-| BUG-039 | `pnpm-workspace.yaml` has no `onlyBuiltDependencies` allowlist | Low | STATIC | ACTION REQUIRED |
+| BUG-039 | `pnpm-workspace.yaml` has no `onlyBuiltDependencies` allowlist | Low | REPRODUCED | CLEARED |
 | BUG-040 | `turbo.json` declares no `env` allowlist → cache key ignores secrets | Low | STATIC | CLEARED |
 | BUG-041 | `COPY --chown` writes 0-byte files into the runtime image (Linux-only smoke declared) | High | REPRODUCED | CLEARED |
 | BUG-042 | `docker compose --profile app up` hangs on Docker Desktop/Windows — containers stuck `Created` | Medium | REPRODUCED | OPEN |
@@ -1307,13 +1307,13 @@ Also worth noting: `<html lang="zh-CN">` is hardcoded while ARCHITECTURE §1 tar
 | **Raised by** | Debugger |
 | **Raised at** | 2026-09-27 17:44 CST |
 | **Severity** | Low |
-| **Evidence** | STATIC |
-| **Location** | `tsconfig.base.json` (`"sourceMap": true`); `workers/dist/index.js.map` |
+| **Evidence** | REPRODUCED |
+| **Location** | `tsconfig.base.json:16`; `.github/workflows/ci.yml:293-304` |
 | **Blocks** | — |
-| **Status** | ACTION REQUIRED — assigned under Architect → Developer 0026 (2026-10-31); not CLEARED |
-| **Discussion** | — |
+| **Status** | CLEARED — `sourceMap: false` at `ab6753a`; API/worker runtime-image assertions green in CI 41397948205 |
+| **Discussion** | 2026-11-02 — closure verified on the exact public `main` SHA; web image evidence is not claimed |
 | **Answered by / Answered at** | --- |
-| **Verified by / Verified at** | — |
+| **Verified by / Verified at** | Debugger 2026-11-02 — clean-SHA config check plus CI 41397948205 (`image · api` and `image · worker` source-map assertions `success`; web assertion `skipped`) |
 
 **Issue.** `tsconfig.base.json` sets `"sourceMap": true` and every Node package inherits it. The emitted maps are real — `workers/dist/index.js.map` is present on disk — and `infra/Dockerfile.api` copies the whole `/app` tree into the runtime stage, so the maps ship in the production image.
 
@@ -1322,6 +1322,8 @@ Also worth noting: `<html lang="zh-CN">` is hardcoded while ARCHITECTURE §1 tar
 **Recommended fix.** Set `"sourceMap": false` at the base and enable it per package for local development, or have the Dockerfile strip `**/*.js.map` in the runtime stage. If Sentry is adopted (P0.4), upload maps at build time and exclude them from the image.
 
 **Current triage (2026-10-31, HEAD `0485803`).** Remains **ACTION REQUIRED**, assigned under **Architect → Developer 0026**. STATIC confirmation only; no fix or new runtime/image verification has landed, so this is not CLEARED.
+
+**Closure verification (2026-11-02, HEAD `ab6753a34699e083f0cbd0ba42714953f0477058`).** The clean-SHA `tsconfig.base.json:16` now sets `"sourceMap": false`; no tracked JSON tsconfig overrides that setting. The verification command `gh run view 41397948205 --repo risk-free/Mark-us --json headSha,conclusion,jobs` returned the exact SHA above, run conclusion `success`, and 11/11 jobs `success`. In particular, the `Reject first-party runtime source maps` steps were `success` for both `image · api` (job 125123275471) and `image · worker` (job 125123275397). Those steps execute the `.github/workflows/ci.yml:293-304` container assertion: prune `node_modules`, find first-party `*.js.map` under `/app/apps`, `/app/packages`, and `/app/workers`, and exit 1 if the result is non-empty. The same-named web step (job 125123275406) was `skipped`; this clearance therefore rests on the clean-SHA compiler configuration and the API/worker runtime-image assertions only, not on web-image source-map evidence.
 
 ---
 
@@ -1365,13 +1367,13 @@ Minor: `COPY tsconfig.base.json ./` appears twice (lines 7 and 12) — a harmles
 | **Raised by** | Debugger |
 | **Raised at** | 2026-09-27 17:44 CST |
 | **Severity** | Low |
-| **Evidence** | STATIC |
-| **Location** | `pnpm-workspace.yaml` |
+| **Evidence** | REPRODUCED |
+| **Location** | `package.json:38-44` (`pnpm.onlyBuiltDependencies`) |
 | **Blocks** | — |
-| **Status** | ACTION REQUIRED — assigned under Architect → Developer 0026 (2026-10-31); not CLEARED |
-| **Discussion** | — |
+| **Status** | CLEARED — fresh frozen install, lifecycle reconciliation, and real Sharp transformation verified at `ab6753a` |
+| **Discussion** | 2026-11-02 — original Sharp-hook assumption corrected during closure: Sharp uses optional platform binary packages and has no automatic install lifecycle |
 | **Answered by / Answered at** | --- |
-| **Verified by / Verified at** | — |
+| **Verified by / Verified at** | Debugger 2026-11-02 — Node 22.23.4 / pnpm 9.15.0 fresh install exit 0; `pendingBuilds: []`; Sharp 0.35.5 PNG → 17×9 WebP transformation exit 0 |
 
 **Issue.** The workspace file lists only the package globs:
 
@@ -1398,6 +1400,18 @@ onlyBuiltDependencies:
 Verify with `pnpm rebuild` and by checking that a `next build` with image optimisation enabled succeeds. Keep the list explicit rather than using `onlyBuiltDependencies: true`, so a newly-introduced native package requires a deliberate decision.
 
 **Current triage (2026-10-31, HEAD `0485803`).** Remains **ACTION REQUIRED**, assigned under **Architect → Developer 0026**. STATIC configuration-gap confirmation only; no present-day Sharp failure or fix verification is claimed, so this is not CLEARED.
+
+**Closure verification (2026-11-02, HEAD `ab6753a34699e083f0cbd0ba42714953f0477058`).** A newly created detached worktree at `C:\Users\franc\AppData\Local\Temp\opencode\markus-bug037-039-closure-ab6753a-fresh` had no `node_modules`; the new store and cache paths below were also absent. Node reported `v22.23.4` and pnpm reported `9.15.0`. From that worktree, the single completed install command was:
+
+```powershell
+& 'C:\Users\franc\AppData\Local\Temp\opencode\node22\node.exe' 'C:\Program Files\nodejs\node_modules\corepack\dist\pnpm.js' install --frozen-lockfile --store-dir 'C:\Users\franc\AppData\Local\Temp\opencode\pnpm-store-closure-ab6753a-fresh' --cache-dir 'C:\Users\franc\AppData\Local\Temp\opencode\pnpm-cache-closure-ab6753a-fresh'
+```
+
+It exited 0 after `Done in 28m 14.4s`: all 14 workspace projects, lockfile up to date, 731 packages added, with fresh-path progress ending `reused 0, downloaded 731, added 731, done`. The install ran `@prisma/client` and `@prisma/engines` `postinstall`, `argon2` `install`, and `esbuild` `postinstall` to `Done`. It reported these ignored build scripts: `@parcel/watcher`, `@swc/core`, `cpu-features`, `eslint-plugin-import`, `minimatch`, `msgpackr-extract`, `prisma`, `protobufjs`, `ssh2`, and `unrs-resolver`.
+
+A graph-wide Node 22 inventory deduplicated real `package.json` paths under `node_modules/.pnpm` and selected `preinstall`/`install`/`postinstall`/`prepare` (63 manifest rows, exit 0). Twelve rows had automatic install-time hooks: the four allowed packages above plus `@parcel/watcher`, `@swc/core`, `cpu-features`, `msgpackr-extract`, `prisma`, `protobufjs`, `ssh2`, and `unrs-resolver`; the other 51 rows were `prepare`-only and are not automatic registry-install hooks. The ignored list therefore reconciles to those eight non-allowlisted lifecycle packages plus the two patched dependencies, `eslint-plugin-import` and `minimatch`. Root `package.json:39-44` explicitly allowlists exactly `@prisma/client`, `@prisma/engines`, `argon2`, and `esbuild`. The generated `node_modules/.modules.yaml` records `packageManager: pnpm@9.15.0` and `pendingBuilds: []` (pnpm 9.15.0 has no `ignored-builds` subcommand, so the ignored-script install output and this current pending-build state are the applicable evidence).
+
+The original Sharp rationale was also corrected by direct evidence rather than preserved as an assumption. Installed `sharp@0.35.5` has no `preinstall`, `install`, `postinstall`, or `prepare` hook (`sharpLifecycleHooks: []`); it resolves optional platform binaries, here `@img/sharp-win32-x64` range `0.35.5`. Thus no Sharp lifecycle allowlist entry is expected. The command `& 'C:\Users\franc\AppData\Local\Temp\opencode\node22\node.exe' 'C:\Users\franc\AppData\Local\Temp\opencode\closure-ab6753a-sharp.cjs'` exited 0 after creating a 64×32 RGBA PNG entirely in memory (188 bytes, PNG signature `89504e470d0a1a0a`), resizing/reformatting it through Sharp/libvips 8.18.7, and reading the output back. Material output was a 104-byte WebP with RIFF/WEBP signature `52494646600000005745425056503858`, metadata `format=webp width=17 height=9 channels=4 hasAlpha=true`, and SHA-256 `643954c94a7613cc2362046384a92a95ec1eef470ce6c21c11939604e6d7acff`. This is a successful native transformation, not merely a module-resolution check.
 
 ---
 
@@ -1606,6 +1620,7 @@ pnpm build       # not run by the Debugger (see note)
 | 2026-10-21 (Debugger) | Public-visibility reconciliation against HEAD a4b9d3b: all 40 OPEN rows re-verified against HEAD and CI run 39469269982 (all green, 10/10 jobs). 31 rows marked CLEARED with HEAD/CI evidence; 2 composite rows amended in place (BUG-014 currency landed, per-class line-item dimension unverified; BUG-038 root + mandatory lockfile fixed, devDependencies still shipped); 7 remain genuinely OPEN (BUG-015, BUG-017, BUG-018, BUG-030, BUG-037, BUG-039, BUG-042). D-31 floor closure recorded in DECISIONS.md (run 39469269982: web body 42905 B vs floor 34000). | Debugger |
 | 2026-10-25 (Debugger) | BUG-043 opened — zod GHSA-mrhx-c7xc-m3w5 accepted as an EXPIRING exception (`infra/supply-chain-exceptions.json`, reviewBy 2026-12-24, D-19 mechanism). Hygiene item "migrate to zod 4 before exception expiry" logged OPEN; the supply-chain gate fails closed at expiry, so 2026-12-24 is a hard deadline. Raised by the Architect (memo 0018); facts independently verified by the Debugger (exception entry, gate expiry branch at scripts/check-supply-chain.mjs:86-95, patch boundary zod 4.6.6). | Debugger |
 | 2026-10-29 (Debugger) | BUG-044 opened — Low hygiene for the worker image's missing native-build toolchain (`python3`/`make`/`g++`) when a lockfile refresh introduces `ssh2`/`cpu-features`. Evidence: dependabot "typescript group" CI run 40537763172 on a parked branch, with the compiler-detection and node-gyp Python failure signatures inspected directly. Owner: Developer; no action until the hygiene pass / dependabot batch uptake, per Architect memo 0025. | Debugger |
+| 2026-11-02 (Debugger) | BUG-037 and BUG-039 CLEARED at `ab6753a34699e083f0cbd0ba42714953f0477058`. BUG-037: clean-SHA `sourceMap: false` plus green API/worker runtime-image assertions in CI 41397948205 (11/11 jobs green); web's assertion was skipped and is not claimed as evidence. BUG-039: new isolated Node 22.23.4 / pnpm 9.15.0 frozen install exited 0 with new empty store/cache, four allowlisted builds ran, ignored builds reconciled to the graph, `pendingBuilds: []`, and Sharp 0.35.5 completed a real in-memory PNG → 17×9 WebP transformation. Sharp has no automatic install lifecycle and needs no allowlist hook. | Debugger |
 | | | |
 | | | |
 
