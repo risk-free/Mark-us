@@ -144,7 +144,7 @@ flowchart TB
 | `auth` | — (Redis sessions) | `staffLogin`, `verifyMfa`, `logout`, `issueMagicLink`, `redeemMagicLink`, `assertPermission` | Redis session store, Argon2 hasher, WeCom identity (read-only) | any domain table |
 | `staff` | `StaffUser`, `ConsentRecord` | `provisionStaff`, `updateStaff`, `disableStaff`, `writeVaultSecret`, `revealVaultSecret`, `rotateVaultSecret` | KMS/SSE, SMTP/WeCom notify, audit writer | `Contact`, `Order` |
 | `crm` | `Contact`, `Company`, `ContactCompany`, `ContactMergeCandidate`, `Lead`, `Conversation`, `Message`, `WeComLink`, `CSTicket` | `captureLead`, `assignLead`, `moveStage`, `openConversation`, `appendMessage`, `resolveConversation`, `raiseTicket`, `linkContactCompany`, `flagDuplicate`, `mergeContact` (**MASTER_ADMIN**, ADR D-21) | WeCom archive client, round-robin assigner, notify | `Trademark`, `Order` |
-| `trademarks` | `Trademark`, `TrademarkAssessment`*, `ProbabilityRun`* | `createTrademark`, `requestAssessment`, `getAssessment`, `acceptAssessment` | corpus search port, LLM gateway port (analysis copy only) | `Application`, `Payment` |
+| `trademarks` | `Trademark`, `TrademarkAssessment`*, `ProbabilityModel`*, `ModelEvaluation`*, `CorpusLabel`*, `AssessmentReview`*, `ModelPromotionReview`* | `createTrademark`, `requestAssessment`, `getAssessment`, `acceptAssessment` | corpus search port, LLM gateway port (analysis copy only) | `Application`, `Payment` |
 | `filings` | `Application`, `OfficeAction` | `openFiling`, `recordFilingReceipt`, `syncTsdr`, `ingestOfficeAction`, `fileResponse` | TSDR client, ODP/OCR result reader, document writer | `Order`, `Contact` |
 | `documents` | `Document`, `DocumentVersion` | `requestUpload`, `commitVersion`, `runOcr`, `proofread`, `approveVersion`, `issueDownloadUrl` | R2, OCR adapter (PaddleOCR/cloud), LanguageTool | other modules' tables |
 | `commerce` | `Order`, `InvoiceLineItem`, `Invoice`, `Payment`, `Refund`, `RefundAllocation`, `Campaign` | `createOrder`, `quoteOrder`, `startPayment`, `capturePayment`, `requestRefund`, `approveRefund` (**MASTER_ADMIN**, ADR D-22), `renderInvoice`, `reconcile` | Stripe, PayPal, PDF renderer, notify | `Trademark` (read via service) |
@@ -346,14 +346,14 @@ sequenceDiagram
   Q->>D: read trademark snapshot (immutable copy for the run)
   Q->>L: features (corpus similarity) + copy (no PII, §8.1)
   L-->>Q: sub-signals + explanation draft
-  Q->>D: INSERT trademark_assessment (score, modelVersion, disclaimerVersion)
+  Q->>D: INSERT trademark_assessment (score, modelId, disclaimerVersion)
   Q->>D: outbox(AssessmentCompleted)
   N-->>V: WeChat notification (score + mandatory 3-locale disclaimer)
 ```
 
 **Invariants:**
 - The headline output is **P(eventual registration)**, never "approval odds", never "success rate".
-- Every persisted assessment carries `modelVersion` **and** `disclaimerVersion`; rendering without the disclaimer is a build/test failure (Mandate 18).
+- Every persisted assessment carries `modelId` **and** `disclaimerVersion`; `modelVersion` is resolved through the model registry and retained in `featureSnapshot`. Rendering without the disclaimer is a build/test failure (Mandate 18).
 - Sub-signals are stored for analysis but are explicitly **not** presented as probabilities.
 - A re-assessment never mutates a prior assessment row; assessments are append-only.
 

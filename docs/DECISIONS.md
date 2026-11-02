@@ -676,6 +676,67 @@ Prefix-always is the next-intl recommendation and keeps every locale URL canonic
 
 ---
 
+## D-32: Scoring and evidence contract — decimal scores, bound model registry, append-only evidence
+**ID:** D-32
+**Status:** ACCEPTED
+**Date:** 2026-11-02
+**Owner:** ARCH
+**Impact:** `Trademark`, `TrademarkAssessment`, `ProbabilityModel` (renamed from `ProbabilityRun`), `ModelEvaluation`, `CorpusLabel`, `AssessmentReview`, `ModelPromotionReview`; P5.4/P5.5/M5a/M6.5; BUG-017
+**Source:** BUG-017; D-03; D-24/D-25/D-26; DQ-010/R-010; M5a readiness review
+
+### Context
+BUG-017 found that `Trademark.probabilityScore` and `TrademarkAssessment.pRegistration` were `Float`,
+the model version was a free string, the attorney verdict had no reviewer FK or enum, and D-03's
+calibration/AUC evidence had no label or evaluation records. A range CHECK already existed, so the
+residual was representation, provenance, review and evidence — not a missing bound.
+
+### Decision
+1. **Scores are `Decimal(5,4)` in `0..1`** (resolution 0.01 pp). `NULL` means no score; a degraded
+   result is `outcome = INSUFFICIENT_DATA`, never `0`.
+2. **`ProbabilityRun` becomes `ProbabilityModel`**, a registry keyed by immutable `modelVersion`,
+   with `kind` (`BOOTSTRAP|TRAINED|BASELINE`), an explicit status enum, immutable artifact
+   schema/hash/JSON and training evidence, and a same-model bound `promotedEvaluationId`. Only
+   contract lifecycle transitions are allowed. At most one model is `PROMOTED`; only `TRAINED` may
+   be.
+3. **Every score has a model FK.** Bootstrap and baseline descriptors are seeded reference rows so
+   the FK is real from the first assessment.
+4. **Attorney review is first-class.** `AssessmentReview` records one immutable
+   `CONFIRMED|OVERRIDDEN` verdict per assessment, with an optional replacement score, reviewer FK
+   and rationale. The `Trademark` columns are a cache of the latest review.
+5. **Evidence is append-only and frozen at review.** `ModelEvaluation`, `CorpusLabel`,
+   `ModelPromotionReview`, `AssessmentReview` and `TrademarkAssessment` reject
+   UPDATE/DELETE/TRUNCATE; evaluation keys and their stored `configurationJson` make replay a no-op
+   and its inputs reproducible. Labels retain full-precision predictions, follow the configured
+   horizon/census/temporal split, and cannot be inserted after review starts. Censored labels are
+   stored but never counted as negatives.
+6. **Promotion is a checklist, not a status edit.** Finalization recomputes metrics and calibration
+   from per-label evidence and reconciles the canonical artifact. Two distinct approvals, at least
+   one attorney and one Master-Admin, all bound to the same evaluation, plus a >=50-label attorney
+   spot-check, are rechecked by the promotion trigger. The accuracy threshold is frozen at `0.5`.
+7. The full contract is `docs/SCORING-EVIDENCE-CONTRACT.md` v1.0 (FROZEN).
+
+### Rationale
+A probability a client pays for must be exactly representable, reproducible and attributable. A free
+string cannot prove which artifact produced a score; a mutable run row cannot prove what was
+approved. Decimal + FK + append-only evidence makes the BUG-017 failure modes unrepresentable
+rather than merely discouraged. Seed rows keep the FK honest without inventing an artifact.
+
+### Consequences
+- `packages/db/prisma/schema.prisma` and the baseline migration change; invariant SQL lives in
+  `fragments/30-scoring-evidence.sql`.
+- `TrademarkAssessment.trademark` is `ON DELETE RESTRICT`; marks are soft-deleted.
+- Threshold/horizon/config changes require a new training run, artifact, candidate registration and
+  `ModelEvaluation`; they never edit an old one or attach a different report to an immutable
+  artifact. Schema v2 stores only releasable artifacts: failed training/re-evaluation writes no
+  registry/evaluation rows and retains its failure report in the trainer run log.
+- This is a schema/evidence decision only. It does **not** activate a model, approve compute, pick a
+  corpus or satisfy M5a. Production stays on `BOOTSTRAP_MODEL` until the frozen checklist passes on a
+  real corpus with an attorney sign-off.
+- BUG-017's residual is addressed at the schema level; closure still requires the migration to apply
+  cleanly in CI and the contract invariants to be exercised.
+
+---
+
 ## Business-side prerequisites (non-code, start immediately)
 
 | Item | Owner | Blocks |

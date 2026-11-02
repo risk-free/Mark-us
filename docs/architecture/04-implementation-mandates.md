@@ -221,7 +221,8 @@ matching rollback note in `docs/architecture/02-data-model.md` or the runbook.
 
 ### M3.2 — P0.3 backlog delivery (GATE)
 **Statement:** The P0.3 migration backlog in `ARCH-02` §5 is delivered as one reviewed series
-before P1 handlers depend on it: `OutboxEvent`, `ProbabilityRun`, `TrademarkAssessment`,
+before P1 handlers depend on it: `OutboxEvent`, `ProbabilityModel`, `ModelEvaluation`,
+`CorpusLabel`, `TrademarkAssessment`, `AssessmentReview`, `ModelPromotionReview`,
 `TmCorpusMark`, `TmCorpusClass`, `TmCorpusMarkClass`, `TmSimilarity`,
 `TmIngestRun`, `AssignmentState`, `FeatureFlag`, plus the column additions, soft deletes, MFA and
 vault columns, invoice snapshot column, notification dedupe key, and `timestamptz` conversions.
@@ -389,9 +390,10 @@ resulting row for each transition, including forbidden post-filing edits.
 ## 7. Assessment, probability and disclosure
 
 ### M6.1 — Assessment is append-only and reproducible (GATE)
-**Statement:** Each assessment run appends a `TrademarkAssessment` with `runId`, `modelVersion` and
-`disclaimerVersion`. Prior rows are never updated. Re-running the same input against the same model
-version reproduces the same score within the recorded tolerance.
+**Statement:** Each assessment run appends a `TrademarkAssessment` with `modelId` and
+`disclaimerVersion`; the exact `modelVersion` is resolved through `ProbabilityModel` and retained in
+`featureSnapshot`. Prior rows are never updated, deleted or truncated. Re-running the same input
+against the same model version reproduces the same score within the recorded tolerance.
 **Owner:** DEV + QA · **Phase:** P6 · **Depends on:** M3.2, M3.4
 **Verification:** Replay test over a golden fixture set (≥ 50 marks with human-labelled outcomes)
 asserting score reproducibility and asserting row count growth with zero mutation of prior rows.
@@ -440,12 +442,18 @@ labelled set is assembled per ADR D-24 as amended by **D-26** (whole LIVE corpus
 registration; horizon **+12 months primary / +24 months secondary**; marks still
 `600` at the configured horizon are censored, not negatives) and, per ADR D-25, promotion additionally
 requires **≥ 500 resolved labels** on the temporally held-out split **and a 95% CI half-width on
-overall accuracy ≤ 5 pp** (both configurable). Model promotion is a two-person approval recorded in the
-audit trail.
+overall accuracy ≤ 5 pp** (both configurable). Before review, finalization recomputes every metric
+and calibration bucket from the retained per-label predictions and reconciles them with the
+schema-v2 artifact (D-32). Model promotion requires distinct attorney and Master-Admin approvals
+bound to the same frozen evaluation.
 **Owner:** DEV + QA · **Phase:** P6 · **Depends on:** M6.1, M6.2
-**Verification:** Test asserting the release pipeline refuses to mark a model `RELEASED` without a
+**Verification:** Test asserting the release pipeline refuses to mark a model `PROMOTED` without a
 stored report whose sample size meets the configured minimum and whose CI half-width meets the
-configured bound, and without two distinct approver ids.
+configured bound, and without two distinct approver ids, including an attorney and a Master-Admin,
+bound to the same evaluation (D-32). The evidence test also perturbs a per-label score/outcome and
+proves finalization rejects the stale metrics, then proves no label can be inserted after review.
+It also covers unelapsed-horizon censoring, active-reviewer roles and concurrent status/evidence
+writers using the contract's model-before-evaluation lock order.
 
 ---
 

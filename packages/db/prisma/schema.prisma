@@ -179,6 +179,52 @@ enum NotificationChannel {
   PORTAL
 }
 
+// --- Scoring and evidence contract (docs/SCORING-EVIDENCE-CONTRACT.md) -----
+
+enum ProbabilityModelKind {
+  BOOTSTRAP // in-code cold-start scorer; never client-servable
+  TRAINED // artifact produced by the offline trainer
+  BASELINE // constant base-rate comparator; never client-servable
+}
+
+enum ProbabilityModelStatus {
+  CANDIDATE
+  PROMOTED
+  REJECTED
+  RETIRED
+}
+
+enum ProbabilityVerdict {
+  CONFIRMED
+  OVERRIDDEN
+}
+
+enum AssessmentOutcome {
+  SCORED
+  INSUFFICIENT_DATA
+}
+
+enum CorpusLabelOutcome {
+  POSITIVE
+  NEGATIVE
+  CENSORED
+}
+
+enum EvaluationSplit {
+  TRAIN
+  HOLDOUT
+}
+
+enum PromotionDecision {
+  APPROVE
+  REJECT
+}
+
+enum PromotionReviewerRole {
+  ATTORNEY
+  MASTER_ADMIN
+}
+
 // ---------------------------------------------------------------------------
 // Staff & access (D-01 credential vault, D-06 no self-registration)
 // ---------------------------------------------------------------------------
@@ -209,26 +255,31 @@ model StaffUser {
   vaultRotatedAt   DateTime? @db.Timestamptz(3) // 90-day forced re-rotation (D-01)
 
   // Deactivation instead of deletion (ARCH-02 §1)
-  disabledAt   DateTime? @db.Timestamptz(3)
+  disabledAt     DateTime? @db.Timestamptz(3)
   lastAssignedAt DateTime? @db.Timestamptz(3) // round-robin cursor fallback
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  assignedContacts      Contact[]           @relation("ContactOwner")
-  assignedConversations Conversation[]      @relation("ConversationOwner")
-  assignedLeads         Lead[]              @relation("LeadOwner")
-  filedApplications     Application[]       @relation("ExpertFiled")
-  filedByApplications   Application[]       @relation("FiledBy")
+  assignedContacts      Contact[]                @relation("ContactOwner")
+  assignedConversations Conversation[]           @relation("ConversationOwner")
+  assignedLeads         Lead[]                   @relation("LeadOwner")
+  filedApplications     Application[]            @relation("ExpertFiled")
+  filedByApplications   Application[]            @relation("FiledBy")
   uploadedVersions      DocumentVersion[]
-  issuedInvoices        Invoice[]           @relation("InvoiceIssuer")
+  issuedInvoices        Invoice[]                @relation("InvoiceIssuer")
   auditLogs             AuditLog[]
   notifications         Notification[]
   consentRecords        ConsentRecord[]
   assignmentState       AssignmentState?
   notificationPrefs     NotificationPreference[]
-  featureFlagUpdates    FeatureFlag[]       @relation("FeatureFlagUpdater")
-  deletedContacts       Contact[]           @relation("ContactDeletedBy")
+  featureFlagUpdates    FeatureFlag[]            @relation("FeatureFlagUpdater")
+  deletedContacts       Contact[]                @relation("ContactDeletedBy")
+
+  probabilityReviews    AssessmentReview[]
+  trademarkReviews      Trademark[]            @relation("TrademarkProbabilityReviewer")
+  modelPromotions       ProbabilityModel[]     @relation("ProbabilityModelPromotedBy")
+  modelPromotionReviews ModelPromotionReview[]
 
   @@index([role, status])
 }
@@ -258,18 +309,18 @@ model Contact {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  trademarks      Trademark[]
-  orders          Order[]
-  payments        Payment[]
-  conversations   Conversation[]
-  leads           Lead[]
-  documents       Document[]
-  tickets         CSTicket[]
-  wecomLinks      WeComLink[]
-  consentRecords  ConsentRecord[]
-  notifications   Notification[]
-  deletedBy       StaffUser?     @relation("ContactDeletedBy", fields: [deletedById], references: [id])
-  magicLinks      MagicLinkToken[]
+  trademarks     Trademark[]
+  orders         Order[]
+  payments       Payment[]
+  conversations  Conversation[]
+  leads          Lead[]
+  documents      Document[]
+  tickets        CSTicket[]
+  wecomLinks     WeComLink[]
+  consentRecords ConsentRecord[]
+  notifications  Notification[]
+  deletedBy      StaffUser?       @relation("ContactDeletedBy", fields: [deletedById], references: [id])
+  magicLinks     MagicLinkToken[]
 
   @@index([assignedSalespersonId, stage]) // Q2
   @@index([stage])
@@ -289,13 +340,13 @@ model Lead {
   assignedSalesperson   StaffUser? @relation("LeadOwner", fields: [assignedSalespersonId], references: [id])
 
   // Assignment SLA instrumentation (D-07, M4.1): createdAt -> assignedAt
-  assignedAt    DateTime? @db.Timestamptz(3)
-  assignedById  String? // null = automatic round-robin
-  assignedBy    String? // "AUTO" | "MANUAL" — manual requires a reason (M4.1)
+  assignedAt     DateTime? @db.Timestamptz(3)
+  assignedById   String? // null = automatic round-robin
+  assignedBy     String? // "AUTO" | "MANUAL" — manual requires a reason (M4.1)
   reassignReason String?
-  convertedAt   DateTime? @db.Timestamptz(3)
-  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt     DateTime  @updatedAt @db.Timestamptz(3)
+  convertedAt    DateTime? @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @db.Timestamptz(3)
 
   @@index([assignedSalespersonId, status, createdAt(sort: Desc)]) // Q1
   @@index([status])
@@ -303,9 +354,9 @@ model Lead {
 }
 
 model Conversation {
-  id       String             @id @default(cuid())
-  channel  Channel
-  status   ConversationStatus @default(OPEN)
+  id             String             @id @default(cuid())
+  channel        Channel
+  status         ConversationStatus @default(OPEN)
   // D-07 deflection metric is derived from exactly these two facts (M4.3)
   handledByStaff Boolean            @default(false)
   resolution     String? // DEFLECTED | HUMAN | null
@@ -326,11 +377,11 @@ model Conversation {
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   messages Message[]
+  // [SQL] unique (channel, wecomSessionId) — archive replay safety (M4.2)
 
   @@index([assignedSalespersonId, status, lastMessageAt(sort: Desc)]) // Q3
   @@index([contactId])
   @@index([status])
-  // [SQL] unique (channel, wecomSessionId) — archive replay safety (M4.2)
 }
 
 model Message {
@@ -340,22 +391,22 @@ model Message {
   content     String // PII — referenced by id in logs, never logged (ARCH-01 §10)
   wecomMsgid  String?
   // PIPL erasure inside archived content (ARCH-02 §5.2)
-  redactedAt DateTime? @db.Timestamptz(3)
-  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  redactedAt  DateTime?        @db.Timestamptz(3)
+  createdAt   DateTime         @default(now()) @db.Timestamptz(3)
 
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  // [SQL] unique (conversationId, wecomMsgid) WHERE wecomMsgid IS NOT NULL (Q4)
 
   @@index([conversationId, createdAt]) // Q4
-  // [SQL] unique (conversationId, wecomMsgid) WHERE wecomMsgid IS NOT NULL (Q4)
 }
 
 model WeComLink {
-  id             String   @id @default(cuid())
-  externalUserId String   @unique
+  id             String    @id @default(cuid())
+  externalUserId String    @unique
   channel        Channel
   verifiedAt     DateTime? @db.Timestamptz(3)
-  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
 
   contactId String
   contact   Contact @relation(fields: [contactId], references: [id])
@@ -369,15 +420,15 @@ model WeComLink {
 
 /// Single-use magic link. The token itself is never stored — only its SHA-256 hash.
 model MagicLinkToken {
-  id        String    @id @default(cuid())
-  tokenHash String    @unique
-  scope     String    @default("portal") // see DQ-005 (portal | pay:<invoiceId> | …)
-  expiresAt DateTime  @db.Timestamptz(3)
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  scope      String    @default("portal") // see DQ-005 (portal | pay:<invoiceId> | …)
+  expiresAt  DateTime  @db.Timestamptz(3)
   consumedAt DateTime? @db.Timestamptz(3)
-  attempts  Int       @default(0)
-  requestIp String?
-  requestUa String?
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  attempts   Int       @default(0)
+  requestIp  String?
+  requestUa  String?
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
 
   contactId String
   contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
@@ -393,29 +444,32 @@ model MagicLinkToken {
 // ---------------------------------------------------------------------------
 
 model Trademark {
-  id          String  @id @default(cuid())
-  title       String // business-confidential; LLM only with recorded consent
-  description String?
-  imageText   String? // design element — word-mark-first scope (D-02)
-  niceClass   Int
+  id            String  @id @default(cuid())
+  title         String // business-confidential; LLM only with recorded consent
+  description   String?
+  imageText     String? // design element — word-mark-first scope (D-02)
+  niceClass     Int
   goodsServices String
 
-  status          TrademarkStatus @default(ASSESSING)
-  filingBasis     String?
-  serialNumber    String?         @unique
-  registrationNumber String?      @unique
-  filedAt         DateTime?       @db.Timestamptz(3)
-  filedDate       String? // YYYY-MM-DD, USPTO calendar semantics (ARCH-02 §1)
-  registeredAt    DateTime?       @db.Timestamptz(3)
-  registrationDate String?
+  status             TrademarkStatus @default(ASSESSING)
+  filingBasis        String?
+  serialNumber       String?         @unique
+  registrationNumber String?         @unique
+  filedAt            DateTime?       @db.Timestamptz(3)
+  filedDate          String? // YYYY-MM-DD, USPTO calendar semantics (ARCH-02 §1)
+  registeredAt       DateTime?       @db.Timestamptz(3)
+  registrationDate   String?
 
   // Denormalised latest headline score. The append-only source of truth is
-  // TrademarkAssessment (M6.1). Float + range CHECK per ARCH-02 §5.3.
-  probabilityScore        Float?
-  probabilityModelVersion String?
-  probabilityReviewedAt   DateTime? @db.Timestamptz(3)
+  // TrademarkAssessment (M6.1). Decimal(5,4) + range CHECK per
+  // docs/SCORING-EVIDENCE-CONTRACT.md; null means "no client-visible score".
+  probabilityScore        Decimal?            @db.Decimal(5, 4)
+  probabilityModelId      String?
+  probabilityModel        ProbabilityModel?   @relation("TrademarkProbabilityModel", fields: [probabilityModelId], references: [id], onDelete: Restrict)
+  probabilityReviewedAt   DateTime?           @db.Timestamptz(3)
   probabilityReviewedById String?
-  probabilityVerdict      String? // ATTORNEY_CONFIRMED | ATTORNEY_OVERRIDDEN | null
+  probabilityReviewedBy   StaffUser?          @relation("TrademarkProbabilityReviewer", fields: [probabilityReviewedById], references: [id], onDelete: Restrict)
+  probabilityVerdict      ProbabilityVerdict?
 
   // USPTO corpus (D-02): index status of this mark in our local index
   corpusStatus String?
@@ -431,24 +485,25 @@ model Trademark {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  applications  Application[]
-  documents     Document[]
-  orders        Order[]
-  assessments   TrademarkAssessment[]
+  applications Application[]
+  documents    Document[]
+  orders       Order[]
+  assessments  TrademarkAssessment[]
 
-  @@index([contactId])           // Q6
-  @@index([niceClass, status])   // Q6
+  @@index([contactId]) // Q6
+  @@index([niceClass, status]) // Q6
   @@index([status])
   @@index([deletedAt])
+  @@index([probabilityModelId])
 }
 
 model Application {
-  id             String            @id @default(cuid())
-  serialNumber   String?           @unique
-  status         ApplicationStatus @default(DRAFT)
-  filingBasis    String?
-  filedAt        DateTime?         @db.Timestamptz(3)
-  filedDate      String? // YYYY-MM-DD statutory filing date
+  id           String            @id @default(cuid())
+  serialNumber String?           @unique
+  status       ApplicationStatus @default(DRAFT)
+  filingBasis  String?
+  filedAt      DateTime?         @db.Timestamptz(3)
+  filedDate    String? // YYYY-MM-DD statutory filing date
 
   // Attended filing ceremony (D-01, 37 CFR 2.193, ARCH-01 §6.2).
   // ATTENDED is the only permitted value: a human attorney signs inside TEAS.
@@ -481,24 +536,24 @@ model Application {
   documents     Document[]
   orders        Order[]
 
-  @@index([status])                        // Q8
-  @@index([nextReminderAt])                // Q8
-  @@index([expertAssignedId, status])      // Q8
+  @@index([status]) // Q8
+  @@index([nextReminderAt]) // Q8
+  @@index([expertAssignedId, status]) // Q8
   @@index([responseDeadline])
 }
 
 model OfficeAction {
-  id                String   @id @default(cuid())
-  kind              String // NON_FINAL | FINAL | SUSPENSION | ...
-  usptoActionCode   String?
-  issuedAt          DateTime? @db.Timestamptz(3)
-  responseDeadline  DateTime? @db.Timestamptz(3)
+  id                   String    @id @default(cuid())
+  kind                 String // NON_FINAL | FINAL | SUSPENSION | ...
+  usptoActionCode      String?
+  issuedAt             DateTime? @db.Timestamptz(3)
+  responseDeadline     DateTime? @db.Timestamptz(3)
   responseDeadlineDate String? // YYYY-MM-DD (ARCH-02 §1, §5.2)
-  rawActionKey      String? // vendor-supplied stable key when available
-  bodyText          String? // business-confidential; LLM only with consent
-  analysis          Json? // LLM draft + attorney review result
-  responseFiledAt   DateTime? @db.Timestamptz(3)
-  approvedById      String? // human approval of the response (M9.4)
+  rawActionKey         String? // vendor-supplied stable key when available
+  bodyText             String? // business-confidential; LLM only with consent
+  analysis             Json? // LLM draft + attorney review result
+  responseFiledAt      DateTime? @db.Timestamptz(3)
+  approvedById         String? // human approval of the response (M9.4)
 
   // Optimistic concurrency (M1.4)
   version Int @default(1)
@@ -508,10 +563,10 @@ model OfficeAction {
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  // [SQL] unique (applicationId, usptoActionCode, responseDeadline) (Q9)
 
   @@index([applicationId])
   @@index([responseDeadline]) // Q9
-  // [SQL] unique (applicationId, usptoActionCode, responseDeadline) (Q9)
 }
 
 // ---------------------------------------------------------------------------
@@ -519,17 +574,17 @@ model OfficeAction {
 // ---------------------------------------------------------------------------
 
 model Document {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   filename       String
-  kind           DocKind  @default(OTHER)
-  currentVersion Int      @default(1)
+  kind           DocKind   @default(OTHER)
+  currentVersion Int       @default(1)
   checksum       String? // checksum of the current version
   // Optimistic concurrency (M1.4) — If-Match on mutations
-  version        Int      @default(1)
+  version        Int       @default(1)
   deletedAt      DateTime? @db.Timestamptz(3)
 
   contactId String
-  contact   Contact   @relation(fields: [contactId], references: [id])
+  contact   Contact @relation(fields: [contactId], references: [id])
 
   trademarkId String?
   trademark   Trademark? @relation(fields: [trademarkId], references: [id])
@@ -549,27 +604,27 @@ model Document {
 }
 
 model DocumentVersion {
-  id             String   @id @default(cuid())
-  versionNo      Int
-  storageKey     String
-  sizeBytes      Int
-  checksum       String
-  mimeType       String?
-  scanStatus     String   @default("PENDING") // PENDING | CLEAN | QUARANTINED
-  ocrText        String? // PII
+  id              String     @id @default(cuid())
+  versionNo       Int
+  storageKey      String
+  sizeBytes       Int
+  checksum        String
+  mimeType        String?
+  scanStatus      String     @default("PENDING") // PENDING | CLEAN | QUARANTINED
+  ocrText         String? // PII
   proofreadStatus String? // PENDING | NEEDS_REVISION | APPROVED
   // Only a human may set this (M5.2); the OCR pipeline is structurally unable to
   approvedById    String?
-  approvedAt      DateTime? @db.Timestamptz(3)
-  uploadedById   String?
-  uploadedBy     StaffUser? @relation(fields: [uploadedById], references: [id])
-  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  approvedAt      DateTime?  @db.Timestamptz(3)
+  uploadedById    String?
+  uploadedBy      StaffUser? @relation(fields: [uploadedById], references: [id])
+  createdAt       DateTime   @default(now()) @db.Timestamptz(3)
 
   documentId String
   document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@unique([documentId, versionNo]) // Q13
-  @@unique([documentId, checksum])  // Q13 — identical bytes create no new version
+  @@unique([documentId, checksum]) // Q13 — identical bytes create no new version
 }
 
 // ---------------------------------------------------------------------------
@@ -585,8 +640,8 @@ model Order {
   total    Decimal     @default(0) @db.Decimal(12, 2)
 
   priceListVersion String? // frozen at creation (M10.1)
-  contactId String
-  contact   Contact    @relation(fields: [contactId], references: [id])
+  contactId        String
+  contact          Contact @relation(fields: [contactId], references: [id])
 
   trademarkId String?
   trademark   Trademark? @relation(fields: [trademarkId], references: [id])
@@ -597,13 +652,13 @@ model Order {
   // Optimistic concurrency (M1.4)
   version Int @default(1)
 
-  expiresAt  DateTime? @db.Timestamptz(3)
-  paidAt     DateTime? @db.Timestamptz(3)
+  expiresAt    DateTime? @db.Timestamptz(3)
+  paidAt       DateTime? @db.Timestamptz(3)
   cancelReason String?
 
   // D-05 CNY display must be reproducible server-side (never computed in the browser)
-  displayRateCny  Decimal? @db.Decimal(12, 6)
-  displayRateAsOf DateTime? @db.Timestamptz(3)
+  displayRateCny    Decimal?  @db.Decimal(12, 6)
+  displayRateAsOf   DateTime? @db.Timestamptz(3)
   displayRateSource String?
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
@@ -614,44 +669,44 @@ model Order {
   payments  Payment[]
 
   @@index([contactId, createdAt(sort: Desc)]) // Q10
-  @@index([status, createdAt(sort: Desc)])    // Q10
+  @@index([status, createdAt(sort: Desc)]) // Q10
   @@index([trademarkId])
 }
 
 model InvoiceLineItem {
-  id          String   @id @default(cuid())
-  description String
-  kind        LineKind @default(SERVICE_FEE)
-  unitAmount  Decimal  @db.Decimal(12, 2)
-  quantity    Int      @default(1)
-  refundable  Boolean  @default(true)
-  sortOrder   Int      @default(0)
+  id             String   @id @default(cuid())
+  description    String
+  kind           LineKind @default(SERVICE_FEE)
+  unitAmount     Decimal  @db.Decimal(12, 2)
+  quantity       Int      @default(1)
+  refundable     Boolean  @default(true)
+  sortOrder      Int      @default(0)
   // Multi-class filings produce one USPTO_FEE line per Nice class (DQ-008)
-  niceClass   Int?
+  niceClass      Int?
   // [SQL] CHECK (refundedAmount >= 0 AND refundedAmount <= unitAmount * quantity) —
   // Prisma cannot express multiplication in a CHECK; application must validate.
-  refundedAmount Decimal @default(0) @db.Decimal(12, 2)
+  refundedAmount Decimal  @default(0) @db.Decimal(12, 2)
 
   orderId String
-  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   refundAllocations RefundAllocation[]
 
-  @@index([orderId])
   @@unique([orderId, sortOrder])
+  @@index([orderId])
 }
 
 model Invoice {
-  id       String        @id @default(cuid())
-  number   String        @unique // "INV-2026-000123" from seq_invoice_number
-  locale   String        @default("zh-CN")
-  status   InvoiceStatus @default(ISSUED)
-  pdfKey   String? // R2 object key of the immutable PDF snapshot
+  id     String        @id @default(cuid())
+  number String        @unique // "INV-2026-000123" from seq_invoice_number
+  locale String        @default("zh-CN")
+  status InvoiceStatus @default(ISSUED)
+  pdfKey String? // R2 object key of the immutable PDF snapshot
 
   // Immutable legal snapshot (M10.4) — later price-list or order changes never alter it
-  subtotal     Decimal @db.Decimal(12, 2)
-  total        Decimal @db.Decimal(12, 2)
-  currency     String  @default("USD")
+  subtotal     Decimal   @db.Decimal(12, 2)
+  total        Decimal   @db.Decimal(12, 2)
+  currency     String    @default("USD")
   billingName  String // PII snapshot
   billingEmail String?
   voidedAt     DateTime? @db.Timestamptz(3)
@@ -661,8 +716,8 @@ model Invoice {
   paidAt       DateTime? @db.Timestamptz(3)
   createdAt    DateTime  @default(now()) @db.Timestamptz(3)
 
-  orderId String  @unique
-  order   Order   @relation(fields: [orderId], references: [id])
+  orderId String @unique
+  order   Order  @relation(fields: [orderId], references: [id])
 
   issuedBy StaffUser? @relation("InvoiceIssuer", fields: [issuedById], references: [id])
 
@@ -682,25 +737,25 @@ model Payment {
   idempotencyKey  String? @unique // client-supplied Idempotency-Key
   rawEvent        Json?
 
-  paidAt      DateTime? @db.Timestamptz(3)
-  refundedAt  DateTime? @db.Timestamptz(3)
+  paidAt     DateTime? @db.Timestamptz(3)
+  refundedAt DateTime? @db.Timestamptz(3)
 
-  orderId String?
-  order   Order?    @relation(fields: [orderId], references: [id])
+  orderId   String?
+  order     Order?  @relation(fields: [orderId], references: [id])
   contactId String
-  contact   Contact  @relation(fields: [contactId], references: [id])
+  contact   Contact @relation(fields: [contactId], references: [id])
 
   // Virtual back-reference: Refund.paymentId holds the FK. No column, no migration.
   refunds Refund[]
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  // [SQL] partial index (status, createdAt) WHERE status='SUCCEEDED' (Q12) —
+  // Prisma cannot express partial indexes; application must filter on status.
 
   @@index([orderId])
   @@index([contactId])
   @@index([status])
-  // [SQL] partial index (status, createdAt) WHERE status='SUCCEEDED' (Q12) —
-  // Prisma cannot express partial indexes; application must filter on status.
 }
 
 /// Refunds are rows, never mutations of history (ARCH-01 §6.3, DQ-009).
@@ -715,9 +770,9 @@ model Refund {
   createdById      String
   createdAt        DateTime @default(now()) @db.Timestamptz(3)
 
-  paymentId String
-  payment   Payment @relation(fields: [paymentId], references: [id])
-  orderId   String?
+  paymentId   String
+  payment     Payment            @relation(fields: [paymentId], references: [id])
+  orderId     String?
   allocations RefundAllocation[]
 
   @@index([paymentId])
@@ -726,13 +781,13 @@ model Refund {
 
 /// Per-line allocation so a partial refund can be reconciled and re-refunded safely.
 model RefundAllocation {
-  id       String  @id @default(cuid())
-  amount   Decimal @db.Decimal(12, 2)
+  id     String  @id @default(cuid())
+  amount Decimal @db.Decimal(12, 2)
 
-  refundId String
-  refund   Refund  @relation(fields: [refundId], references: [id], onDelete: Cascade)
+  refundId   String
+  refund     Refund          @relation(fields: [refundId], references: [id], onDelete: Cascade)
   lineItemId String
-  lineItem InvoiceLineItem @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
+  lineItem   InvoiceLineItem @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
 
   @@unique([refundId, lineItemId])
 }
@@ -741,17 +796,17 @@ model RefundAllocation {
 /// Every delivery is claimed here before any state mutation, so a replay returns the
 /// recorded outcome instead of re-applying (ARCH-01 §11.1, M10.2).
 model WebhookEvent {
-  id              String   @id @default(cuid())
-  provider        String
-  providerEventId String
-  type            String
-  payload         Json
-  status          String   @default("RECEIVED") // RECEIVED | PROCESSED | FAILED | IGNORED
-  attemptCount    Int      @default(0)
-  lastError       String?
-  signatureValid  Boolean  @default(false)
-  receivedAt      DateTime @default(now()) @db.Timestamptz(3)
-  processedAt     DateTime? @db.Timestamptz(3)
+  id                   String    @id @default(cuid())
+  provider             String
+  providerEventId      String
+  type                 String
+  payload              Json
+  status               String    @default("RECEIVED") // RECEIVED | PROCESSED | FAILED | IGNORED
+  attemptCount         Int       @default(0)
+  lastError            String?
+  signatureValid       Boolean   @default(false)
+  receivedAt           DateTime  @default(now()) @db.Timestamptz(3)
+  processedAt          DateTime? @db.Timestamptz(3)
   rawBodyRetainedUntil DateTime? @db.Timestamptz(3) // 30 days for disputes
 
   @@unique([provider, providerEventId])
@@ -764,69 +819,203 @@ model WebhookEvent {
 // ---------------------------------------------------------------------------
 
 model OutboxEvent {
-  id            BigInt   @id @default(autoincrement())
+  id            BigInt    @id @default(autoincrement())
   aggregateType String
   aggregateId   String
   type          String
   payload       Json
   traceId       String?
   requestId     String?
-  attempts      Int      @default(0)
+  attempts      Int       @default(0)
   publishedAt   DateTime? @db.Timestamptz(3)
   replayedAt    DateTime? @db.Timestamptz(3)
   createdAt     DateTime  @default(now()) @db.Timestamptz(3)
-
-  @@index([publishedAt, id])
-  @@index([aggregateType, aggregateId])
   // [SQL] CHECK ("payload" ? 'v') — Prisma cannot express the ? jsonb operator;
   // application must enforce payload versioning logic.
   // [SQL] partial index (id) WHERE published_at IS NULL (Q16)
+
+  @@index([publishedAt, id])
+  @@index([aggregateType, aggregateId])
 }
 
 // ---------------------------------------------------------------------------
-// Probability (D-03) — append-only, never presented without model + disclaimer
+// Probability (D-03) — frozen scoring/evidence contract.
+// Authority: docs/SCORING-EVIDENCE-CONTRACT.md (ADR D-32).
+// Append-only evidence rows are never updated or deleted.
 // ---------------------------------------------------------------------------
 
-model ProbabilityRun {
-  id               String   @id @default(cuid())
-  modelVersion     String   @unique
-  cohort           String   @default("2021-2023")
-  trainedAt        DateTime? @db.Timestamptz(3)
-  auc              Float?
-  accuracy         Float?
-  baselineAccuracy Float?
-  calibrationJson  Json? // per-bucket observed vs predicted
-  sampleSize       Int?
-  status           String   @default("candidate") // candidate | promoted | rejected | RELEASED
-  releasedAt       DateTime? @db.Timestamptz(3)
-  approvedByIds    String[] @default([]) // two-person approval (M6.5)
-  evaluatedAt      DateTime? @db.Timestamptz(3)
-  notes            String?
-  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+/// One model-registry descriptor. Artifact identity and training evidence are
+/// immutable; only the contract lifecycle and operations metadata may change.
+model ProbabilityModel {
+  id                    String                 @id @default(cuid())
+  modelVersion          String                 @unique
+  kind                  ProbabilityModelKind
+  status                ProbabilityModelStatus @default(CANDIDATE)
+  artifactSchemaVersion Int?
+  artifactSha256        String?                @db.Char(64)
+  /// Canonical schema-v2 artifact snapshot, written once at registration.
+  artifactJson          Json?
+  cohort                String                 @default("live-v1")
+  labelHorizonMonths    Int                    @default(12)
+  trainingCutoff        DateTime?              @db.Timestamptz(3)
+  censusAt              DateTime?              @db.Timestamptz(3)
+  trainedAt             DateTime?              @db.Timestamptz(3)
+  promotedAt            DateTime?              @db.Timestamptz(3)
+  promotedById          String?
+  promotedBy            StaffUser?             @relation("ProbabilityModelPromotedBy", fields: [promotedById], references: [id], onDelete: Restrict)
+  /// The exact evaluation that justified promotion. Bound, not inferred.
+  promotedEvaluationId  String?                @unique
+  promotedEvaluation    ModelEvaluation?       @relation("PromotedModelEvaluation", fields: [promotedEvaluationId], references: [id], onDelete: Restrict)
+  retiredAt             DateTime?              @db.Timestamptz(3)
+  notes                 String?
+  createdAt             DateTime               @default(now()) @db.Timestamptz(3)
 
   assessments TrademarkAssessment[]
+  trademarks  Trademark[]            @relation("TrademarkProbabilityModel")
+  evaluations ModelEvaluation[]      @relation("ModelEvaluations")
+  reviews     ModelPromotionReview[]
 
   @@index([status])
 }
 
+/// One evaluated candidate on one frozen label set. The artifact JSON remains
+/// the canonical evidence; this row is the queryable index of it.
+model ModelEvaluation {
+  id                    String           @id @default(cuid())
+  /// SHA-256 of the canonical model+cohort+split configuration. Replay of the
+  /// same evaluation is a no-op rather than a second row.
+  evaluationKey         String           @unique @db.Char(64)
+  modelId               String
+  model                 ProbabilityModel @relation("ModelEvaluations", fields: [modelId], references: [id], onDelete: Restrict)
+  cohort                String
+  labelHorizonMonths    Int
+  trainingCutoff        DateTime         @db.Timestamptz(3)
+  censusAt              DateTime         @db.Timestamptz(3)
+  split                 EvaluationSplit  @default(HOLDOUT)
+  artifactSchemaVersion Int
+  artifactSha256        String           @db.Char(64)
+  /// Exact logical configuration whose canonical JSON hashes to evaluationKey.
+  configurationJson     Json
+  /// HOLDOUT resolved labels only (positive + negative); censored rows are excluded.
+  sampleSize            Int
+  positiveLabels        Int
+  negativeLabels        Int
+  /// Censored rows across the full train+holdout label set (artifact-compatible).
+  censoredLabels        Int
+  auc                   Float
+  accuracy              Float
+  baselineAccuracy      Float
+  accuracyLiftPp        Float
+  ciHalfWidthPp         Float
+  calibrationJson       Json
+  minResolvedLabels     Int
+  maxCiHalfWidthPp      Float
+  minAuc                Float
+  minLiftPp             Float
+  /// Schema v2 persists releasable artifacts only; failed runs stay in trainer logs.
+  releasable            Boolean
+  releaseReasons        Json
+  /// Exact git commit of the trainer that produced the artifact.
+  trainerCommit         String           @db.Char(40)
+  executedAt            DateTime         @default(now()) @db.Timestamptz(3)
+  executedById          String?
+
+  labels        CorpusLabel[]
+  reviews       ModelPromotionReview[]
+  promotedModel ProbabilityModel?      @relation("PromotedModelEvaluation")
+
+  @@unique([id, modelId]) // composite FK target for same-model evidence binding
+  @@index([modelId, executedAt(sort: Desc)])
+}
+
+/// Per-mark label used by one evaluation. Censored rows are stored so the
+/// excluded mass is auditable; they are never counted as negatives (D-24).
+model CorpusLabel {
+  id               String             @id @default(cuid())
+  evaluationId     String
+  evaluation       ModelEvaluation    @relation(fields: [evaluationId], references: [id], onDelete: Restrict)
+  serialNumber     String
+  outcome          CorpusLabelOutcome
+  split            EvaluationSplit
+  /// Full-precision model output used to recompute evaluation metrics.
+  /// Null iff CENSORED; never a client-visible assessment score.
+  predictionScore  Float?
+  filingDate       DateTime           @db.Date
+  horizonAt        DateTime           @db.Date
+  resolvedAt       DateTime?          @db.Date
+  sourceStatusCode String
+  createdAt        DateTime           @default(now()) @db.Timestamptz(3)
+
+  @@unique([evaluationId, serialNumber])
+  @@index([evaluationId, outcome])
+}
+
+/// Immutable attorney/investor review of one promoted model evaluation.
+/// Promotion needs at least one ATTORNEY approval and two distinct staff
+/// approvals, one of whom is MASTER_ADMIN (M6.5; see the contract).
+model ModelPromotionReview {
+  id                    String                @id @default(cuid())
+  modelId               String
+  model                 ProbabilityModel      @relation(fields: [modelId], references: [id], onDelete: Restrict)
+  evaluationId          String
+  evaluation            ModelEvaluation       @relation(fields: [evaluationId], references: [id], onDelete: Restrict)
+  reviewerId            String
+  reviewer              StaffUser             @relation(fields: [reviewerId], references: [id], onDelete: Restrict)
+  reviewerRole          PromotionReviewerRole
+  decision              PromotionDecision
+  /// Required together only for an ATTORNEY APPROVE; null for other decisions.
+  spotCheckSampleSize   Int?
+  spotCheckAgreementPct Float?
+  spotCheckNotes        String?
+  rationale             String
+  createdAt             DateTime              @default(now()) @db.Timestamptz(3)
+
+  @@unique([evaluationId, reviewerId])
+  @@index([evaluationId, decision])
+}
+
 model TrademarkAssessment {
-  id                String   @id @default(cuid())
+  id                String            @id @default(cuid())
   trademarkId       String
-  trademark         Trademark @relation(fields: [trademarkId], references: [id], onDelete: Cascade)
-  pRegistration     Float // 0..1, headline = P(eventual registration); [SQL] CHECK
+  trademark         Trademark         @relation(fields: [trademarkId], references: [id], onDelete: Restrict)
+  outcome           AssessmentOutcome @default(SCORED)
+  /// Null iff `outcome = INSUFFICIENT_DATA`; a degraded result is never 0.
+  pRegistration     Decimal?          @db.Decimal(5, 4)
   subSignals        Json // NON-probabilistic features; never rendered as %
-  modelVersion      String
-  runId             String?
-  run               ProbabilityRun? @relation(fields: [runId], references: [id])
+  modelId           String
+  model             ProbabilityModel  @relation(fields: [modelId], references: [id], onDelete: Restrict)
   disclaimerVersion String
   featureSnapshot   Json // corpus version, top candidates, class
+  /// Required for SCORED; may be unknown for an INSUFFICIENT_DATA refusal.
+  corpusSnapshotAt  DateTime?         @db.Timestamptz(3)
+  corpusIngestRunId String?
   requestedById     String?
-  createdAt         DateTime @default(now()) @db.Timestamptz(3)
+  createdAt         DateTime          @default(now()) @db.Timestamptz(3)
 
   similarities TmSimilarity[]
+  review       AssessmentReview?
 
-  @@unique([trademarkId, modelVersion, createdAt]) // append-only, replay-safe
+  @@unique([trademarkId, modelId, createdAt]) // append-only, replay-safe
   @@index([trademarkId, createdAt(sort: Desc)])
+  @@index([modelId])
+}
+
+/// The authoritative attorney review of one assessment. One review per
+/// assessment; corrections are new assessments, not edits to this row.
+model AssessmentReview {
+  id            String              @id @default(cuid())
+  assessmentId  String              @unique
+  assessment    TrademarkAssessment @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+  /// Must identify an ACTIVE EXPERT when this immutable row is inserted.
+  reviewerId    String
+  reviewer      StaffUser           @relation(fields: [reviewerId], references: [id], onDelete: Restrict)
+  verdict       ProbabilityVerdict
+  /// Set only for OVERRIDDEN: the attorney's replacement 0..1 score.
+  reviewedScore Decimal?            @db.Decimal(5, 4)
+  rationale     String
+  createdAt     DateTime            @default(now()) @db.Timestamptz(3)
+
+  @@index([reviewerId, createdAt])
 }
 
 // ---------------------------------------------------------------------------
@@ -834,8 +1023,8 @@ model TrademarkAssessment {
 // ---------------------------------------------------------------------------
 
 model TmCorpusMark {
-  id                 String   @id @default(cuid())
-  serialNumber       String   @unique
+  id                 String    @id @default(cuid())
+  serialNumber       String    @unique
   registrationNumber String?
   markText           String
   normalizedText     String // lower/unaccented/singularised at ingest — never ILIKE at query time
@@ -846,16 +1035,16 @@ model TmCorpusMark {
   goodsSummary       String?
   sourceFile         String
   sourceUpdatedAt    DateTime? @db.Timestamptz(3) // provenance (M7.1)
-  ingestedAt         DateTime @default(now()) @db.Timestamptz(3)
+  ingestedAt         DateTime  @default(now()) @db.Timestamptz(3)
   ingestRunId        String?
 
-  classes     TmCorpusMarkClass[]
+  classes      TmCorpusMarkClass[]
   similarities TmSimilarity[]
+  // [SQL] CREATE EXTENSION pg_trgm + GIN (normalized_text gin_trgm_ops) (Q7, ARCH-02 §4.2.4)
 
   @@index([statusCode, filingDate(sort: Desc)])
   @@index([ingestedAt])
   @@index([ingestRunId])
-  // [SQL] CREATE EXTENSION pg_trgm + GIN (normalized_text gin_trgm_ops) (Q7, ARCH-02 §4.2.4)
 }
 
 model TmCorpusClass {
@@ -868,22 +1057,22 @@ model TmCorpusClass {
 model TmCorpusMarkClass {
   markId  String
   classId String
-  mark     TmCorpusMark @relation(fields: [markId], references: [id], onDelete: Cascade)
-  class    TmCorpusClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  mark    TmCorpusMark  @relation(fields: [markId], references: [id], onDelete: Cascade)
+  class   TmCorpusClass @relation(fields: [classId], references: [id], onDelete: Cascade)
 
   @@id([markId, classId])
   @@index([classId])
 }
 
 model TmSimilarity {
-  id           String   @id @default(cuid())
+  id           String              @id @default(cuid())
   assessmentId String
   assessment   TrademarkAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
   corpusMarkId String
-  corpusMark   TmCorpusMark @relation(fields: [corpusMarkId], references: [id], onDelete: Cascade)
+  corpusMark   TmCorpusMark        @relation(fields: [corpusMarkId], references: [id], onDelete: Cascade)
   score        Float
   method       String // trigram | bge | hybrid
-  computedAt   DateTime @default(now()) @db.Timestamptz(3)
+  computedAt   DateTime            @default(now()) @db.Timestamptz(3)
 
   @@unique([assessmentId, corpusMarkId, method])
   @@index([assessmentId, score(sort: Desc)])
@@ -891,17 +1080,17 @@ model TmSimilarity {
 }
 
 model TmIngestRun {
-  id             String   @id @default(cuid())
-  runDate        DateTime @db.Date
-  status         String   @default("running") // running | complete | failed
-  filesProcessed Int      @default(0)
-  marksUpserted  Int      @default(0)
-  marksSkipped   Int      @default(0)
-  marksImported  Int      @default(0)
-  marksUpdated   Int      @default(0)
-  marksRejected  Int      @default(0)
+  id             String    @id @default(cuid())
+  runDate        DateTime  @db.Date
+  status         String    @default("running") // running | complete | failed
+  filesProcessed Int       @default(0)
+  marksUpserted  Int       @default(0)
+  marksSkipped   Int       @default(0)
+  marksImported  Int       @default(0)
+  marksUpdated   Int       @default(0)
+  marksRejected  Int       @default(0)
   errorLog       Json?
-  startedAt      DateTime @default(now()) @db.Timestamptz(3)
+  startedAt      DateTime  @default(now()) @db.Timestamptz(3)
   finishedAt     DateTime? @db.Timestamptz(3)
 
   @@unique([runDate])
@@ -928,14 +1117,14 @@ model AssignmentState {
 // ---------------------------------------------------------------------------
 
 model FeatureFlag {
-  name           String   @id
-  enabled        Boolean  @default(false)
-  rolloutPercent Int      @default(0) // 0..100, staff-id hash
-  allowedRoles   String[] @default([])
+  name           String     @id
+  enabled        Boolean    @default(false)
+  rolloutPercent Int        @default(0) // 0..100, staff-id hash
+  allowedRoles   String[]   @default([])
   updatedById    String?
   updatedBy      StaffUser? @relation("FeatureFlagUpdater", fields: [updatedById], references: [id])
   note           String?
-  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
+  updatedAt      DateTime   @updatedAt @db.Timestamptz(3)
 }
 
 // ---------------------------------------------------------------------------
@@ -979,10 +1168,10 @@ model Notification {
   readAt         DateTime?           @db.Timestamptz(3)
   createdAt      DateTime            @default(now()) @db.Timestamptz(3)
 
-  userId String?
-  user   StaffUser? @relation(fields: [userId], references: [id])
+  userId    String?
+  user      StaffUser? @relation(fields: [userId], references: [id])
   contactId String?
-  contact   Contact? @relation(fields: [contactId], references: [id])
+  contact   Contact?   @relation(fields: [contactId], references: [id])
 
   @@index([userId, status, createdAt(sort: Desc)]) // Q14
   @@index([contactId, createdAt(sort: Desc)])
@@ -990,11 +1179,11 @@ model Notification {
 }
 
 model NotificationPreference {
-  id        String  @id @default(cuid())
+  id        String              @id @default(cuid())
   channel   NotificationChannel
-  enabled   Boolean @default(true)
+  enabled   Boolean             @default(true)
   // SECURITY/DEADLINE are not represented here by design (M9.3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  updatedAt DateTime            @updatedAt @db.Timestamptz(3)
 
   userId String
   user   StaffUser @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1016,11 +1205,11 @@ model AuditLog {
   createdAt  DateTime @default(now()) @db.Timestamptz(3)
 
   actor StaffUser? @relation(fields: [actorId], references: [id])
+  // [SQL] BRIN (created_at) + partial (action, created_at DESC) WHERE action LIKE 'VAULT_%' (Q15, Q17)
+  // [SQL] monthly RANGE partitions on createdAt (ARCH-02 §6) + autovacuum_scale_factor=0.02
 
   @@index([actorId, createdAt(sort: Desc)]) // Q15
   @@index([entityType, entityId])
-  // [SQL] BRIN (created_at) + partial (action, created_at DESC) WHERE action LIKE 'VAULT_%' (Q15, Q17)
-  // [SQL] monthly RANGE partitions on createdAt (ARCH-02 §6) + autovacuum_scale_factor=0.02
 }
 
 model ConsentRecord {
@@ -1034,10 +1223,10 @@ model ConsentRecord {
   source        String? // PORTAL | WECOM_CONSOLE | STAFF_CONSOLE
   createdAt     DateTime    @default(now()) @db.Timestamptz(3)
 
-  staffId String?
-  staff   StaffUser? @relation(fields: [staffId], references: [id])
+  staffId   String?
+  staff     StaffUser? @relation(fields: [staffId], references: [id])
   contactId String?
-  contact   Contact? @relation(fields: [contactId], references: [id])
+  contact   Contact?   @relation(fields: [contactId], references: [id])
 
   @@index([contactId, kind])
   @@index([staffId, kind])
@@ -1049,13 +1238,13 @@ model ConsentRecord {
 // ---------------------------------------------------------------------------
 
 model Campaign {
-  id      String   @id @default(cuid())
-  name    String
-  channel String
-  budget  Decimal  @db.Decimal(12, 2)
-  spent   Decimal  @default(0) @db.Decimal(12, 2)
-  period  String // e.g. "2026-Q1"
-  notes   String?
+  id        String   @id @default(cuid())
+  name      String
+  channel   String
+  budget    Decimal  @db.Decimal(12, 2)
+  spent     Decimal  @default(0) @db.Decimal(12, 2)
+  period    String // e.g. "2026-Q1"
+  notes     String?
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 

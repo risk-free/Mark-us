@@ -25,7 +25,8 @@ ALTER TABLE "Campaign"          ADD CONSTRAINT ck_campaign_nonneg CHECK ("budget
 
 -- Probability is stored 0..1 and rendered as a percentage by the API layer
 -- (PRD §3.6.5's "0–100%" is a presentation scale, not a storage scale).
-ALTER TABLE "TrademarkAssessment" ADD CONSTRAINT ck_score_range CHECK ("pRegistration" >= 0 AND "pRegistration" <= 1);
+-- TrademarkAssessment's score constraint lives with the scoring/evidence
+-- contract in 30-scoring-evidence.sql.
 ALTER TABLE "Trademark"           ADD CONSTRAINT ck_score_range CHECK ("probabilityScore" IS NULL OR ("probabilityScore" >= 0 AND "probabilityScore" <= 1));
 ALTER TABLE "TmSimilarity"        ADD CONSTRAINT ck_similarity_range CHECK ("score" >= 0);
 

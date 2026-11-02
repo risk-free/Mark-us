@@ -719,9 +719,9 @@ and M11.4 amended.
 **R-021 — Option A: the JSON columns *are* the factors. M3.2's model name was wrong.**
 Evidence: (a) §1 permits JSON for write-once, non-queried payloads, which is exactly what a
 replay snapshot is; (b) M6.1's requirement is *reproduction*, which `featureSnapshot` +
-`modelVersion` + `runId` + `disclaimerVersion` already give; (c) M6.5's requirement is
-*calibration*, which `ProbabilityRun.calibrationJson` / `sampleSize` / `auc` / `accuracy` /
-`baselineAccuracy` already carry per `modelVersion`; (d) the contract's `Assessment` schema
+`modelId` + `disclaimerVersion` already give; (c) M6.5's requirement is
+*calibration*, which `ModelEvaluation.calibrationJson` / `sampleSize` / `auc` / `accuracy` /
+`baselineAccuracy` carry per `evaluationKey` (D-32); (d) the contract's `Assessment` schema
 exposes named scores, `riskFlags` and `recommendedNextActions` — no per-feature rows — so a
 `TrademarkAssessmentFactors` table would be a contract-visible addition with no consumer.
 **Conditions:** both columns stay `Json` (= `jsonb`), `v`-keyed per §1, and carry a comment

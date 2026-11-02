@@ -180,25 +180,34 @@ erDiagram
     string companyId FK "owner when a company (XOR contactId)"
     string serialNumber UK "set at filing"
     string registrationNumber UK
-    float probabilityScore "denormalised latest"
+    decimal probabilityScore "Decimal(5,4), denormalised latest"
+    string probabilityModelId FK
     string corpusStatus "indexed|stale|none"
   }
   TRADEMARK_ASSESSMENT {
     string id PK "append-only"
-    float pRegistration "headline"
-    string modelVersion
+    string outcome "SCORED|INSUFFICIENT_DATA"
+    decimal pRegistration "Decimal(5,4); null iff degraded"
+    string modelId FK "ProbabilityModel"
     string disclaimerVersion
     json subSignals "NOT probabilities"
     datetime createdAt
   }
-  PROBABILITY_RUN {
+  PROBABILITY_MODEL {
     string id PK
     string modelVersion UK
-    string cohort "2021-2023"
+    string kind "BOOTSTRAP|TRAINED|BASELINE"
+    string status "CANDIDATE|PROMOTED|REJECTED|RETIRED"
+    string promotedEvaluationId FK
+  }
+  MODEL_EVALUATION {
+    string id PK
+    string evaluationKey UK "sha256 of frozen configuration"
+    json configurationJson "exact inputs needed to reproduce evaluationKey"
+    int sampleSize "resolved labels only"
     float auc
     float accuracy
-    float baselineAccuracy
-    string status "candidate|promoted|rejected"
+    bool releasable
   }
   APPLICATION {
     string id PK
@@ -419,41 +428,29 @@ model OutboxEvent {
   @@index([aggregateType, aggregateId])
 }
 
-// --- Scoring (D-03) -------------------------------------------------------
-model ProbabilityRun {
-  id               String   @id @default(cuid())
-  modelVersion     String   @unique
-  cohort           String   @default("2021-2023")
-  trainedAt        DateTime? @db.Timestamptz(3)
-  auc              Float?
-  accuracy         Float?
-  baselineAccuracy Float?
-  calibrationJson  Json?    // per-bucket observed vs predicted
-  sampleSize       Int?
-  status           String   @default("candidate") // candidate | promoted | rejected
-  evaluatedAt      DateTime? @db.Timestamptz(3)
-  notes            String?
-  createdAt        DateTime @default(now()) @db.Timestamptz(3)
-}
-
-model TrademarkAssessment {
-  id                String   @id @default(cuid())
-  trademarkId       String
-  trademark         Trademark @relation(fields: [trademarkId], references: [id], onDelete: Cascade)
-  pRegistration     Float    // 0..1, headline = P(eventual registration)
-  subSignals        Json     // NON-probabilistic features; never rendered as %
-  modelVersion      String
-  runId             String?
-  run               ProbabilityRun? @relation(fields: [runId], references: [id])
-  disclaimerVersion String
-  featureSnapshot   Json     // corpus version, top candidates, class
-  requestedById     String?
-  createdAt         DateTime @default(now()) @db.Timestamptz(3)
-
-  similarities      TmSimilarity[]
-  @@unique([trademarkId, modelVersion, createdAt])  // append-only, replay-safe
-  @@index([trademarkId, createdAt(sort: Desc)])
-}
+// --- Scoring (D-03, D-32) -------------------------------------------------
+// Frozen contract: docs/SCORING-EVIDENCE-CONTRACT.md. The authoritative field
+// list is prisma/schema.prisma; this doc records the shape and the invariants.
+//
+//   ProbabilityModel      registry (immutable modelVersion/kind/artifact,
+//                         constrained status, bound promotedEvaluationId)
+//   ModelEvaluation       one frozen holdout evaluation (evaluationKey,
+//                         artifact-bound metrics/gate, thresholds, commit)
+//   CorpusLabel           full train+holdout labels + full-precision
+//                         predictionScore; censored rows have no score
+//   TrademarkAssessment   append-only score rows (Decimal(5,4); outcome)
+//   AssessmentReview      one immutable CONFIRMED|OVERRIDDEN review per score
+//   ModelPromotionReview  approval quorum + attorney spot-check evidence
+//
+// Invariants (fragments/30-scoring-evidence.sql): score 0..1 at 4 dp;
+// SCORED <=> non-null score; only TRAINED may be PROMOTED; at most one
+// PROMOTED model; promotion/reviews bind an evaluation of the same model;
+// censored != negative; evidence rows reject UPDATE/DELETE/TRUNCATE;
+// labels bind horizon/census/split and freeze at first review; evaluation
+// counts/metrics/gate bind the canonical artifact and per-label predictions;
+// artifact and promotion evidence are immutable across lifecycle updates.
+// TrademarkAssessment is ON DELETE RESTRICT so a mark deletion cannot erase
+// scoring history.
 
 // --- USPTO corpus (D-02, A1) ---------------------------------------------
 model TmCorpusMark {
@@ -647,7 +644,13 @@ CREATE UNIQUE INDEX ux_invoice_number          ON "Invoice" ("number");
 -- Money sanity
 ALTER TABLE "Order"   ADD CONSTRAINT ck_order_nonneg  CHECK ("subtotal" >= 0 AND "total" >= 0);
 ALTER TABLE "Payment" ADD CONSTRAINT ck_pay_nonneg   CHECK ("amount"  >  0);
-ALTER TABLE "TrademarkAssessment" ADD CONSTRAINT ck_score_range CHECK ("pRegistration" >= 0 AND "pRegistration" <= 1);
+-- Scoring/evidence invariants (D-32; full set in fragments/30-scoring-evidence.sql)
+ALTER TABLE "TrademarkAssessment" ADD CONSTRAINT ck_assessment_score_coupling
+  CHECK (("outcome" = 'SCORED') = ("pRegistration" IS NOT NULL));
+ALTER TABLE "TrademarkAssessment" ADD CONSTRAINT ck_assessment_score_range
+  CHECK ("pRegistration" IS NULL OR ("pRegistration" >= 0 AND "pRegistration" <= 1));
+CREATE UNIQUE INDEX ux_probability_model_one_promoted
+  ON "ProbabilityModel" ("status") WHERE "status" = 'PROMOTED';
 -- Public number sequences
 CREATE SEQUENCE seq_order_number   START 1;
 CREATE SEQUENCE seq_invoice_number START 1;
@@ -693,6 +696,8 @@ Then, in `schema.prisma`, annotate **every** instant field with `@db.Timestamptz
 | `TmCorpusMark` | none; `ingestedAt` index + `VACUUM` | LIVE corpus only (600+700) | dead records are deleted on ingest (`statusCode` ∉ {600,700} → delete) |
 | `TmSimilarity` | none | 180 days, then recompute | derived cache |
 | `TrademarkAssessment` | none | **permanent** (append-only) | model accountability; required to explain any historical score |
+| `ProbabilityModel` | none | **permanent** (immutable evidence + constrained lifecycle) | proves which artifact scored what; only status/operations metadata may change (D-32) |
+| `ModelEvaluation`, `CorpusLabel`, `AssessmentReview`, `ModelPromotionReview` | none | **permanent** (append-only evidence) | proves the labels, metrics, reviews and approvals behind every score (D-32) |
 | `Invoice`, `Payment`, `Refund`, `RefundAllocation`, `Order`, `Application`, `OfficeAction`, `Document` | none | **5 years minimum**, then legal hold review | trademark record retention obligations |
 | `Contact` | none | 5 years after last activity; PIPL erasure request → hard-delete PII columns, keep FK stubs with pseudonymous ids | PIPL Arts. 47 + D-04 |
 | `Company` | none | business record: retained while any mark/order exists, then 5 years; **not** a data subject, so not touched by a person's erasure | D-20, trademark retention obligations |
@@ -736,7 +741,7 @@ partitions at insert time. `AuditLog`/`Message` are **not** range-partitioned in
 4. **Zero-downtime rule:** any migration touching a table with > 100k rows must state its lock level (`ACCESS EXCLUSIVE` seconds) and its `lock_timeout`. Migrations exceeding 2 s of `ACCESS EXCLUSIVE` on a live table require a two-step (add → backfill in batches → swap).
 5. **Backfill in batches** (1 000 rows per transaction, 100 ms pause) with progress recorded in `OutboxEvent`-style bookkeeping so a failed run resumes.
 6. **CI gate:** `prisma migrate diff` from the previous tag must be empty after applying migrations to a fresh DB — i.e. schema and migrations can never drift. `prisma validate` + `migrate reset` on testcontainers in the integration job.
-7. **Data backfill of `Trademark.probabilityScore`** (P0 v1 column) → `TrademarkAssessment` rows is a one-off script in `packages/db/scripts/`, idempotent (`WHERE modelVersion = 'bootstrap'`), logged, and reversible by deletion (scores are derived, never source of truth).
+7. **Data backfill of `Trademark.probabilityScore`** (P0 v1 column) → `TrademarkAssessment` rows is a one-off script in `packages/db/scripts/`, idempotent (`WHERE "modelId" = 'pm_bootstrap_0_1_0'`), logged, and forward-only. Rollback restores the denormalised `Trademark` cache from its pre-backfill snapshot; it never deletes assessment history. An erroneous backfill is corrected by new assessment rows, not by rewriting or deleting evidence.
 
 ---
 
