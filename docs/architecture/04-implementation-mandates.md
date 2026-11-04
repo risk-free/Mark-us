@@ -453,7 +453,9 @@ configured bound, and without two distinct approver ids, including an attorney a
 bound to the same evaluation (D-32). The evidence test also perturbs a per-label score/outcome and
 proves finalization rejects the stale metrics, then proves no label can be inserted after review.
 It also covers unelapsed-horizon censoring, active-reviewer roles and concurrent status/evidence
-writers using the contract's model-before-evaluation lock order.
+writers using the contract's model-before-evaluation lock order. The executable PostgreSQL 16
+coverage is `packages/tm-data/src/scoring-evidence.integration.test.ts` in the existing
+`tm-ingest-integration` CI job.
 
 ---
 

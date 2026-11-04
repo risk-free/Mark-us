@@ -396,7 +396,8 @@ Application code still enforces the rules that require artifact files, canonical
 `eval.ts` algorithms: full metric/calibration recomputation in §5.2, canonical `evaluationKey`
 reproduction, artifact-file hash equality, model status before serving, and disclaimer currency.
 Reviewer identity/role at insertion, approval quorum and aggregate count reconciliation are also
-rechecked by the database.
+rechecked by the database. `packages/tm-data/src/scoring-evidence.integration.test.ts` exercises the
+database half against PostgreSQL 16 in CI; a schema that merely applies is not sufficient evidence.
 
 ---
 
