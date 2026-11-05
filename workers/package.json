@@ -17,7 +17,7 @@
     "@markus/config": "workspace:*",
     "@markus/outbox": "workspace:*",
     "@markus/tm-data": "workspace:*",
-    "@prisma/client": "^6.19.3",
+    "@prisma/client": "^7.10.1",
     "bullmq": "^5.81.5",
     "dotenv": "^16.6.1",
     "ioredis": "^5.11.1"
