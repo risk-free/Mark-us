@@ -739,8 +739,11 @@ rather than merely discouraged. Seed rows keep the FK honest without inventing a
 - This is a schema/evidence decision only. It does **not** activate a model, approve compute, pick a
   corpus or satisfy M5a. Production stays on `BOOTSTRAP_MODEL` until the frozen checklist passes on a
   real corpus with an attorney sign-off.
-- BUG-017's residual is addressed at the schema level; closure still requires the migration to apply
-  cleanly in CI and the contract invariants to be exercised.
+- At acceptance, BUG-017 closure required the migration to apply cleanly in CI and the contract
+  invariants to be exercised. **Outcome (2026-11-06): CLOSED** — CI run 42069977850 on `6c85065`
+  passed all 11 jobs; its PostgreSQL 16 tm-ingest suite executed the complete baseline migration and
+  passed `scoring-evidence.integration.test.ts` (3 suites / 13 tests in that job). This closes the
+  schema/evidence residual only; the activation restrictions above remain unchanged.
 
 ---
 

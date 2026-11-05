@@ -42,7 +42,7 @@ This document is the **single, living register of open product/design questions*
 | DQ-007 | Invoice currency, FX source and FX lock moment | High | P4.1, P4.3 | ANSWERED — R-007 |
 | DQ-008 | Order shape for multi-class filings & fee line items | High | P0.1, P4.1 | ANSWERED — R-008 |
 | DQ-009 | Refund authority & per-line-item refundability | Medium | P4.2, P4.3 | ANSWERED — R (2026-10-11): policy-driven cut-offs, two-step (request/approve), threshold USD 200 (D-22) |
-| DQ-010 | What the assessment surface shows before M5 | High | P1, P2, P5 | ANSWERED — R-010 |
+| DQ-010 | What the assessment surface shows before M5 | High | P1, P2, P5 | ANSWERED — CLEARED (R-010 / D-32) |
 | DQ-011 | Feature-flag mechanism & who may flip in prod | Medium | P0.3 | ANSWERED — R-011 |
 | DQ-012 | Retention schedule & PIPL erasure workflow | High | P2, P3, P8.1 | ANSWERED — R (2026-10-11): pseudonymise; retention outranks erasure; matrix in ARCH-02 §6; legal basis PENDING PRC counsel (OPEN-09) |
 | DQ-013 | Staff auth method for Phase 1 (password vs. staff magic link) | Medium | P2.1 | ANSWERED — R-013 |
@@ -309,10 +309,10 @@ This document is the **single, living register of open product/design questions*
 | Raised at | 2026-09-27 16:57 CST |
 | Severity | **High** |
 | Blocks | P1 (site CTA), P2.6, P5 |
-| Status | **ANSWERED** — see §5, R-010 |
-| Discussion | — |
+| Status | **ANSWERED — CLEARED** — R-010 surface rule; D-32 review/evidence residual verified in CI run 42069977850 |
+| Discussion | D-32 makes attorney review and model/evaluation provenance representable. The PostgreSQL 16 invariant suite applies the baseline migration and passes on `6c85065`; this does not validate or activate a model. |
 | Answered by | **Architect** |
-| Answered at | 2026-09-29 — see §5, R-010 |
+| Answered at | 2026-09-29 — see §5, R-010; residual cleared 2026-11-06 under D-32 |
 
 **Issue.** PRD §3.6 specifies the probability tool as a live feature, but D-03 states *"Phase 1 keeps manual (attorney) assessment — no model"*, and the M5 gate is where the model is validated. So between M1 (site live) and M5 there is a window with a marketed CTA and no model. Related gap: `Trademark` has `probabilityReviewedAt` but no reviewer and no verdict, so an attorney review of a score is not representable.
 
@@ -665,6 +665,7 @@ This document is the **single, living register of open product/design questions*
 | 2026-10-11 (Architect) | **OPEN-04 PARTIALLY RESOLVED** (owner) — 1 attorney now (California bar, admitted 2025; Shenzhen-based), capacity ≈100 applications/month; roster may grow. Platform must support N filing attorneys (per-attorney vault keys, M2.5). Concrete roster + contact details kept as **operational data, not committed** (privacy). **OPEN-12 opened**: attorney-profile fields (bar number/jurisdiction/admission/correspondence) do not exist on `StaffUser` and would be needed if the TEAS packet pre-fills the attorney section. Changelog + `ARCH-01` §15 / `ARCH-04` / README updated. | Architect |
 | 2026-10-11 (Architect) | **OPEN-08 RESOLVED** — **ADR D-25**: model release requires the `M6.5` calibration report on the temporal holdout to show **≥ 500 resolved labels** *and* a **95% CI half-width on overall accuracy ≤ 5 pp** (both configurable) before promotion. `M6.5` amended; paired with the D-24 cohort/label definition. `ARCH-04` / README open-issue registers updated. | Architect |
 | 2026-10-12 (Architect) | **P5.1 spike complete** (`docs/architecture/05-p51-spike.md`). ODP confirmed sole USPTO bulk XML source (product `trtdxfap`, daily); Reed Tech + BDSS DNS-dead; ODP downloads gated (sign-in + 4 profile fields + API key) → **FA-011**; anonymous signed-URL path on `TRCFECO2` available meanwhile. Corpus empirics on 12,691,941 researcher case files (2023 vintage): word share ≈ 60.7 % (≈ 92 % post-2004), LIVE exposes ≈ 11.5 M status-6xx/7xx marks; P(eventual registration) ≈ 0.60–0.62 (2009–2018 cohorts, older: 0.45–0.56); time filing→registration median **13.3 months** (≈ 1.7 % by +6, ≈ 40 % by +12, ≈ 85 % by +24). **ADR D-26** — D-24 horizon amended to **+12 months primary / +24 secondary** (a +6 horizon is ≈ 98 % censored and unusable). D-25's ≥ 500-label / ≤ 5 pp CI bars verified satisfiable at +12 (one month word filings ≈ 13–17 K resolved; half-width ≈ 4.3 pp). Abandon labels must come from the TDXF event/status history, not research status codes (`abandon_dt` empty). `DECISIONS.md`, `ARCH-01` §15, `ARCH-04` §M6.1/M6.5/§18, `ARCH` README + Documents table updated. | Architect |
+| 2026-11-06 (Developer) | DQ-010 **ANSWERED — CLEARED**: R-010's no-score surface rule remains binding; D-32 closes the reviewer/verdict and scoring/evidence representation residual. CI run 42069977850 on `6c85065` applied the baseline migration and passed the PostgreSQL 16 scoring-evidence invariant suite. Real-corpus evaluation, attorney spot-check, promotion and M5a remain separate gates. | Developer |
 
 ---
 
@@ -818,6 +819,8 @@ document checklist + "start a conversation" (WeCom/QR) + magic-link claim — **
 percentage, no "likely to register" copy**. Consent is captured when the `Contact` is created,
 not at assessment. Consequence for handlers: no P1/P2 handler may write a probability to the
 screen or to `Trademark.probabilityScore` outside the §7.7 backfill script.
+
+**Clearance (2026-11-06, D-32).** `AssessmentReview` now records the active-EXPERT reviewer, immutable verdict and rationale; model, evaluation and label provenance are bound by the frozen scoring/evidence contract. CI run 42069977850 on `6c85065` applied the baseline migration and passed the PostgreSQL 16 invariant suite. DQ-010 is therefore **CLEARED** as a design/schema question. R-010's pre-gate display prohibition remains binding, and real-corpus evaluation, attorney spot-check, promotion and M5a remain separate gates.
 
 **R-011 — Flags are rows, flipped by an audited operator action, not by an API.**
 The frozen contract exposes no flag operation, so adding one now is a contract change for a

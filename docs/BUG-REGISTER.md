@@ -55,7 +55,7 @@ This document is the **single, living register of defects and latent production 
 | BUG-014 | `Invoice` has no `currency`; line items have no per-class dimension | High | STATIC | CLEARED |
 | BUG-015 | No `tm_index` model / `mark_norm` GIN index for the probability corpus | High | STATIC | CLEARED |
 | BUG-016 | `unitAmount × quantity` is unbounded → numeric overflow → 500 | High | STATIC | CLEARED |
-| BUG-017 | `Trademark.probabilityScore` is `Float` for a legally-defensible figure | High | STATIC | OPEN |
+| BUG-017 | `Trademark.probabilityScore` is `Float` for a legally-defensible figure | High | STATIC | CLEARED |
 | BUG-018 | `Contact.email`/`phone` are case-sensitive `@unique` → identity split | High | STATIC | OPEN |
 | BUG-019 | CI has no `pnpm lint` step (this is why BUG-001 is invisible) | Medium | STATIC | CLEARED |
 | BUG-020 | `RUN_WORKER` is read by code but absent from `.env.example` | Medium | STATIC | CLEARED |
@@ -81,7 +81,7 @@ This document is the **single, living register of defects and latent production 
 | BUG-040 | `turbo.json` declares no `env` allowlist → cache key ignores secrets | Low | STATIC | CLEARED |
 | BUG-041 | `COPY --chown` writes 0-byte files into the runtime image (Linux-only smoke declared) | High | REPRODUCED | CLEARED |
 | BUG-042 | `docker compose --profile app up` hangs on Docker Desktop/Windows — containers stuck `Created` | Medium | REPRODUCED | OPEN |
-| BUG-043 | Accepted zod advisory (GHSA-mrhx-c7xc-m3w5) expires 2026-12-24 - migrate to zod 4 before the gate fails closed | Medium | STATIC | ACTION REQUIRED |
+| BUG-043 | Accepted zod advisory (GHSA-mrhx-c7xc-m3w5) expires 2026-12-24 - migrate to zod 4 before the gate fails closed | Medium | STATIC | CLEARED |
 | BUG-044 | Worker image build fails when a lockfile refresh pulls native deps (ssh2/cpu-features) — python3/make/g++ absent in Dockerfile.worker build stage | Low | REPRODUCED | OPEN |
 
 ---
@@ -698,11 +698,11 @@ A second, quieter variant: per-line `Decimal(12,2)` and per-total `Decimal(12,2)
 | **Evidence** | STATIC |
 | **Location** | `packages/db/prisma/schema.prisma:334` |
 | **Blocks** | P5; D-03 calibration gates |
-| **Status** | OPEN |
+| **Status** | CLEARED — D-32 schema/evidence contract; migration applied and invariants exercised in CI run 42069977850 on `6c85065` |
 | **Related** | DQ-010 (what the assessment surface shows before M5) |
-| **Discussion** | — |
-| **Answered by / Answered at** | — |
-| **Verified by / Verified at** | — |
+| **Discussion** | D-32 freezes `Decimal(5,4)` scores in `0..1`, bound model provenance, attorney review and append-only evaluation evidence. CI run 42059284350 exposed two invalid TRAIN label fixtures; `095290b` corrected their resolution dates and added the late-resolution regression. |
+| **Answered by / Answered at** | Architect, D-32 (2026-11-02); implementation completed 2026-11-05 |
+| **Verified by / Verified at** | CI run 42069977850, 2026-11-06 CST — `scoring-evidence.integration.test.ts` applies `0P3__p0_3_backlog/migration.sql` to PostgreSQL 16 in `beforeAll`, then passes; tm-ingest job reports 3 suites / 13 tests green |
 
 **Issue.**
 
@@ -721,6 +721,8 @@ Related gaps in the same block: `probabilityReviewedAt` exists with **no `probab
 **Recommended fix.** Use `Decimal @db.Decimal(5,4)` (0.0000–9.9999) or `Decimal(5,2)` if a whole-number percentage is the contract, plus a `CHECK (probabilityScore >= 0 AND probabilityScore <= 100)`. Add `probabilityReviewedById` → `StaffUser` and a verdict enum. Add a `ProbabilityModel` registry table (`version @unique`, trainedAt, metrics, isActive) so `probabilityModelVersion` is a foreign key rather than a free string, and a `MlLabel`/`EvalRun` pair for D-03's gates.
 
 **Current triage (2026-10-31, HEAD `0485803`).** Remains **OPEN** for residual scoring-schema, design, and provenance work. This was a static disposition; no new runtime reproduction was performed.
+
+**Closure evidence (2026-11-06 CST, HEAD `6c85065`).** CI run [42069977850](https://github.com/risk-free/Mark-us/actions/runs/42069977850) is green. Its PostgreSQL 16 tm-ingest job executes `packages/tm-data/src/scoring-evidence.integration.test.ts`; that suite applies the authoritative migration SQL itself and exercises decimal/range/null score coupling, model binding and lifecycle, immutable assessment/evaluation/review evidence, active-EXPERT reviewers, artifact-bound metrics, horizon/census labels, first-review label freezing and promotion quorum. Result: `PASS src/scoring-evidence.integration.test.ts`, 3 suites / 13 tests passed in that job; the separate migration-drift job also passed. This clears the schema/evidence residual only. No real-corpus training/evaluation, attorney spot-check, promotion, model activation or M5a claim is implied; production remains on `BOOTSTRAP_MODEL`.
 
 ---
 
@@ -1560,10 +1562,10 @@ Host ports locally remapped (Supabase owns 5432/3000): postgres 55433 · redis 5
 | **Evidence** | STATIC — `infra/supply-chain-exceptions.json` carries GHSA-mrhx-c7xc-m3w5 (zod, high, `reviewBy: 2026-12-24`); the gate (`scripts/check-supply-chain.mjs:86-95`) fails the build when `reviewBy` is in the past ("EXPIRED on <date>. Renew it with a named owner or delete it"); the advisory is patched only in zod 4.6.6 — the v3 line stays vulnerable |
 | **Location** | `infra/supply-chain-exceptions.json` (the exception); zod consumers `@markus/config` and `@markus/llm-gateway` (zod 3.25.76) |
 | **Blocks** | CI after 2026-12-24 (audit job red unless the migration lands or the owner renews) |
-| **Status** | ACTION REQUIRED — zod 4.6.7 migration implemented locally 2026-11-05; CLEARED only after CI verifies (original deadline 2026-12-24) |
-| **Discussion** | — |
-| **Answered by / Answered at** | ARCH 2026-10-25 (memo 0018) — accepted as an EXPIRING exception under D-19; migration to zod 4 logged as the open hygiene item |
-| **Verified by / Verified at** | direct reads 2026-10-25: exception entry (reviewBy 2026-12-24), gate expiry branch (scripts/check-supply-chain.mjs:86-95, fails closed), advisory fix boundary (zod 4.6.6) |
+| **Status** | CLEARED — zod 4.6.7 migration merged at `6c85065`; CI run 42069977850 green on 2026-11-06 CST, before the 2026-12-24 deadline |
+| **Discussion** | Local implementation was kept ACTION REQUIRED until CI verified the pushed commit; that gate is now satisfied. |
+| **Answered by / Answered at** | ARCH 2026-10-25 (memo 0018) — accepted as an EXPIRING exception under D-19; Developer migrated to zod 4.6.7 on 2026-11-05 |
+| **Verified by / Verified at** | CI run 42069977850, 2026-11-06 CST — lint/typecheck/test/build green (config 28 and llm-gateway 44 tests); dependency audit reports 0 critical / 0 high / 0 moderate / 1 low with only the separate accepted deepmerge exception |
 
 **Issue.** GHSA-mrhx-c7xc-m3w5 is accepted as an expiring exception under D-19: the v3 line has no fixed release (the patch exists only in 4.6.6), and the fix is a breaking zod-4 migration scheduled as its own backlog item. The mechanism is self-enforcing in the right direction — on 2026-12-24 the audit gate fails closed and turns the accepted advisory back into a red build unless the migration has landed or the entry is renewed.
 
@@ -1573,7 +1575,9 @@ Host ports locally remapped (Supabase owns 5432/3000): postgres 55433 · redis 5
 
 **Current triage (2026-10-31, HEAD `0485803`).** Remains **OPEN** as a scheduled obligation. The zod-4 migration is due before the exception expires on **2026-12-24**; no migration, renewal, or new runtime reproduction was performed in this triage.
 
-**Fix implemented (2026-11-05, local).** `@markus/config` and `@markus/llm-gateway` now declare `zod ^4.6.7`, a root `pnpm.overrides` entry pins `zod` to `^4.6.7` so a second major cannot be reintroduced transitively, and the unused `zod` declaration was removed from `@markus/core` (verified: the only zod imports in the repo are `packages/config/src/env.ts` and `packages/llm-gateway/src/gateway.ts`). `pnpm-lock.yaml` resolves exactly one zod, `zod@4.6.7`. The GHSA-mrhx-c7xc-m3w5 entry is deleted from `infra/supply-chain-exceptions.json`; the unrelated deepmerge entry (reviewBy 2026-11-30) stays. v4 source changes are minimal: `{ message }` → `{ error }` in the four `env.ts` refinement options (`issues` and `instanceof z.ZodError` are unchanged in v4). Defence in depth beyond the advisory: the gateway now bounds provider arrays (`MAX_CHAT_RESPONSE_CHOICES = 16`, `MAX_EMBEDDING_RESPONSE_VECTORS = 2048`, `MAX_EMBEDDING_DIMENSIONS = 8192`), and new tests prove a malformed payload is retried then failed over (never accepted) and oversized `choices`/`data`/embedding vectors are rejected while a payload exactly at the bound still passes. Local gates: `@markus/config` 28 tests green + typecheck, `@markus/llm-gateway` 44 tests green + typecheck. **Not yet CLEARED**: closing requires the CI run on the pushed commit, per the register's evidence rule.
+**Fix implemented (2026-11-05).** `@markus/config` and `@markus/llm-gateway` now declare `zod ^4.6.7`, a root `pnpm.overrides` entry pins `zod` to `^4.6.7` so a second major cannot be reintroduced transitively, and the unused `zod` declaration was removed from `@markus/core` (verified: the only zod imports in the repo are `packages/config/src/env.ts` and `packages/llm-gateway/src/gateway.ts`). `pnpm-lock.yaml` resolves exactly one zod, `zod@4.6.7`. The GHSA-mrhx-c7xc-m3w5 entry is deleted from `infra/supply-chain-exceptions.json`; the unrelated deepmerge entry (reviewBy 2026-11-30) stays. v4 source changes are minimal: `{ message }` → `{ error }` in the four `env.ts` refinement options (`issues` and `instanceof z.ZodError` are unchanged in v4). Defence in depth beyond the advisory: the gateway now bounds provider arrays (`MAX_CHAT_RESPONSE_CHOICES = 16`, `MAX_EMBEDDING_RESPONSE_VECTORS = 2048`, `MAX_EMBEDDING_DIMENSIONS = 8192`), and new tests prove a malformed payload is retried then failed over (never accepted) and oversized `choices`/`data`/embedding vectors are rejected while a payload exactly at the bound still passes. Local gates before push: `@markus/config` 28 tests green + typecheck, `@markus/llm-gateway` 44 tests green + typecheck.
+
+**Closure evidence (2026-11-06 CST, HEAD `6c85065`).** CI run [42069977850](https://github.com/risk-free/Mark-us/actions/runs/42069977850) is green across all 11 jobs, including lint, all 19 typecheck tasks, tests and build. The dependency-audit job reports 0 critical / 0 high / 0 moderate / 1 low with one accepted exception, the unrelated deepmerge advisory. The zod exception is gone and the migrated config/gateway suites pass, so the pre-deadline migration gate is satisfied and BUG-043 is **CLEARED**.
 
 ### BUG-044 - Worker image build fails when a lockfile refresh pulls native deps (ssh2/cpu-features) — python3/make/g++ absent in Dockerfile.worker build stage
 
@@ -1673,6 +1677,7 @@ pnpm build       # not run by the Debugger (see note)
 | 2026-10-29 (Debugger) | BUG-044 opened — Low hygiene for the worker image's missing native-build toolchain (`python3`/`make`/`g++`) when a lockfile refresh introduces `ssh2`/`cpu-features`. Evidence: dependabot "typescript group" CI run 40537763172 on a parked branch, with the compiler-detection and node-gyp Python failure signatures inspected directly. Owner: Developer; no action until the hygiene pass / dependabot batch uptake, per Architect memo 0025. | Debugger |
 | 2026-11-02 (Debugger) | BUG-037 and BUG-039 CLEARED at `ab6753a34699e083f0cbd0ba42714953f0477058`. BUG-037: clean-SHA `sourceMap: false` plus green API/worker runtime-image assertions in CI 41397948205 (11/11 jobs green); the web assertion is intentionally scoped away and is not claimed as evidence. BUG-039: one uninterrupted cold install with new store/cache exited 0, `reused 0`, 731/731 packages added in 44m 36.5s; the exhaustive inventory found 12 lifecycle packages (4 allowlisted/executed, 8 ignored), `pendingBuilds: []`, and a real 4×5 RGBA → 2×3 PNG Sharp transformation. Sharp has no automatic install lifecycle and needs no allowlist hook. | Debugger |
 | 2026-11-05 (Developer) | BUG-043 fix implemented locally: `@markus/config` + `@markus/llm-gateway` on `zod ^4.6.7`, root `pnpm.overrides` pins `zod@^4.6.7` (lockfile resolves only `zod@4.6.7`), unused zod declaration removed from `@markus/core`, `{ message }` → `{ error }` in `env.ts`, gateway provider arrays bounded (choices 16 / embedding vectors 2048 / dimensions 8192) with new malformed-payload and oversized-payload tests, GHSA-mrhx-c7xc-m3w5 exception deleted from `infra/supply-chain-exceptions.json`. Local evidence: config 28 tests + typecheck green, llm-gateway 44 tests + typecheck green. Status set to ACTION REQUIRED, **not** CLEARED, until CI verifies the pushed commit. D-19 amended; ARCH-01 validation row now says Zod 4. | Developer |
+| 2026-11-06 (Developer) | BUG-017 and BUG-043 CLEARED on `6c85065` using CI run 42069977850 (11/11 jobs green). BUG-017: the PostgreSQL 16 tm-ingest suite applies the complete baseline migration and passes `scoring-evidence.integration.test.ts` (3 suites / 13 tests in the job), closing the D-32 schema/evidence residual only. BUG-043: zod 4.6.7 migration and bounded provider arrays verified; audit reports 0 critical/high/moderate, 1 low with only the separate accepted deepmerge exception. No real-corpus evaluation, attorney spot-check, promotion, model activation or M5a claim; production remains on `BOOTSTRAP_MODEL`. | Developer |
 | | | |
 | | | |
 
