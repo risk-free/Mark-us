@@ -58,6 +58,10 @@ const TRAIN_HORIZON = new Date("2024-06-15T00:00:00.000Z");
 const HOLDOUT_FILING = new Date("2024-06-15T00:00:00.000Z");
 const HOLDOUT_HORIZON = new Date("2025-06-15T00:00:00.000Z");
 const RESOLVED_AT = new Date("2025-05-01T00:00:00.000Z");
+// ck_corpus_label_dates: a resolved label's resolvedAt lies inside
+// [filingDate, horizonAt]. The TRAIN horizon is 2024-06-15, so it cannot
+// share the holdout resolution date (CI run 42059284350 caught exactly this).
+const TRAIN_RESOLVED_AT = new Date("2024-05-01T00:00:00.000Z");
 const HOLDOUT_POSITIVES = 300;
 const HOLDOUT_NEGATIVES = 200;
 const TRAIN_POSITIVES = 5;
@@ -280,7 +284,7 @@ describe("scoring/evidence SQL invariants (D-32)", () => {
           predictionScore: positive ? 0.9 : 0.1,
           filingDate: TRAIN_FILING,
           horizonAt: TRAIN_HORIZON,
-          resolvedAt: RESOLVED_AT,
+          resolvedAt: TRAIN_RESOLVED_AT,
           sourceStatusCode: positive ? "700" : "600",
         });
       }
@@ -510,6 +514,27 @@ describe("scoring/evidence SQL invariants (D-32)", () => {
           },
         }),
       /horizon has not elapsed/,
+    );
+
+    // Regression for CI run 42059284350: a resolution dated after its own
+    // horizon is not representable evidence, even when every other field is
+    // valid and the horizon itself elapsed before censusAt.
+    await expectRejected(
+      () =>
+        prisma.corpusLabel.create({
+          data: {
+            evaluationId: evaluation.id,
+            serialNumber: `${model.modelVersion}-resolved-after-horizon`,
+            outcome: "POSITIVE",
+            split: "TRAIN",
+            predictionScore: 0.9,
+            filingDate: TRAIN_FILING,
+            horizonAt: TRAIN_HORIZON,
+            resolvedAt: RESOLVED_AT,
+            sourceStatusCode: "700",
+          },
+        }),
+      /ck_corpus_label_dates/,
     );
 
     const finalized = await buildEvaluationData(true);
