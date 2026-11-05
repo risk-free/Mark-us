@@ -1,5 +1,11 @@
 import { computeCostUsd } from "./config.js";
-import { buildChatRequestBody, LlmGateway } from "./gateway.js";
+import {
+  buildChatRequestBody,
+  LlmGateway,
+  MAX_CHAT_RESPONSE_CHOICES,
+  MAX_EMBEDDING_DIMENSIONS,
+  MAX_EMBEDDING_RESPONSE_VECTORS,
+} from "./gateway.js";
 import { LlmPiiError, LlmUnavailableError, type LlmCallRecord } from "./types.js";
 import {
   chatOk,
@@ -103,6 +109,58 @@ describe("LlmGateway.chat", () => {
     const gateway = new LlmGateway(TEST_CONFIG({ maxRetries: 0 }), TEST_DEPS({ fetch: stub.fn }));
 
     await expect(gateway.chat(cleanMessages)).rejects.toBeInstanceOf(LlmUnavailableError);
+  });
+
+  test("retries a malformed provider payload then fails over instead of accepting it", async () => {
+    const stub = makeFetchStub((url) =>
+      url.includes("primary") ? jsonResponse({ choices: "not-an-array" }) : jsonResponse(chatOk),
+    );
+    const gateway = new LlmGateway(TEST_CONFIG({ maxRetries: 1 }), TEST_DEPS({ fetch: stub.fn }));
+
+    const result = await gateway.chat(cleanMessages);
+
+    expect(result.provider).toBe("fallback");
+    expect(result.content).toBe("ok");
+    // Schema failures are retryable: maxRetries 1 means two primary attempts,
+    // then exactly one fallback attempt. The bad payload is never returned.
+    expect(stub.calls.map((call) => call.url)).toEqual([
+      "https://primary.test/v1/chat/completions",
+      "https://primary.test/v1/chat/completions",
+      "https://fallback.test/v1/chat/completions",
+    ]);
+  });
+
+  test("rejects an oversized choices array instead of truncating it (BUG-043)", async () => {
+    const stub = makeFetchStub(() =>
+      jsonResponse({
+        choices: Array.from({ length: MAX_CHAT_RESPONSE_CHOICES + 1 }, () => ({
+          message: { content: "ok" },
+        })),
+      }),
+    );
+    const gateway = new LlmGateway(
+      TEST_CONFIG({ fallback: undefined, maxRetries: 0 }),
+      TEST_DEPS({ fetch: stub.fn }),
+    );
+
+    await expect(gateway.chat(cleanMessages)).rejects.toBeInstanceOf(LlmUnavailableError);
+    expect(stub.calls).toHaveLength(1);
+  });
+
+  test("accepts a response exactly at the choices bound", async () => {
+    const stub = makeFetchStub(() =>
+      jsonResponse({
+        choices: Array.from({ length: MAX_CHAT_RESPONSE_CHOICES }, () => ({
+          message: { content: "ok" },
+        })),
+      }),
+    );
+    const gateway = new LlmGateway(TEST_CONFIG({ maxRetries: 0 }), TEST_DEPS({ fetch: stub.fn }));
+
+    const result = await gateway.chat(cleanMessages);
+
+    expect(result.content).toBe("ok");
+    expect(stub.calls).toHaveLength(1);
   });
 
   test("throws LlmUnavailableError when every provider fails with a network error", async () => {
@@ -309,6 +367,24 @@ describe("LlmGateway.embed", () => {
     const gateway = new LlmGateway(TEST_CONFIG({ maxRetries: 0 }), TEST_DEPS({ fetch: stub.fn }));
 
     await expect(gateway.embed("ACME")).rejects.toBeInstanceOf(LlmUnavailableError);
+  });
+
+  test("rejects oversized embedding payloads instead of accepting them (BUG-043)", async () => {
+    const oversizedVectorCount = {
+      data: Array.from({ length: MAX_EMBEDDING_RESPONSE_VECTORS + 1 }, () => ({
+        embedding: [0.1],
+      })),
+    };
+    const oversizedDimensions = {
+      data: [{ embedding: new Array<number>(MAX_EMBEDDING_DIMENSIONS + 1).fill(0.1) }],
+    };
+    for (const payload of [oversizedVectorCount, oversizedDimensions]) {
+      const stub = makeFetchStub(() => jsonResponse(payload));
+      const gateway = new LlmGateway(TEST_CONFIG({ maxRetries: 0 }), TEST_DEPS({ fetch: stub.fn }));
+
+      await expect(gateway.embed("ACME")).rejects.toBeInstanceOf(LlmUnavailableError);
+      expect(stub.calls).toHaveLength(1);
+    }
   });
 
   test("throws LlmUnavailableError when no embed URL is configured", async () => {

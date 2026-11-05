@@ -10,9 +10,6 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "jest"
   },
-  "dependencies": {
-    "zod": "^3.25.76"
-  },
   "devDependencies": {
     "@markus/config": "workspace:*",
     "@types/jest": "^30.0.0",

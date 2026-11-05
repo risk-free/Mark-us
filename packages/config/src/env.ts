@@ -55,7 +55,7 @@ const hasScheme = (schemes: string[]) => (value: string): boolean =>
 
 const urlWithSchemes = (schemes: string[]) =>
   z.string().refine(hasScheme(schemes), {
-    message: `must be a valid ${schemes.join(" / ")} URL`,
+    error: `must be a valid ${schemes.join(" / ")} URL`,
   });
 
 const optionalUrl = (schemes: string[] = ["http:", "https:"]) => {
@@ -64,7 +64,7 @@ const optionalUrl = (schemes: string[] = ["http:", "https:"]) => {
     .string()
     .optional()
     .refine((value) => value === undefined || value === "" || base.safeParse(value).success, {
-      message: `must be a valid ${schemes.join(" / ")} URL when set`,
+      error: `must be a valid ${schemes.join(" / ")} URL when set`,
     })
     .transform((value) => (value === "" ? undefined : value));
 };
@@ -89,7 +89,7 @@ const isBase64WithMinBytes = (value: string, minBytes: number): boolean =>
 
 const base64Secret = (name: string) =>
   z.string().refine((value) => isBase64WithMinBytes(value, 32), {
-    message: `${name} must be base64 decoding to >= 32 bytes (generate: node -e "console.log(require('crypto').randomBytes(48).toString('base64'))")`,
+    error: `${name} must be base64 decoding to >= 32 bytes (generate: node -e "console.log(require('crypto').randomBytes(48).toString('base64'))")`,
   });
 
 export const envSchema = z.object({
@@ -158,7 +158,7 @@ export const envSchema = z.object({
       (value) =>
         value === undefined ||
         value.every((year) => Number.isInteger(year) && year >= 1900 && year <= 2100),
-      { message: "TM_CORPUS_INGEST_YEARS must be comma-separated years between 1900 and 2100" },
+      { error: "TM_CORPUS_INGEST_YEARS must be comma-separated years between 1900 and 2100" },
     ),
   // Corpus ingest source for the nightly job. `tdxf` is gated by FA-011 until
   // the firm's ODP account is provisioned; the tick logs a skip-with-reason

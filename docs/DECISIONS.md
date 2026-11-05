@@ -293,6 +293,13 @@ The remediation pass for FA-008 cleared 12 of 14 advisories (2 critical → 0, 6
 - Both entries expire **2026-12-29**; the gate fails from that date until they are renewed or removed.
 - Revisit when `braces`/`micromatch` or `sprintf-js` ships a fix, or when Jest drops the `js-yaml@3` / `argparse@1` chain.
 
+### Amendment (2026-11-05): the zod exception is retired by migration, not renewed
+- GHSA-mrhx-c7xc-m3w5 (zod, high, oversized constrained collections) was accepted on 2026-10-25 as an expiring entry (`reviewBy 2026-12-24`, BUG-043) because the patch exists only on the zod 4 line (4.6.6+).
+- `@markus/config` and `@markus/llm-gateway` now depend on `zod ^4.6.7`; a root `pnpm.overrides` entry pins `zod` to `^4.6.7` so a vulnerable second major cannot return transitively, and the unused `zod` declaration was removed from `@markus/core`. The lockfile resolves exactly one zod, `zod@4.6.7`, and the exception entry is **deleted** — the registry accepts residual risk, it does not accumulate fixed advisories.
+- v4 migration surface was small: `{ message }` → `{ error }` in the `env.ts` refinement options; `parsed.error.issues` and `instanceof z.ZodError` behave the same, so the gateway's retryable-schema-failure branch is unchanged.
+- Defence in depth on top of the version bump: provider response arrays are now bounded (`MAX_CHAT_RESPONSE_CHOICES = 16`, `MAX_EMBEDDING_RESPONSE_VECTORS = 2048`, `MAX_EMBEDDING_DIMENSIONS = 8192`), with negative-path tests showing malformed and oversized payloads are retried/failed over or rejected rather than accepted.
+- The deepmerge exception (GHSA-gcqx-w48m-w2h4, `reviewBy 2026-11-30`) is unrelated and remains in force.
+
 ---
 
 ## D-20: Identity model — natural person, organization, and a temporal many-to-many link

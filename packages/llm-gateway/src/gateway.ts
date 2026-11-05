@@ -40,17 +40,34 @@ import {
 
 const DEFAULT_TASK: LlmTask = "chatbot";
 
+/**
+ * Provider payload bounds (BUG-043 / GHSA-mrhx-c7xc-m3w5). A compromised or
+ * malfunctioning provider must not be able to make the validator accumulate
+ * issues across an unbounded array. The caps sit far above anything this
+ * gateway requests: it never sends `n > 1` and embeds one input per call, so
+ * an over-limit payload is a protocol violation, not a large valid response.
+ * Rejection is retryable (z.ZodError), so a transient bad payload still falls
+ * through the normal retry/fallback path instead of being silently accepted.
+ */
+export const MAX_CHAT_RESPONSE_CHOICES = 16;
+export const MAX_EMBEDDING_RESPONSE_VECTORS = 2_048;
+export const MAX_EMBEDDING_DIMENSIONS = 8_192;
+
 const chatResponseSchema = z.object({
   choices: z
     .array(z.object({ message: z.object({ content: z.string().nullish() }) }))
-    .min(1),
+    .min(1)
+    .max(MAX_CHAT_RESPONSE_CHOICES),
   usage: z
     .object({ prompt_tokens: z.number().nonnegative(), completion_tokens: z.number().nonnegative() })
     .optional(),
 });
 
 const embedResponseSchema = z.object({
-  data: z.array(z.object({ embedding: z.array(z.number()) })).min(1),
+  data: z
+    .array(z.object({ embedding: z.array(z.number()).max(MAX_EMBEDDING_DIMENSIONS) }))
+    .min(1)
+    .max(MAX_EMBEDDING_RESPONSE_VECTORS),
   usage: z
     .object({
       prompt_tokens: z.number().nonnegative().optional(),
